@@ -1,0 +1,64 @@
+name: Alpha integrity checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  foundation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEX_TOOLS_DIR: /tmp/nex-ci-tools
+      GOCACHE: /tmp/nex-go-cache
+      GOPATH: /tmp/nex-ci-tools/gopath
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.19.0
+      - name: Install verified pinned tools and frozen dependencies
+        run: |
+          ./scripts/bootstrap.sh
+          ./scripts/bootstrap-rust.sh
+          echo "$NEX_TOOLS_DIR/go/bin" >> "$GITHUB_PATH"
+          echo "$NEX_TOOLS_DIR" >> "$GITHUB_PATH"
+          echo "$NEX_TOOLS_DIR/bin" >> "$GITHUB_PATH"
+          echo "$NEX_TOOLS_DIR/cargo/bin" >> "$GITHUB_PATH"
+          echo "CARGO_HOME=$NEX_TOOLS_DIR/cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$NEX_TOOLS_DIR/rustup" >> "$GITHUB_ENV"
+      - name: Reproduce generated contracts and semantic digest vectors
+        run: ./scripts/check-contracts.sh --install-tools
+      - name: Static checks
+        run: |
+          go vet ./...
+          cd apps/workspace
+          npm run typecheck
+      - name: Build and start the development stack
+        run: make dev
+      - name: Functional and negative checks
+        run: make verify-local
+      - name: Terraform validation and mock tests
+        run: |
+          make terraform-check
+          terraform -chdir=deploy/terraform test
+      - name: Produce source SBOM and frozen-input inventory
+        if: always()
+        run: ./scripts/release-inventory.py .local/release-evidence
+      - name: Install pinned vulnerability scanners
+        run: |
+          ./scripts/release-tools.sh
+          echo "$NEX_TOOLS_DIR/bin" >> "$GITHUB_PATH"
+      - name: Vulnerability release gate
+        if: always()
+        run: ./scripts/release-audit.py .local/release-evidence
+      - name: Retain release evidence including incomplete scan results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: alpha-integrity-release-evidence
+          path: .local/release-evidence
+          include-hidden-files: true
+          if-no-files-found: warn
+      - name: Cleanup
+        if: always()
+        run: make down

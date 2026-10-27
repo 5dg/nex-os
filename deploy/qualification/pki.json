@@ -1,0 +1,16 @@
+{
+  "valid_for_seconds": 3600,
+  "entries": [
+    {"name":"control","dns_names":["control","control.nex.test"],"uris":["spiffe://nex.local/service/control"],"client_auth":true,"server_auth":true},
+    {"name":"guard","dns_names":["guard","guard.nex.test"],"uris":["spiffe://nex.local/service/guard"],"client_auth":true,"server_auth":true},
+    {"name":"model","dns_names":["model","model.nex.test"],"uris":["spiffe://nex.local/service/model"],"client_auth":true,"server_auth":true},
+    {"name":"export","dns_names":["executor","export.nex.test"],"uris":["spiffe://nex.local/service/export"],"client_auth":true,"server_auth":true},
+    {"name":"evidence","dns_names":["evidence","evidence.nex.test"],"uris":["spiffe://nex.local/service/evidence"],"client_auth":true,"server_auth":true},
+    {"name":"worker","uris":["spiffe://nex.local/service/worker"],"client_auth":true,"server_auth":false},
+    {"name":"workspace-client","uris":["spiffe://nex.local/service/workspace"],"client_auth":true,"server_auth":false},
+    {"name":"workspace-server","dns_names":["workspace.nex.test","localhost"],"ip_addresses":["127.0.0.1"],"uris":["spiffe://nex.local/service/workspace"],"client_auth":false,"server_auth":true},
+    {"name":"opa","dns_names":["opa","opa.nex.test"],"uris":["spiffe://nex.local/service/opa"],"client_auth":false,"server_auth":true},
+    {"name":"oidc","dns_names":["issuer.nex.test","issuer","localhost"],"ip_addresses":["127.0.0.1"],"uris":["spiffe://nex.local/service/oidc"],"client_auth":false,"server_auth":true},
+    {"name":"postgres","dns_names":["postgres","localhost"],"ip_addresses":["127.0.0.1"],"uris":["spiffe://nex.local/service/postgres"],"client_auth":false,"server_auth":true}
+  ]
+}

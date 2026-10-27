@@ -1,0 +1,253 @@
+name: nex-local
+
+x-control: &control
+  image: nex-control:local
+  environment: &control-env
+    APP_ENV: development
+    MODEL_PROVIDER: development
+    DATABASE_URL: postgres://nex:nex-local-synthetic-only@postgres:5432/nex?sslmode=disable
+    OIDC_ISSUER: http://issuer:8081
+    OIDC_AUDIENCE: nex-local
+    OPA_URL: http://opa:8181
+    LISTEN_ADDR: :8080
+    NO_PROXY: issuer,opa,postgres,control,localhost,127.0.0.1
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [backend]
+
+services:
+  postgres:
+    image: postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27
+    environment:
+      POSTGRES_DB: nex
+      POSTGRES_USER: nex
+      POSTGRES_PASSWORD: nex-local-synthetic-only
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U nex -d nex"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  opa:
+    image: openpolicyagent/opa@sha256:02d31f4e34dcae04d87b542796aa0d089e42039fe6bbc5601587be44fb218963
+    command: [run, --server, --addr=0.0.0.0:8181, --disable-telemetry, /policies/guard.rego]
+    ports: ["127.0.0.1:8181:8181"]
+    volumes: [../../policies:/policies:ro]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [backend, policy-link]
+  issuer:
+    <<: *control
+    entrypoint: [/dev-issuer]
+    environment:
+      APP_ENV: development
+      OIDC_ISSUER: http://issuer:8081
+    ports: ["127.0.0.1:8081:8081"]
+  migrate:
+    <<: *control
+    command: [migrate]
+    depends_on:
+      postgres: {condition: service_healthy}
+    profiles: [tools]
+  seed:
+    <<: *control
+    user: ${NEX_UID:-1000}:${NEX_GID:-1000}
+    environment:
+      <<: *control-env
+      LOCAL_DATABASE_KEYS: /run/secrets
+    secrets: [control_database_password, guard_database_password]
+    command: [seed]
+    depends_on:
+      postgres: {condition: service_healthy}
+    profiles: [tools]
+  control:
+    <<: *control
+    user: ${NEX_UID:-1000}:${NEX_GID:-1000}
+    environment:
+      <<: *control-env
+      MODEL_URL: http://model:8082
+      EXPORT_URL: http://executor:8083
+      MODEL_KEY_FILE: /run/secrets/model_key
+      EXPORT_KEY_FILE: /run/secrets/export_key
+      WORKER_KEY_FILE: /run/secrets/worker_key
+      GUARD_KEY_FILE: /run/secrets/guard_key
+      GUARD_GRPC_ADDR: guard:50051
+      NO_PROXY: issuer,opa,guard,postgres,control,model,executor,evidence,localhost,127.0.0.1
+      DATABASE_URL: ""
+      DATABASE_URL_FILE: /run/secrets/control_database_url
+      EVIDENCE_URL: http://evidence:8084
+      EVIDENCE_KEY_FILE: /run/secrets/evidence_key
+      EVIDENCE_PUBLIC_FILE: /run/secrets/evidence_public
+    secrets: [model_key, export_key, worker_key, guard_key, evidence_key, evidence_public, control_database_url]
+    networks: [backend, model-link, export-link, worker-link, guard-link, evidence-link]
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile.control.local
+      secrets: [proxy_ca]
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      issuer: {condition: service_started}
+      opa: {condition: service_started}
+  workspace:
+    image: nex-workspace:local
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile.workspace
+      secrets: [proxy_ca]
+    environment:
+      APP_ENV: development
+      CONTROL_URL: http://control:8080
+      DEV_ISSUER_URL: http://issuer:8081
+      NO_PROXY: issuer,control,localhost,127.0.0.1
+    ports: ["127.0.0.1:3000:3000"]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [backend]
+    depends_on: [control]
+  model:
+    image: nex-control:local
+    entrypoint: [/model]
+    user: ${NEX_UID:-1000}:${NEX_GID:-1000}
+    environment:
+      APP_ENV: development
+      MODEL_PROVIDER: development
+      MODEL_KEY_FILE: /run/secrets/model_key
+      CONTROL_URL: http://control:8080
+      MODEL_GUARD_KEY_FILE: /run/secrets/model_guard_key
+      GUARD_GRPC_ADDR: guard:50051
+      RECEIPTS_DIR: /receipts
+      NO_PROXY: control,guard,localhost,127.0.0.1
+    secrets: [model_key, model_guard_key]
+    volumes: [../../.local/model-receipts:/receipts]
+    networks: [model-link, guard-link]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  executor:
+    image: nex-control:local
+    entrypoint: [/executor]
+    user: ${NEX_UID:-1000}:${NEX_GID:-1000}
+    environment:
+      APP_ENV: development
+      EXPORT_KEY_FILE: /run/secrets/export_key
+      CONTROL_URL: http://control:8080
+      EXPORT_GUARD_KEY_FILE: /run/secrets/export_guard_key
+      GUARD_GRPC_ADDR: guard:50051
+      RECEIPTS_DIR: /receipts
+      NO_PROXY: control,guard,localhost,127.0.0.1
+    secrets: [export_key, export_guard_key]
+    volumes: [../../.local/export-receipts:/receipts]
+    networks: [export-link, guard-link]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  worker:
+    image: nex-control:local
+    entrypoint: [/worker]
+    user: ${NEX_UID:-1000}:${NEX_GID:-1000}
+    environment:
+      CONTROL_URL: http://control:8080
+      WORKER_KEY_FILE: /run/secrets/worker_key
+      NO_PROXY: control,guard,localhost,127.0.0.1
+    secrets: [worker_key]
+    networks: [worker-link]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [control]
+  guard:
+    image: nex-guard:local
+    build:
+      context: ../..
+      dockerfile: deploy/local/Dockerfile.guard
+    user: ${NEX_UID:-1000}:${NEX_GID:-1000}
+    environment:
+      APP_ENV: development
+      GUARD_MODE: execution
+      GUARD_KEY_FILE: /run/secrets/guard_key
+      OPA_URL: http://opa:8181
+      DATABASE_URL_FILE: /run/secrets/guard_database_url
+      MODEL_GUARD_KEY_FILE: /run/secrets/model_guard_key
+      EXPORT_GUARD_KEY_FILE: /run/secrets/export_guard_key
+      NO_PROXY: opa,evidence,localhost,127.0.0.1
+      EVIDENCE_URL: http://evidence:8084
+      EVIDENCE_KEY_FILE: /run/secrets/kernel_evidence_key
+      EVIDENCE_PUBLIC_FILE: /run/secrets/evidence_public
+    secrets: [guard_key, model_guard_key, export_guard_key, kernel_evidence_key, evidence_public, guard_database_url]
+    networks: [backend, guard-link, policy-link, evidence-link]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [opa]
+  evidence:
+    image: nex-control:local
+    entrypoint: [/evidence]
+    user: ${NEX_UID:-1000}:${NEX_GID:-1000}
+    environment:
+      APP_ENV: development
+      EVIDENCE_KEY_FILE: /run/secrets/evidence_key
+      KERNEL_EVIDENCE_KEY_FILE: /run/secrets/kernel_evidence_key
+      SIGNING_SEED_FILE: /run/secrets/signing_seed
+      EVIDENCE_DIR: /data/evidence
+    secrets: [evidence_key, kernel_evidence_key, signing_seed]
+    volumes: [../../.local/evidence:/data/evidence]
+    networks: [evidence-link]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+networks:
+  backend:
+    driver: bridge
+  model-link:
+    internal: true
+  export-link:
+    internal: true
+  worker-link:
+    internal: true
+  guard-link:
+    internal: true
+  policy-link:
+    internal: true
+  evidence-link:
+    internal: true
+volumes:
+  postgres-data:
+secrets:
+  kernel_evidence_key:
+    file: ../../.local/kernel-evidence-key
+  control_database_password:
+    file: ../../.local/control-database-password
+  guard_database_password:
+    file: ../../.local/guard-database-password
+  control_database_url:
+    file: ../../.local/control-database-url
+  guard_database_url:
+    file: ../../.local/guard-database-url
+  evidence_key:
+    file: ../../.local/evidence-key
+  evidence_public:
+    file: ../../.local/evidence-public
+  signing_seed:
+    file: ../../.local/signing-seed
+  model_guard_key:
+    file: ../../.local/model-guard-key
+  export_guard_key:
+    file: ../../.local/export-guard-key
+  guard_key:
+    file: ../../.local/guard-key
+  model_key:
+    file: ../../.local/model-key
+  export_key:
+    file: ../../.local/export-key
+  worker_key:
+    file: ../../.local/worker-key
+  proxy_ca:
+    file: ${NEX_BUILD_CA:-/etc/ssl/certs/ca-certificates.crt}

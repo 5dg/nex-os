@@ -1,0 +1,7 @@
+.git
+.local
+**/node_modules
+**/.next
+**/next-env.d.ts
+deploy/terraform/.terraform
+**/*.tfstate*

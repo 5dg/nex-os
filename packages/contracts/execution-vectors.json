@@ -1,0 +1,112 @@
+[
+  {
+    "name": "export-ascii",
+    "kind": "export",
+    "payload": {
+      "operation_id": "operation-123",
+      "tenant_id": "tenant-a",
+      "destination_id": "local-evidence",
+      "content": "Synthetic answer\n\nSource: review-alice@v1",
+      "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "digest": "572bf2acc9a7dde09027a421294bfedf8c09090e7883a49227731772f9cdc4ff"
+  },
+  {
+    "name": "model-ascii",
+    "kind": "model",
+    "payload": {
+      "operation_id": "operation-456",
+      "tenant_id": "tenant-a",
+      "route_id": "dev-model",
+      "classification": "internal",
+      "prompt": "Review [document@v1].\nQuestion: Controls?\nDocument:\nSynthetic evidence.",
+      "max_tokens": 256
+    },
+    "digest": "a19b3ea9180d1be367fc0633ae8d7ac338e3d02e1ea42c11ddfd1fa8347c223a"
+  },
+  {
+    "name": "export-utf8-and-nul",
+    "kind": "export",
+    "payload": {
+      "operation_id": "operation-789",
+      "tenant_id": "tenant-α",
+      "destination_id": "local-evidence",
+      "content": "Résumé 東京 🚀\u0000\n\"untrusted\" <data>",
+      "request_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "digest": "765aa48a6d853d086555f8ac9afeead4d01a891987c9ad80dc06f55ca039561d"
+  },
+  {
+    "name": "model-utf8",
+    "kind": "model",
+    "payload": {
+      "operation_id": "operation-012",
+      "tenant_id": "tenant-β",
+      "route_id": "dev-model",
+      "classification": "confidential",
+      "prompt": "Evidence: café\u0000instructions?\nΔεδομένα",
+      "max_tokens": 1
+    },
+    "digest": "ce5f59e79dc768f97f0171e8766a63a41d5e3980392eb8a22bb7c8fdba476a2d"
+  },
+  {
+    "name": "export-delimiter-left",
+    "kind": "export",
+    "payload": {
+      "operation_id": "ab",
+      "tenant_id": "c",
+      "destination_id": "",
+      "content": "x\u0000y",
+      "request_digest": ""
+    },
+    "digest": "7802bba4a3a689807c38ea8a2152326d4afb33da55fd36e2f298a49bf01066d3"
+  },
+  {
+    "name": "export-delimiter-right",
+    "kind": "export",
+    "payload": {
+      "operation_id": "a",
+      "tenant_id": "bc",
+      "destination_id": "",
+      "content": "x\u0000y",
+      "request_digest": ""
+    },
+    "digest": "26479e6bf15144e20a3e876e18eb060dc82a810f443349c6ab15147c0f751362"
+  },
+  {
+    "name": "v3-model-synthetic",
+    "kind": "model",
+    "payload": {
+      "manifest_version": 3,
+      "operation_id": "operation-v3-123",
+      "tenant_id": "tenant-a",
+      "route_id": "dev-model",
+      "classification": "confidential",
+      "prompt": "Synthetic qualification [record@v1]",
+      "max_tokens": 256,
+      "provider": "development",
+      "region": "local",
+      "model_id": "deterministic-review-v1",
+      "effective_endpoint": "local://synthetic-generator",
+      "features": [],
+      "template_version": "review-template-v2",
+      "question_catalogue_id": "access-review-controls",
+      "question_catalogue_version": "v1",
+      "question_classification": "internal"
+    },
+    "digest": "6a6d7815d06aecae50ee34b5be18cc89637209f665a16f72d0e245d44af12109"
+  },
+  {
+    "name": "v3-export-unicode",
+    "kind": "export",
+    "payload": {
+      "manifest_version": 3,
+      "operation_id": "operation-v3-export",
+      "tenant_id": "tenant-a",
+      "destination_id": "local-evidence",
+      "content": "Approved ✓\nSource: record@v1",
+      "request_digest": "approval-exact"
+    },
+    "digest": "50c5d2c857d5d6cae62defcc84c06e3bf6b87fcad994ecece03e2288b1e2838d"
+  }
+]
