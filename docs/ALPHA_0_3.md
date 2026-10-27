@@ -34,7 +34,7 @@ Durations below are Go `-race` harness timings. Rust and TypeScript services exe
 
 The first rotation assertion incorrectly required equal timeline lengths despite legitimate signed `document.read` events emitted by authenticated job/timeline reads. Its failed log was retained. The corrected check requires an exact historical prefix, verifies every appended signature and restricts additions to the expected Alice/control/document-read context; the fresh-session rerun passed. No production behavior was changed to satisfy that assertion.
 
-The combined `scripts/verify-qualification.sh` wrapper was syntax-reviewed and wired into CI; its constituent steps above were executed individually. The combined wrapper itself and hosted CI have not been run. It is deliberately one-shot and refuses an existing restore state.
+The combined `scripts/verify-qualification.sh` wrapper was syntax-reviewed and wired into CI; its constituent steps above were executed individually. The combined wrapper itself was not run during this local validation; current hosted CI status is unverified because its API lookup is forbidden in this environment. It is deliberately one-shot and refuses an existing restore state.
 
 ## Operational observations
 
@@ -46,6 +46,12 @@ Docker VFS exhausted the filesystem during workspace image construction. Removin
 
 Fresh qualification scans inventory actual application, fixture, PostgreSQL and OPA images, retain every severity and emit six OS-inclusive CycloneDX inventories. Native Go advisory access failed with HTTP Forbidden. Rust/npm/control/fixture scans passed. Initial scans found Guard 43 high; workspace 1 critical/56 high; PostgreSQL 4 critical/96 high; OPA 1 unknown. The PostgreSQL remediation eliminated exactly 1 critical/27 high with published fixes; its new scan retains 3 critical/69 high, all without published fixes, plus other severities. The default unused upstream snakeoil key is also retained as an unresolved scanner finding. The fresh tmpfs database boot, gosu privilege drop, native verified TLS 1.3, existing restored-volume boot and exact all-application-data hashes before/after passed. The old scan was preserved separately from remediation evidence. No severity filters, ignore files or waivers were introduced.
 
-Actual live GovCloud account/model/customer identity, approved cryptographic modules, application infrastructure, operational controls and required assessments remain deferred. Hosted CI is unexecuted. Normal main push attempts were rejected with HTTP 403 for the configured GitHub identity `getmoneyjj`; local commits exist, remote publication has not been established. No authentication workaround or force push was used.
+Actual live GovCloud account/model/customer identity, approved cryptographic modules, application infrastructure, operational controls and required assessments remain deferred. Historical main push attempts were rejected with HTTP 403 for the then-presented GitHub identity `getmoneyjj`. Publication subsequently succeeded, as recorded below. No authentication workaround or force push was used.
 
 Raw test/build/failed-run logs and private runtime evidence remain local under `/tmp/nex-alpha03-*` and ignored `.local/qualification-release-evidence`, with consistent private backup evidence under `.local/qualification-backups`. Runtime credentials, PKI keys, receipts and backup contents are not committed. See [BUILD_PLAN.md](BUILD_PLAN.md) for the development path and [QUALIFICATION.md](runbooks/QUALIFICATION.md) for ordered operations and limits.
+
+## Publication update — 2026-10-27 UTC
+
+A normal push to `https://github.com/5dg/nex-os.git` succeeded. The remote `refs/heads/main` was independently read with `git ls-remote` and matched `5b7b34e5a540d21b47b5578123ca7d65953123de`. The earlier HTTP 403 errors remain historical evidence, not a current publication blocker. This source commit contains the exact candidate disclosures above; publication does not rebuild or requalify those images.
+
+Hosted Actions status is **unknown**, rather than assumed unrun or passed: a read-only `gh run list` request for this repository returned `Forbidden` from `api.github.com`. Native Git publication and API access are separate observations.

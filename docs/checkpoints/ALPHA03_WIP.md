@@ -13,3 +13,5 @@ The local implementation now includes qualification runtime wiring, browser sess
 Whole-repository Go race tests passed for checkpoint3. Prior component checks passed for Rust and the workspace, including a real delayed intermediate-certificate expiry test. These checks do not establish the full workflow or a qualified release.
 
 Normal pushes of initial local commit `7c9e3468b37f34592eb65976f5e508b907d1c741`, checkpoint2 `274635d904f561d062a3bcbb16cdc93c15867eab` and checkpoint3 `cecec1a87fe967e6c1e5bc5a9243b0d70a7c2c83` were rejected with HTTP 403 because the configured GitHub identity lacked repository write access. No credentials are changed to work around that result; publication is retried only at meaningful checkpoints or after an access update.
+
+Publication update, 2026-10-27 UTC: a normal main push succeeded, and `git ls-remote` verified remote `refs/heads/main` equals `5b7b34e5a540d21b47b5578123ca7d65953123de`. The HTTP 403 failures above are historical and resolved. Current hosted CI status is unknown: the Actions API lookup returned `Forbidden`. Successful Git publication does not establish a CI pass or release qualification.

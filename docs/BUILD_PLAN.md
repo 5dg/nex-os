@@ -1,45 +1,48 @@
 # Nex.os development goal and implementation path
 
-## Current goal: Alpha 0.3 synthetic qualification
+## Current goal: Alpha 0.4 governance evidence and reproducible release candidate
 
-Deliver a reproducible, identity-bound document-review → approval → export workflow using the existing Go control plane, Rust Nex.Guard and versioned gRPC contracts. A browser authenticates through an explicit synthetic OIDC provider; every protected service call uses an authenticated workload identity. Guard validates the exact model route, fixed question, admitted document version, delegated authority and approval before a receiver produces an effect. Evidence binds those decisions and outcomes to the same operation.
+Turn the working synthetic document-review → independent approval → exact export slice into an exact-source, operationally tested release candidate. Close the identified Rust proof-content verification asymmetry, establish bounded shutdown/current-authority behavior, and connect a captured revision to pinned builds, immutable images and retained qualification/security evidence.
 
-This milestone uses synthetic data and a deterministic model. It establishes a testable application boundary before adding a real cloud model and customer identity. It does not process CUI, establish FIPS qualification, authorize Nex.os under FedRAMP or satisfy an organization's CMMC assessment.
+The executable plan, dependency waves, acceptance gates and cleanup/publication protocol are in [NEXT_GOAL_ALPHA_0_4.md](NEXT_GOAL_ALPHA_0_4.md). This update plans the next work; it does not claim those changes or tests have been implemented.
 
 ## Grounded starting point
 
-The repository already contains a working Alpha 0.2 development workflow, a durable PostgreSQL queue, scoped model/export receivers, signed evidence, crash/retry handling and role-separated deployment. Historical executed results are in [VALIDATION.md](VALIDATION.md).
+[Alpha 0.3](ALPHA_0_3.md) records actual synthetic OIDC/BFF sessions, workload TLS, strict API tokens, v3 route/input/result binding, minimal database roles, independent approvals, receiver proofs, PKI rotation and isolated restore. [VALIDATION.md](VALIDATION.md) preserves earlier Alpha 0.2 results. Published `main` now contains `5b7b34e`; historical push failures no longer block publication. Hosted CI status is currently unverified because its API lookup was Forbidden.
 
-Alpha 0.3 adds strict TLS workload identities, browser OIDC sessions and CSRF protection, access-token validation, a v3 execution manifest, trusted question/document admission records and authenticated receiver-readiness proofs. The frozen contract is [ALPHA03_TRUST_CONTRACT.md](architecture/ALPHA03_TRUST_CONTRACT.md). The isolated `deploy/qualification` project preserves the old development state. Its first core stack completed TLS PostgreSQL bootstrap, migration and seeding, and returned HTTP200 to a workspace-authenticated readiness request. Whole-Go race checks and the component Rust/workspace checks passed. The current-source browser/API workflow, PostgreSQL trust/role checks, thirteen kernel authority mutations, receiver-readiness negatives, coordinated certificate rotation and an isolated quiescent restore have now passed actual integration checks. Release qualification remains blocked by vulnerability/advisory, reproducibility and external CI/publication gates; see [ALPHA_0_3.md](ALPHA_0_3.md) for the exact candidate and executed evidence.
+The earlier application candidate was accurately recorded as a host-built Go/Rust and container-built workspace snapshot. The pinned Rust builder and combined one-shot verifier have not been established by that evidence. A fresh container build also needs to close the existing host `bin/evidence` dependency. Freeze measurable shutdown/load budgets and binary/rootfs/OCI reproducibility targets before testing; only declared metadata nondeterminism is allowed, with no normalization of unexplained payload/artifact differences. The next candidate must include cleanup before final source capture, avoiding another distinction between finished source and tested images.
+
+This remains synthetic data and a deterministic model. Ordinary TLS/test PKI does not establish FIPS qualification, CUI authorization or FedRAMP/NIST/CMMC compliance. Live account/model/customer-identity setup remains deferred.
 
 ## Development path and acceptance gates
 
 | Order | Deliverable | Acceptance evidence |
 |---|---|---|
-| 1 | Freeze one identity and execution contract | Exact service principals, TLS endpoints, v3 fields, SQL grants, production rejection and error behavior agree across Go, Rust and TypeScript. |
-| 2 | Start the isolated current-source stack | Fresh and interrupted initialization preserve state; verified TLS PostgreSQL and distinct minimal database roles work; OPA engine has no exposed administrative listener; readiness verifies live dependencies with bounded requests. |
-| 3 | Complete the real browser workflow | Login, tenant-scoped review, delegation, approval for the exact export, execution and independent receipt/signature verification pass using the actual Go/Rust services. No browser persona or ID token grants API authority. |
-| 4 | Exercise denied and changed authority | Wrong identity, CA, DNS, expired chain, wrong body key, replay, changed catalogue/admission/body/route and expired or revoked authority fail before protected effects. Run shared-metadata mutations serially after the ordinary workflow. |
-| 5 | Verify lifecycle custody | Coordinated certificate rotation invalidates old sessions and permits fresh login while preserving signing identity, old receipts and journal prefixes. A quiescent isolated restore preserves application/evidence consistency without concurrent writer sets. |
-| 6 | Qualify the release artifacts | Reproduce the pinned-builder path, record source/image/binary/SBOM identity, retain all vulnerability findings and unresolved advisories, run hosted CI and capture dated evidence. A host-compiled functional candidate is explicitly not a release attestation. |
+| 1 | Exact signed-content verification | A correctly signed wrong-content proof with the same ID/producer is rejected; canonical cross-language v1 vectors and historical valid proofs pass without format changes. |
+| 2 | Bounded operational/current-authority behavior | Actual SIGTERM stops new admission and drains/cancels under defined bounds; original caller expiry, committed revocation, cancellation and saturation tests preserve denied/started/unknown semantics. |
+| 3 | Self-contained pinned build | Fresh exact-source builds need no stale host artifacts; all binaries, builder/ABI/image identities are recorded; clean-build reproducibility is measured. |
+| 4 | Complete qualification of the same artifacts | Actual DOM smoke plus existing protocol, database, mutation, readiness, rotation and restore tests run in order against the selected images; previous state remains intact. |
+| 5 | Supply-chain evidence and release decision | Complete source/image inventories, raw findings, advisory results, durable verification artifacts and actual CI/provenance status share the same candidate identity. Any unmet required gate remains blocked. |
 
-Start with `scripts/qualification.sh build-host` for a clearly labeled local diagnostic candidate, or `build` for the pinned-container-builder path. Then run `init`, `up` and `ready`. The build mode and executed checks must accompany any result. Do not delete retained volumes, signing keys, receipts or past migrations to make a check pass.
+Do not start broad model routing, terminal execution, connectors, distributed sessions/custody or deployment frameworks. Add production integrations only after the separate boundary and account prerequisites below are ready.
 
-## Parallel ownership and integration discipline
+## Parallel ownership and continuous publication
 
-| Agent | Exclusive implementation responsibility | Hand-off |
-|---|---|---|
-| A — contracts/control | Trust contract and shared Go trust library; wire contracts; control API, database role grants and exact fixture admission | Freezes interfaces first; resolves cross-language or authority mismatches. |
-| B — governance | Rust kernel, canonical manifest enforcement, migration schema and kernel adversarial tests | Implements the frozen contract; never substitutes caller assertions for trusted records. |
-| C — identity/workspace | Strict access-token validation, browser OIDC/session/CSRF/BFF and workspace UI | Supplies component tests and exact endpoint/session behavior. |
-| D — effects/evidence | Model, export, evidence and worker services; capability and readiness proofs | Supplies scoped receiver tests and a read-only live readiness probe. |
-| E — release coordinator | Deployment, Docker, scripts/tooling, CI, shared stack operations, source checkpoints and final evidence/runbooks | Sole owner of builds, stack changes, migrations, rotation, restore and Git publication. |
-| F — independent acceptance | Synthetic PKI/OIDC fixtures, browser/lifecycle integration tests and dead-code audit | Reviews implementation independently; coordinates deletions with each source owner. |
-| Root — audit | Contract decisions, staged-change review, acceptance and final readiness assessment | Audits agent work and requires actual evidence before claiming a gate passed. |
+| Agent | Responsibility |
+|---|---|
+| A — application/contracts | Control/auth/workspace, migration runner (not SQL), shared trust/broker/contracts, caller validity and bounded operator behavior. |
+| B — governance/effects | Rust kernel, policies, new SQL migrations, receivers/worker/evidence, exact signed content and effect/shutdown invariants. |
+| C — builds/supply chain | Deployment/tooling/CI source, pinned builds, image remediation, inventories and operator documentation. |
+| D — independent verification | Proof/identity/revocation/load/browser/lifecycle fixtures, integration checks and evidence verification. |
+| E — dedicated publisher | Sole staging/commit/push owner and shared runtime scheduler; publish audited coherent checkpoints to `main`, never force, and verify the remote SHA. |
+| F — trailing dead-code cleanup | Follow completed batches, prove obsolete consumers, obtain exclusive file handoff, remove safely, obtain independent review and submit a separate cleanup checkpoint through E. |
+| Lead — auditor | Audit contracts, changes, test evidence and release decisions; resolve ownership without doing feature implementation. |
 
-Keep production edits within ownership. Route shared runtime requests through E. Use short source freezes only to capture a coherent immutable compiler input; release editors before Docker builds or stack testing. Run browser baseline first, then metadata mutations and custody transitions serially. Remove only code shown to be unused; retain active development behavior, historical v2 interpretation, migrations and receipts.
+Precise paths and handoff rules are in the Alpha 0.4 plan. Keep three implementation lanes, an independent verifier, the publisher and the cleanup agent active. Source freezes cover only coherent capture. E runs shared builds/database/PKI/restore operations serially; unrelated file owners can continue once the snapshot is fixed. Final candidate cleanup must precede capture and affected validation.
 
-## GovCloud production path after Alpha 0.3
+Preserve active development paths, v2/v3 codecs, migrations, proof history and uncertain receipts. The cleanup agent is not paid by deletion count: interface/route dispatch, SQL lock sentinels, saved startup hooks and intentional deferred-provider seams require consumer checks.
+
+## GovCloud production path after synthetic release qualification
 
 Cloud identifiers and access are deferred at the user's request. Once available, confirm the target account, exact region and approved Bedrock model/features, then implement the application deployment rather than treating the current Terraform scaffold as a deployed service.
 
@@ -53,4 +56,4 @@ Keep on-premises packaging, Kubernetes, arbitrary terminal execution, broad conn
 
 ## Report readiness accurately
 
-Report local functionality, synthetic qualification, release readiness, actual cloud enforcement and formal assessment/authorization as separate results. Current external blockers include GitHub write access (normal main pushes returned HTTP403), the denied native Go advisory feed, unresolved OS-image advisories and an unexecuted hosted CI run. Preserve raw findings and incomplete evidence; do not weaken severity gates or invent waivers. See [ALPHA03_WIP.md](checkpoints/ALPHA03_WIP.md) for local checkpoint status.
+Report local functionality, synthetic qualification, release readiness, actual cloud enforcement and formal assessment/authorization as separate results. GitHub publication is now verified at `5b7b34e`; the earlier HTTP 403 failures are historical. Current blockers include the denied native Go advisory feed, unresolved image findings and unverified hosted CI/provenance/reproducibility. After publication, the CI-status API lookup was Forbidden, so current hosted status is unknown/access blocked rather than assumed unrun. Preserve raw findings and incomplete evidence; do not weaken severity gates or invent waivers. See [ALPHA03_WIP.md](checkpoints/ALPHA03_WIP.md) for local checkpoint status.
