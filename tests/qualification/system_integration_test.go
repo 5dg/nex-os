@@ -88,6 +88,11 @@ func systemClient(t *testing.T, identity string) *http.Client {
 	t.Cleanup(tr.CloseIdleConnections)
 	jar, _ := cookiejar.New(nil)
 	return &http.Client{Transport: tr, Jar: jar, Timeout: 20 * time.Second, CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		// Model a browser navigation after the fixture's credential-form 303.
+		// Go otherwise copies the POST Origin onto the redirected GET callback.
+		if r.Method == http.MethodGet {
+			r.Header.Del("Origin")
+		}
 		if len(via) > 10 {
 			return fmt.Errorf("too many qualification redirects")
 		}
@@ -232,6 +237,9 @@ func TestQualificationSystem(t *testing.T) {
 		}
 	}
 	alice.login("alice")
+	if code, _ := alice.request("POST", "/api/workflow", map[string]any{"operation": "documents"}, "", alice.csrf); code != 403 {
+		t.Fatalf("missing origin status %d", code)
+	}
 	if code, _ := alice.request("POST", "/api/workflow", map[string]any{"operation": "documents"}, alice.origin, ""); code != 403 {
 		t.Fatalf("missing CSRF status %d", code)
 	}
@@ -260,7 +268,7 @@ func TestQualificationSystem(t *testing.T) {
 	}
 	alice.workflow(create("review-bob"), 403, nil)
 	var job contracts.ReviewJob
-	alice.workflow(create("review-alice"), 201, &job)
+	alice.workflow(create("review-alice"), 202, &job)
 	if job.ID == "" {
 		t.Fatal("created job lacks identity")
 	}

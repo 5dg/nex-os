@@ -20,6 +20,9 @@ import uuid
 root = pathlib.Path(__file__).resolve().parent.parent
 output = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else root / '.local/release-evidence')
 output.mkdir(parents=True, exist_ok=True)
+profile = os.environ.get('NEX_RELEASE_PROFILE', 'development')
+if profile not in ('development', 'synthetic-qualification'):
+    raise SystemExit('Unsupported release inventory profile')
 components = {}
 
 def component(ecosystem, name, version, properties=None, hashes=None):
@@ -65,20 +68,27 @@ for package in lock['package']:
     component('cargo', package['name'], package['version'], {'nex:dependency-source': package['source']}, hashes)
 
 inputs = ['go.mod', 'go.sum', 'apps/workspace/package.json', 'apps/workspace/package-lock.json', 'services/guard-kernel/Cargo.toml', 'services/guard-kernel/Cargo.lock', 'deploy/local/compose.yaml']
+if profile == 'synthetic-qualification':
+    inputs += ['deploy/qualification/compose.yaml', 'deploy/qualification/pki.json']
+inputs += [str(path.relative_to(root)) for path in sorted((root / 'deploy').rglob('Dockerfile*'))]
 input_hashes = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in inputs}
 identity = hashlib.sha256(json.dumps(input_hashes, sort_keys=True).encode()).hexdigest()
 bom = {
     'bomFormat': 'CycloneDX', 'specVersion': '1.6', 'version': 1,
     'serialNumber': 'urn:uuid:' + str(uuid.uuid5(uuid.NAMESPACE_URL, 'nex.os/source-inventory/' + identity)),
     'metadata': {
-        'component': {'type': 'application', 'name': 'Nex.os', 'version': 'alpha-0.2'},
-        'properties': [{'name': 'nex:inventory-scope', 'value': 'Source dependencies including development and optional packages; no image OS-package inventory.'}],
+        'component': {'type': 'application', 'name': 'Nex.os', 'version': 'alpha-0.3'},
+        'properties': [{'name': 'nex:inventory-scope', 'value': 'Source dependencies including development and optional packages; no image OS-package inventory.'}, {'name': 'nex:runtime-profile', 'value': profile}],
     },
     'components': [components[key] for key in sorted(components)],
 }
 (output / 'source-sbom.cdx.json').write_text(json.dumps(bom, indent=2) + '\n')
-images = sorted(set(re.findall(r'^\s+image:\s*([^\s#]+)', (root / 'deploy/local/compose.yaml').read_text(), re.MULTILINE)))
-(output / 'inventory-inputs.json').write_text(json.dumps({'schema_version': 1, 'sha256': input_hashes, 'compose_images': images}, indent=2) + '\n')
+if profile == 'synthetic-qualification':
+    compose = json.loads((root / 'deploy/qualification/compose.yaml').read_text())
+    images = sorted({service['image'] for service in compose['services'].values()})
+else:
+    images = sorted(set(re.findall(r'^\s+image:\s*([^\s#]+)', (root / 'deploy/local/compose.yaml').read_text(), re.MULTILINE)))
+(output / 'inventory-inputs.json').write_text(json.dumps({'schema_version': 1, 'profile': profile, 'sha256': input_hashes, 'compose_images': images}, indent=2) + '\n')
 # Source identity remains useful before a first commit, without including ignored
 # local secrets, receipts, build outputs, .git internals or node_modules.
 files = subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=root, capture_output=True, check=True).stdout.split(b'\0')

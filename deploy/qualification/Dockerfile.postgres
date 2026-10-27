@@ -1,0 +1,78 @@
+# syntax=docker/dockerfile:1
+# Qualification-only rebuild: retain PostgreSQL 17/data layout and the upstream
+# gosu 1.19 implementation/dependencies; update its compiler and two OS packages.
+FROM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS gosu-build
+ENV GOTOOLCHAIN=local CGO_ENABLED=0 GOSUMDB=sum.golang.org
+WORKDIR /src/gosu
+
+# Upstream 1.19 tag resolves to this commit. Pin the archive bytes as well as
+# the revision; a changed source or failed CA/checksum verification fails closed.
+RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
+    set -eu; \
+    curl --fail --show-error --silent --location --proto '=https' --tlsv1.2 \
+      --cacert /run/secrets/proxy_ca \
+      https://codeload.github.com/tianon/gosu/tar.gz/6456aaa0f3c854d199d0f037f068eb97515b7513 \
+      -o /tmp/gosu.tar.gz; \
+    echo '33d7537d588ea49458b9509bcf4554bdf5ceacc66da71e5caa1058ea3b689c3b  /tmp/gosu.tar.gz' | sha256sum --check --strict; \
+    tar --extract --gzip --file=/tmp/gosu.tar.gz --strip-components=1; \
+    rm /tmp/gosu.tar.gz; \
+    grep -Fx 'const Version = "1.19"' version.go
+
+# Go's checksum database and upstream go.sum remain enabled. Do not update module
+# versions, strip build metadata, or retain this session's proxy CA in a layer.
+RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
+    set -eu; \
+    export SSL_CERT_FILE=/run/secrets/proxy_ca; \
+    go mod download; \
+    go mod verify; \
+    mkdir -p /out; \
+    go build -mod=readonly -buildvcs=false -trimpath -ldflags='-w' -o /out/gosu .; \
+    go version -m /out/gosu > /out/gosu-build.txt; \
+    grep -F 'go1.27.3' /out/gosu-build.txt; \
+    /out/gosu --version; \
+    /out/gosu nobody true; \
+    printf '%s\n' \
+      'upstream=https://github.com/tianon/gosu' \
+      'version=1.19' \
+      'revision=6456aaa0f3c854d199d0f037f068eb97515b7513' \
+      'archive-sha256=33d7537d588ea49458b9509bcf4554bdf5ceacc66da71e5caa1058ea3b689c3b' \
+      >> /out/gosu-build.txt
+
+FROM postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27
+LABEL org.nex.qualification.postgres.base="postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27" \
+      org.nex.qualification.gosu.revision="6456aaa0f3c854d199d0f037f068eb97515b7513" \
+      org.nex.qualification.gosu.source-sha256="33d7537d588ea49458b9509bcf4554bdf5ceacc66da71e5caa1058ea3b689c3b" \
+      org.nex.qualification.gosu.compiler="go1.27.3" \
+      org.nex.qualification.openssl.version="3.0.22-1~deb12u2"
+
+# Keep the distribution's signed Debian sources/keyring. Limit this transaction
+# to that existing source file: the unrelated PGDG repository need not be reached.
+# APT still verifies repository signatures, expiry and downloaded package hashes.
+RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
+    set -eu; \
+    test -f /etc/apt/sources.list.d/debian.sources; \
+    mkdir -p /tmp/nex-debian-sources; \
+    cp /etc/apt/sources.list.d/debian.sources /tmp/nex-debian-sources/debian.sources; \
+    sed -i 's|http://deb.debian.org/|https://deb.debian.org/|g' /tmp/nex-debian-sources/debian.sources; \
+    apt-get -o Dir::Etc::sourcelist=/dev/null \
+      -o Dir::Etc::sourceparts=/tmp/nex-debian-sources \
+      -o Acquire::https::CaInfo=/run/secrets/proxy_ca update; \
+    apt-get -o Dir::Etc::sourcelist=/dev/null \
+      -o Dir::Etc::sourceparts=/tmp/nex-debian-sources \
+      -o Acquire::https::CaInfo=/run/secrets/proxy_ca \
+      install --yes --only-upgrade --no-remove --no-install-recommends \
+      libssl3=3.0.22-1~deb12u2 openssl=3.0.22-1~deb12u2; \
+    test "$(dpkg-query -W -f='${Version}' libssl3)" = '3.0.22-1~deb12u2'; \
+    test "$(dpkg-query -W -f='${Version}' openssl)" = '3.0.22-1~deb12u2'; \
+    rm -rf /var/lib/apt/lists/* /tmp/nex-debian-sources
+
+COPY --from=gosu-build --chmod=0755 /out/gosu /usr/local/bin/gosu
+COPY --from=gosu-build --chmod=0444 /out/gosu-build.txt /usr/local/share/nex/gosu-build.txt
+RUN set -eu; \
+    test "$PG_MAJOR" = 17; \
+    test "$PGDATA" = /var/lib/postgresql/data; \
+    gosu --version; \
+    gosu nobody true; \
+    gosu postgres sh -c 'test "$(id -u)" = 999 && test "$(id -g)" = 999'; \
+    postgres --version
+# The upstream ENTRYPOINT, CMD, UID transition, volume and stop signal are inherited.

@@ -17,6 +17,9 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+PROJECT = os.environ.get('NEX_QUAL_PROJECT', 'nex-qualification')
+if PROJECT not in ('nex-qualification', 'nex-qualification-restore'):
+    raise SystemExit('Only the primary and isolated restore qualification projects are allowed')
 ENDPOINTS = {
     'postgres': (55432, 5432), 'guard': (55051, 50051),
     'control': (18080, 8080), 'opa-edge': (18181, 8181),
@@ -33,11 +36,11 @@ def endpoints():
     result = []
     for service, (public_port, private_port) in ENDPOINTS.items():
         try:
-            info = json.loads(docker('inspect', f'nex-qualification-{service}-1'))[0]
+            info = json.loads(docker('inspect', f'{PROJECT}-{service}-1'))[0]
         except (subprocess.CalledProcessError, IndexError):
             continue  # The initial core-only bootstrap does not start the workspace.
         labels = info['Config'].get('Labels', {})
-        if (labels.get('com.docker.compose.project') != 'nex-qualification'
+        if (labels.get('com.docker.compose.project') != PROJECT
                 or labels.get('com.docker.compose.service') != service):
             raise SystemExit('Qualification container ownership mismatch')
         if not info['State']['Running']:
@@ -51,7 +54,7 @@ def endpoints():
             continue
         name, address = sorted(addresses)[0]
         network = json.loads(docker('network', 'inspect', name))[0]
-        if not network['Internal'] or network.get('Labels', {}).get('com.docker.compose.project') != 'nex-qualification':
+        if not network['Internal'] or network.get('Labels', {}).get('com.docker.compose.project') != PROJECT:
             raise SystemExit('Relay destination must belong to an internal qualification network')
         result.append({'service': service, 'listen': public_port, 'address': address, 'port': private_port})
     return result

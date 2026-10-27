@@ -1,5 +1,7 @@
 # Next goal: Alpha 0.3 authenticated boundaries and release qualification
 
+Historical milestone proposal. For executed Alpha 0.3 results see [ALPHA_0_3.md](ALPHA_0_3.md); the current development path and remaining release/cloud gates are in [BUILD_PLAN.md](BUILD_PLAN.md).
+
 Planning review: 2026-10-27. This is a proposed development goal, not an instruction to deploy or publish configuration. Preserve [Alpha 0.2](ALPHA_0_2.md) and its [validation evidence](VALIDATION.md).
 
 ## Copyable goal

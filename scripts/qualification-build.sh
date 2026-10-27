@@ -16,8 +16,9 @@ go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/qualification-pki ./tes
 build_image() {
  env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
   docker --host=unix:///var/run/docker.sock build --secret "id=proxy_ca,src=${NEX_BUILD_CA:-/etc/ssl/certs/ca-certificates.crt}" \
-  --label "org.nex.qualification.builder=$task_mode" -f "$1" -t "$2" .
+  --label "org.nex.qualification.candidate-mode=$task_mode" --label "org.nex.qualification.builder=${3:-$task_mode}" -f "$1" -t "$2" .
 }
+build_image deploy/qualification/Dockerfile.postgres nex-postgres:qualification container
 if [[ "$task_mode" == host ]]; then
  NEX_BUILD_QUALIFICATION_FIXTURES=1 ./scripts/build-local.sh
  build_image deploy/local/Dockerfile.control.local nex-control:qualification
@@ -28,5 +29,5 @@ else
  build_image deploy/qualification/Dockerfile.guard nex-guard:qualification
  build_image deploy/qualification/Dockerfile.fixtures nex-qualification-fixtures:local
 fi
-build_image deploy/local/Dockerfile.workspace nex-workspace:qualification
+build_image deploy/local/Dockerfile.workspace nex-workspace:qualification container
 printf '%s\n' "$task_mode" > .local/qualification-build-evidence/builder-mode

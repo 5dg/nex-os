@@ -2,7 +2,7 @@
   "name": "nex-qualification",
   "services": {
     "postgres": {
-      "image": "postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27",
+      "image": "nex-postgres:qualification",
       "environment": {
         "POSTGRES_DB": "nex",
         "POSTGRES_USER": "nex",

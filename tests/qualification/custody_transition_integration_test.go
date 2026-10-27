@@ -5,8 +5,10 @@ package qualification_test
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/5dg/nex-os/packages/contracts"
 	"github.com/5dg/nex-os/packages/evidence"
 )
 
@@ -28,6 +31,13 @@ func TestQualificationCustodyTransition(t *testing.T) {
 		t.Fatal("NEX_QUAL_TRANSITION must explicitly select rotation or restore")
 	}
 	state := os.Getenv("NEX_QUAL_STATE_DIR")
+	afterState := state
+	if mode == "restore" {
+		afterState = os.Getenv("NEX_QUAL_RESTORE_STATE_DIR")
+		if !filepath.IsAbs(afterState) || filepath.Clean(afterState) == filepath.Clean(state) {
+			t.Fatal("restore requires a distinct absolute NEX_QUAL_RESTORE_STATE_DIR")
+		}
+	}
 	signals := os.Getenv("NEX_QUAL_TRANSITION_SIGNAL_DIR")
 	if !filepath.IsAbs(state) || !filepath.IsAbs(signals) {
 		t.Fatal("absolute qualification state and transition signal directories required")
@@ -70,6 +80,43 @@ func TestQualificationCustodyTransition(t *testing.T) {
 	if e != nil || len(beforeJournal) == 0 {
 		t.Fatal("pre-transition real signed journal required")
 	}
+	completedJob := ""
+	for i := len(beforeJournal) - 1; i >= 0; i-- {
+		event := beforeJournal[i].Event
+		if event.Action == "export.completed" && event.ActorID == "alice" && event.JobID != "" {
+			completedJob = event.JobID
+			break
+		}
+	}
+	if completedJob == "" {
+		t.Fatal("pre-transition actual completed Alice export evidence required")
+	}
+	var beforeJob contracts.ReviewJob
+	oldBrowser.workflow(map[string]any{"operation": "job", "id": completedJob}, 200, &beforeJob)
+	if beforeJob.State != "completed" || beforeJob.Answer == "" || beforeJob.Provider != "development" || beforeJob.ExportID == "" {
+		t.Fatal("pre-transition protected completed export job unavailable")
+	}
+	type timelineEvent struct {
+		evidence.Event
+		Proof    evidence.Proof `json:"integrity_reference"`
+		Verified bool           `json:"integrity_verified"`
+	}
+	var beforeEvents []timelineEvent
+	oldBrowser.workflow(map[string]any{"operation": "events", "id": completedJob}, 200, &beforeEvents)
+	if len(beforeEvents) == 0 {
+		t.Fatal("pre-transition signed database timeline absent")
+	}
+	for _, event := range beforeEvents {
+		if !event.Verified || !evidence.VerifyEvent(ed25519.PublicKey(public), event.Proof, event.Event) {
+			t.Fatal("pre-transition database event does not match signed custody")
+		}
+	}
+	// Job and timeline reads themselves append current-authority audit events.
+	// Pin the custody head after those authenticated reads have committed.
+	beforeJournal, e = evidence.Verify(filepath.Join(state, "evidence"), ed25519.PublicKey(public), nil)
+	if e != nil || len(beforeJournal) == 0 {
+		t.Fatal("pre-transition audited reads did not leave a valid custody journal")
+	}
 	before := custodySnapshot(t, state)
 	if len(before) == 0 {
 		t.Fatal("run actual browser review/approve/export before custody transition")
@@ -100,7 +147,7 @@ func TestQualificationCustodyTransition(t *testing.T) {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	afterCA, e := os.ReadFile(filepath.Join(state, "current-pki", "ca.crt"))
+	afterCA, e := os.ReadFile(filepath.Join(afterState, "current-pki", "ca.crt"))
 	if e != nil {
 		t.Fatal("post-transition qualification CA unavailable")
 	}
@@ -109,6 +156,20 @@ func TestQualificationCustodyTransition(t *testing.T) {
 	}
 	if !time.Now().Add(5 * time.Second).Before(expires) {
 		t.Fatal("old session reached credential expiry; cannot attribute invalidation to restart")
+	}
+	if mode == "rotation" {
+		response, err := oldBrowser.client.Get(oldBrowser.origin + "/api/session")
+		if err == nil {
+			response.Body.Close()
+			t.Fatal("prior CA still authenticated the rotated workspace")
+		}
+		var unknown x509.UnknownAuthorityError
+		if !errors.As(err, &unknown) {
+			t.Fatal("prior CA was not rejected specifically by verified trust after rotation")
+		}
+	}
+	if mode == "restore" {
+		t.Setenv("NEX_QUAL_STATE_DIR", afterState)
 	}
 	// Preserve the old session handle but use newly trusted server CA. This
 	// isolates session invalidation from the expected old-CA TLS rejection.
@@ -120,17 +181,41 @@ func TestQualificationCustodyTransition(t *testing.T) {
 	newBrowser := newSystemBrowser(t)
 	newBrowser.login("alice")
 	newBrowser.workflow(map[string]any{"operation": "documents"}, 200, &visible)
-	after := custodySnapshot(t, state)
+	var afterJob contracts.ReviewJob
+	newBrowser.workflow(map[string]any{"operation": "job", "id": completedJob}, 200, &afterJob)
+	if afterJob != beforeJob {
+		t.Fatal("protected completed job/result differs through post-transition application")
+	}
+	var afterEvents []timelineEvent
+	newBrowser.workflow(map[string]any{"operation": "events", "id": completedJob}, 200, &afterEvents)
+	if len(afterEvents) < len(beforeEvents) {
+		t.Fatal("historical signed database timeline disappeared across custody transition")
+	}
+	for i, event := range afterEvents {
+		if !event.Verified || !evidence.VerifyEvent(ed25519.PublicKey(public), event.Proof, event.Event) {
+			t.Fatal("restored database timeline does not match original signed custody")
+		}
+		if i < len(beforeEvents) {
+			beforeJSON, _ := json.Marshal(beforeEvents[i])
+			afterJSON, _ := json.Marshal(event)
+			if string(beforeJSON) != string(afterJSON) {
+				t.Fatal("historical signed database timeline prefix changed")
+			}
+		} else if event.Action != "document.read" || event.Producer != "control" || event.ActorID != "alice" || event.JobID != completedJob {
+			t.Fatal("unexpected post-transition job mutation beyond audited authority reads")
+		}
+	}
+	after := custodySnapshot(t, afterState)
 	for path, digest := range before {
 		if after[path] != digest {
 			t.Fatalf("prior custody bytes changed or disappeared: %s", path)
 		}
 	}
-	afterPublic, e := os.ReadFile(filepath.Join(state, "evidence-public"))
+	afterPublic, e := os.ReadFile(filepath.Join(afterState, "evidence-public"))
 	if e != nil || string(afterPublic) != string(public) {
 		t.Fatal("historical evidence verification key changed during transport transition")
 	}
-	afterJournal, e := evidence.Verify(filepath.Join(state, "evidence"), ed25519.PublicKey(public), nil)
+	afterJournal, e := evidence.Verify(filepath.Join(afterState, "evidence"), ed25519.PublicKey(public), nil)
 	if e != nil || len(afterJournal) < len(beforeJournal) {
 		t.Fatal("historical journal no longer verifies")
 	}

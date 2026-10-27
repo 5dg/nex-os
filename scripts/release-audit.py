@@ -16,6 +16,9 @@ import sys
 root = pathlib.Path(__file__).resolve().parent.parent
 output = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else root / '.local/release-evidence')
 output.mkdir(parents=True, exist_ok=True)
+profile = os.environ.get('NEX_RELEASE_PROFILE', 'development')
+if profile not in ('development', 'synthetic-qualification'):
+    raise SystemExit('Unsupported release audit profile')
 checks = []
 
 def executable_digest(command):
@@ -73,9 +76,27 @@ run('go-vulnerabilities', ['govulncheck', '-json', './...'])
 run('rust-vulnerabilities', ['cargo-audit', 'audit', '--file', 'services/guard-kernel/Cargo.lock', '--json'])
 run('npm-vulnerabilities', ['npm', 'audit', '--json', '--audit-level=low'], root / 'apps/workspace')
 # Built-image scans include OS packages; never silently substitute a source-only scan.
-for name in ('control', 'guard', 'workspace'):
-    run(name + '-image-vulnerabilities', ['trivy', 'image', '--db-repository', 'ghcr.io/aquasecurity/trivy-db:2', '--format', 'json', '--exit-code', '1', '--severity', 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL', '--image-src', 'docker', 'nex-' + name + ':local'])
+images = {name: 'nex-' + name + ':local' for name in ('control', 'guard', 'workspace')}
+if profile == 'synthetic-qualification':
+    images = {name: 'nex-' + name + ':qualification' for name in ('control', 'guard', 'workspace')}
+    images['qualification-fixtures'] = 'nex-qualification-fixtures:local'
+    compose = json.loads((root / 'deploy/qualification/compose.yaml').read_text())
+    for service in ('postgres', 'opa'):
+        images[service] = compose['services'][service]['image']
+    environment = {key: value for key, value in os.environ.items() if key not in ('DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH')}
+    identity = subprocess.run(['docker', '--host=unix:///var/run/docker.sock', 'image', 'inspect', *images.values()], env=environment, capture_output=True, text=True)
+    checks.append({'name': 'image-identities', 'status': 'passed' if identity.returncode == 0 else 'failed', 'exit_code': identity.returncode, 'reason': 'Actual local image metadata; no rebuild or registry digest attestation inferred.'})
+    if identity.returncode == 0:
+        values = json.loads(identity.stdout)
+        public = [{'id': item['Id'], 'repo_tags': item.get('RepoTags', []), 'repo_digests': item.get('RepoDigests', []), 'labels': item['Config'].get('Labels', {}), 'os': item['Os'], 'architecture': item['Architecture'], 'rootfs': item['RootFS']} for item in values]
+        (output / 'image-identities.json').write_text(json.dumps({'profile': profile, 'images': public}, indent=2) + '\n')
+    else:
+        (output / 'image-identities.error').write_text(identity.stderr)
+for name, image in images.items():
+    run(name + '-image-vulnerabilities', ['trivy', 'image', '--db-repository', 'ghcr.io/aquasecurity/trivy-db:2', '--format', 'json', '--list-all-pkgs', '--exit-code', '1', '--severity', 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL', '--image-src', 'docker', image])
+    if profile == 'synthetic-qualification' and (output / (name + '-image-vulnerabilities.stdout')).exists():
+        run(name + '-image-sbom', ['trivy', 'convert', '--format', 'cyclonedx', '--output', str(output / (name + '-image-sbom.cdx.json')), str(output / (name + '-image-vulnerabilities.stdout'))])
 
 complete = all(check['status'] == 'passed' for check in checks)
-(output / 'vulnerability-status.json').write_text(json.dumps({'schema_version': 1, 'gate': 'passed' if complete else 'blocked', 'checks': checks}, indent=2) + '\n')
+(output / 'vulnerability-status.json').write_text(json.dumps({'schema_version': 1, 'profile': profile, 'gate': 'passed' if complete else 'blocked', 'checks': checks}, indent=2) + '\n')
 sys.exit(0 if complete else 1)

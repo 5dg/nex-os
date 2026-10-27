@@ -31,12 +31,20 @@ jobs:
       - name: Static checks
         run: |
           go vet ./...
+          go test -mod=readonly -race ./...
           cd apps/workspace
           npm run typecheck
+          npm test
       - name: Build and start the development stack
         run: make dev
       - name: Functional and negative checks
         run: make verify-local
+      - name: Isolated current-source synthetic qualification
+        run: |
+          make down
+          ./scripts/qualification.sh build-host
+          ./scripts/qualification.sh up
+          ./scripts/verify-qualification.sh
       - name: Terraform validation and mock tests
         run: |
           make terraform-check
@@ -51,14 +59,24 @@ jobs:
       - name: Vulnerability release gate
         if: always()
         run: ./scripts/release-audit.py .local/release-evidence
+      - name: Qualification image identities, OS SBOMs and vulnerability gate
+        if: always()
+        env:
+          NEX_RELEASE_PROFILE: synthetic-qualification
+        run: ./scripts/release-audit.py "$PWD/.local/qualification-release-evidence"
       - name: Retain release evidence including incomplete scan results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: alpha-integrity-release-evidence
-          path: .local/release-evidence
+          path: |
+            .local/release-evidence
+            .local/qualification-release-evidence
           include-hidden-files: true
           if-no-files-found: warn
       - name: Cleanup
         if: always()
-        run: make down
+        run: |
+          if test -f .local/qualification-restore/synthetic-qualification.state; then NEX_QUAL_PROJECT=nex-qualification-restore NEX_QUAL_STATE_DIR="$PWD/.local/qualification-restore" ./scripts/qualification.sh down; fi
+          if test -f .local/qualification/synthetic-qualification.state; then ./scripts/qualification.sh down; fi
+          make down

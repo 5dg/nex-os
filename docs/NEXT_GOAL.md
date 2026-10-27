@@ -1,5 +1,7 @@
 # Next goal: Nex.os Alpha 0.2 execution integrity
 
+Historical milestone proposal. For executed Alpha 0.3 results see [ALPHA_0_3.md](ALPHA_0_3.md); the current development path and remaining release/cloud gates are in [BUILD_PLAN.md](BUILD_PLAN.md).
+
 ## Goal
 
 Make the Rust governance kernel the authoritative owner of exactly what may execute, and make interrupted operations recoverable without weakening approvals or repeating uncertain effects. Preserve the working Go/Rust/gRPC review–approval–export workflow and its signed evidence.
