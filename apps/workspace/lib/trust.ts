@@ -71,7 +71,7 @@ function verifyOwnChain(leaf: X509Certificate, intermediates: X509Certificate[],
 }
 export type WorkspaceConfig = {
   origin: URL; issuer: URL; issuerText: string; redirectURI: string;
-  clientID: string; audience: string; scope: string; secret: string;
+  clientID: string; secret: string;
   control: URL; ca: Buffer; cert: Buffer; key: Buffer;
   roots: readonly X509Certificate[]; ownTimePath: readonly X509Certificate[];
 };
@@ -107,7 +107,7 @@ export function workspaceConfig(): WorkspaceConfig {
     tls.createSecureContext({ ca, cert, key, minVersion: "TLSv1.3" });
     const secret = file("OIDC_CLIENT_SECRET_FILE", 4096).toString("utf8").trim();
     if (secret.length < 16 || /[\r\n\0]/.test(secret)) throw new Error("Confidential fixture client secret required");
-    configuration = { origin, issuer, issuerText: process.env.OIDC_ISSUER!, redirectURI, clientID, audience, scope, secret, control, ca, cert, key, roots: Object.freeze(roots), ownTimePath: Object.freeze([...chain, ...roots]) };
+    configuration = { origin, issuer, issuerText: process.env.OIDC_ISSUER!, redirectURI, clientID, secret, control, ca, cert, key, roots: Object.freeze(roots), ownTimePath: Object.freeze([...chain, ...roots]) };
     return configuration;
   } catch { throw new Error("Workspace trust configuration is invalid"); }
 }
