@@ -21,8 +21,8 @@ func poolConfig(raw string, profile trust.Profile, command string) (*pgxpool.Con
 		return cfg, nil
 	}
 	parsed, e := url.Parse(raw)
-	if e != nil || parsed.Hostname() == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
-		return nil, errors.New("qualification database URI required")
+	if e != nil || parsed.Hostname() != "postgres" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
+		return nil, errors.New("qualification database URI requires postgres host")
 	}
 	modes := parsed.Query()["sslmode"]
 	if len(modes) != 1 || modes[0] != "verify-full" || cfg.ConnConfig.TLSConfig == nil {

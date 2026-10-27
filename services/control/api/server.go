@@ -45,10 +45,7 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 503, "CONFIGURATION_UNAVAILABLE", "Required qualification dependency absent")
 			return
 		}
-		database, stop := context.WithTimeout(probe, 3*time.Second)
-		dbErr := s.DB.Ping(database)
-		stop()
-		if dbErr != nil || s.Policy.Health(probe) != nil || s.evidenceReady(probe) != nil {
+		if s.dependenciesReady(probe) != nil {
 			fail(w, 503, "DEPENDENCY_UNAVAILABLE", "Required dependency unavailable")
 			return
 		}
@@ -111,6 +108,10 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
+	if s.qualification() {
+		fail(w, 404, "NOT_AVAILABLE", "Direct development route unavailable")
+		return
+	}
 	identity, err := s.Auth.Verify(r)
 	if err != nil {
 		fail(w, 401, "UNAUTHENTICATED", "Valid bearer token required")

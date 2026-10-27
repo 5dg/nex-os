@@ -29,6 +29,29 @@ export function assertCertificateTime(certificate: X509Certificate, now = Date.n
   const start = Date.parse(certificate.validFrom), end = Date.parse(certificate.validTo);
   if (!Number.isFinite(start) || !Number.isFinite(end) || now < start || now >= end) throw new Error("Workload certificate is outside its validity period");
 }
+export function assertCertificatePathTime(certificates: readonly X509Certificate[], now = Date.now()): void {
+  if (!certificates.length || certificates.length > 16) throw new Error("Bounded certificate path required");
+  for (const certificate of certificates) assertCertificateTime(certificate, now);
+}
+function nativePeerPath(socket: tls.TLSSocket, roots: readonly X509Certificate[]): X509Certificate[] {
+  // The socket has already passed Node/OpenSSL PKIX and DNS verification. Walk
+  // its verified native chain only to retain bounded validity evidence; this is
+  // not a replacement certificate-path authorization algorithm.
+  if (!socket.authorized) throw new Error("Native TLS authorization required");
+  let current: tls.DetailedPeerCertificate | undefined = socket.getPeerCertificate(true);
+  const result: X509Certificate[] = [], seen = new Set<string>();
+  while (current?.raw) {
+    const certificate = new X509Certificate(current.raw);
+    if (seen.has(certificate.fingerprint256)) break;
+    if (result.length >= 16) throw new Error("Peer certificate path exceeds limit");
+    seen.add(certificate.fingerprint256); result.push(certificate);
+    current = current.issuerCertificate;
+  }
+  const anchor = result.at(-1);
+  if (!anchor || !roots.some(root => root.fingerprint256 === anchor.fingerprint256)) throw new Error("Verified peer trust anchor is unavailable");
+  assertCertificatePathTime(result);
+  return result;
+}
 function pemCertificates(bytes: Buffer): X509Certificate[] {
   if (bytes.length > 128 * 1024) throw new Error("Certificate input exceeds limit");
   const text = bytes.toString("utf8"), blocks = text.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
@@ -50,6 +73,7 @@ export type WorkspaceConfig = {
   origin: URL; issuer: URL; issuerText: string; redirectURI: string;
   clientID: string; audience: string; scope: string; secret: string;
   control: URL; ca: Buffer; cert: Buffer; key: Buffer; own: X509Certificate;
+  roots: readonly X509Certificate[]; ownTimePath: readonly X509Certificate[];
 };
 let configuration: WorkspaceConfig | undefined;
 function file(name: string, limit = 128 * 1024): Buffer {
@@ -83,7 +107,7 @@ export function workspaceConfig(): WorkspaceConfig {
     tls.createSecureContext({ ca, cert, key, minVersion: "TLSv1.3" });
     const secret = file("OIDC_CLIENT_SECRET_FILE", 4096).toString("utf8").trim();
     if (secret.length < 16 || /[\r\n\0]/.test(secret)) throw new Error("Confidential fixture client secret required");
-    configuration = { origin, issuer, issuerText: process.env.OIDC_ISSUER!, redirectURI, clientID, audience, scope, secret, control, ca, cert, key, own };
+    configuration = { origin, issuer, issuerText: process.env.OIDC_ISSUER!, redirectURI, clientID, audience, scope, secret, control, ca, cert, key, own, roots: Object.freeze(roots), ownTimePath: Object.freeze([...chain, ...roots]) };
     return configuration;
   } catch { throw new Error("Workspace trust configuration is invalid"); }
 }
@@ -101,7 +125,7 @@ export async function verifiedRequest(target: URL, peer: "control" | "oidc", ini
   const config = workspaceConfig();
   const expected = peer === "control" ? config.control.origin : config.issuer.origin;
   if (target.origin !== expected || target.username || target.password || target.protocol !== "https:" || target.hash) throw new Error("Unexpected service destination");
-  assertCertificateTime(config.own);
+  assertCertificatePathTime(config.ownTimePath);
   let body: Buffer | undefined;
   if (init.body instanceof URLSearchParams) body = Buffer.from(init.body.toString());
   else if (typeof init.body === "string" || init.body instanceof Uint8Array) body = Buffer.from(init.body);
@@ -124,14 +148,19 @@ export async function verifiedRequest(target: URL, peer: "control" | "oidc", ini
         } catch { return new Error("Service workload identity denied"); }
       },
     }, response => {
+      let verifiedPath: X509Certificate[];
+      try {
+        if (!(response.socket instanceof tls.TLSSocket)) throw new Error("TLS connection required");
+        verifiedPath = nativePeerPath(response.socket, config.roots);
+      } catch (error) { response.destroy(); reject(error); return; }
       const chunks: Buffer[] = []; let size = 0;
       response.on("data", (chunk: Buffer) => { size += chunk.length; if (size > limit) { response.destroy(new Error("Service response exceeds limit")); return; } chunks.push(chunk); });
       response.on("error", reject);
       response.on("end", () => {
         try {
-          assertCertificateTime(config.own);
+          assertCertificatePathTime(config.ownTimePath);
           if (!peerCertificate) throw new Error("Missing verified peer identity");
-          assertCertificateTime(peerCertificate);
+          assertCertificatePathTime(verifiedPath);
           const out = new Headers();
           for (const [name, value] of Object.entries(response.headers)) if (value !== undefined) out.set(name, Array.isArray(value) ? value.join(", ") : value);
           const status = response.statusCode || 502;

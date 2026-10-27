@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as x509 from '@peculiar/x509';
-import { certificateRole, assertPeerIdentity, assertCertificateTime, workspaceConfig } from '../lib/trust.ts';
+import { certificateRole, assertPeerIdentity, assertCertificateTime, assertCertificatePathTime, workspaceConfig } from '../lib/trust.ts';
 import { SessionStore, sessions, cookie, cookieHeader, SESSION_COOKIE, LOGIN_COOKIE, IDLE_MILLISECONDS, TOTAL_MILLISECONDS } from '../lib/sessions.ts';
 import { requireSession, sessionView, logout } from '../lib/auth.ts';
 import { qualificationWorkflow } from '../lib/workflow.ts';
@@ -74,7 +74,11 @@ test('DER workload identity rejects wrong role, DNS text spoof, CN fallback and 
   const duplicateSAN = await x509.X509CertificateGenerator.createSelfSigned({ name: 'CN=control', keys: duplicateKeys, extensions: [new x509.SubjectAlternativeNameExtension([{ type: 'dns', value: 'control' }, { type: 'url', value: 'spiffe://nex.local/service/control' }]), new x509.SubjectAlternativeNameExtension([{ type: 'url', value: 'spiffe://nex.local/service/guard' }])] });
   assert.throws(() => certificateRole(new Uint8Array(duplicateSAN.rawData)), 'the first of two SAN extensions must never choose identity');
   const expired = await leaf(['spiffe://nex.local/service/control'], ['control'], { notBefore: new Date(Date.now() - 120_000), notAfter: new Date(Date.now() - 60_000) });
-  assert.throws(() => assertCertificateTime(new X509Certificate(expired.raw)));
+  const expiredEntry = new X509Certificate(expired.raw), liveEntry = new X509Certificate(valid.raw);
+  assert.throws(() => assertCertificateTime(expiredEntry));
+  assert.doesNotThrow(() => assertCertificatePathTime([liveEntry]));
+  assert.throws(() => assertCertificatePathTime([liveEntry, expiredEntry]), 'an expired issuer cannot hide behind a live leaf');
+  assert.throws(() => assertCertificatePathTime([expiredEntry, liveEntry]));
 });
 
 test('qualification sessions enforce origin/CSRF, omit tokens and cannot select another identity', async t => {

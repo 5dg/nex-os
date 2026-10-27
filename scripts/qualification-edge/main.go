@@ -31,6 +31,9 @@ func canonicalOrigin(value string) (*url.URL, error) {
 }
 func untrustedIdentityHeader(name string) bool {
 	name = strings.ToLower(name)
+	if name == "x-nex-csrf" {
+		return false
+	} // Session-bound browser proof, never a role/identity claim.
 	return name == "authorization" || name == "proxy-authorization" || name == "forwarded" || name == "remote-user" || strings.HasPrefix(name, "x-forwarded-") || strings.HasPrefix(name, "x-client-") || strings.HasPrefix(name, "x-auth-") || strings.HasPrefix(name, "x-user-") || strings.HasPrefix(name, "x-tenant-") || strings.HasPrefix(name, "x-role") || strings.HasPrefix(name, "x-remote-") || strings.HasPrefix(name, "x-ssl-") || strings.HasPrefix(name, "ssl-client-") || strings.HasPrefix(name, "x-nex-")
 }
 func handler(origin *url.URL, transport http.RoundTripper) http.Handler {

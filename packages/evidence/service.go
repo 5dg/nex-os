@@ -58,6 +58,10 @@ func HandlerWithPeer(journal *Journal, controlKey, kernelKey []byte, peer func(*
 		})
 
 		mux.HandleFunc("POST /challenge/"+source, func(w http.ResponseWriter, r *http.Request) {
+			if len(key) != 32 {
+				http.Error(w, "identity configuration unavailable", 503)
+				return
+			}
 			if peer != nil && peer(r, source) != nil {
 				http.Error(w, "peer identity denied", 403)
 				return

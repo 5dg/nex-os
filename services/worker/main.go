@@ -53,8 +53,8 @@ func main() {
 	if e != nil {
 		log.Fatal(e)
 	}
-	if profile == trust.Qualification && os.Getenv("APP_ENV") != "development" {
-		log.Fatal("synthetic worker requires development environment")
+	if e = workerEnvironment(profile, os.Getenv("APP_ENV")); e != nil {
+		log.Fatal(e)
 	}
 	cfg, e := trust.Load(profile, trust.Worker)
 	if e != nil {
@@ -132,4 +132,17 @@ func main() {
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+func workerEnvironment(profile trust.Profile, environment string) error {
+	if profile != trust.Development && profile != trust.Qualification {
+		return errors.New("unsupported worker profile")
+	}
+	if environment != "" && environment != "development" {
+		return errors.New("synthetic worker requires development environment")
+	}
+	if profile == trust.Qualification && environment != "development" {
+		return errors.New("qualification requires explicit development environment")
+	}
+	return nil
 }

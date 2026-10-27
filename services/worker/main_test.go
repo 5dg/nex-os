@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/5dg/nex-os/packages/trust"
 	"io"
 	"net/http"
 	"strings"
@@ -16,5 +17,22 @@ func TestWorkerAcceptsOnlyBoundedFixedWorkflowLease(t *testing.T) {
 		if _, e := readLease(&http.Response{Body: io.NopCloser(strings.NewReader(body))}); e == nil {
 			t.Fatal("unbounded or non-fixed lease accepted")
 		}
+	}
+}
+
+func TestWorkerSyntheticEnvironmentCannotStartProduction(t *testing.T) {
+	for _, profile := range []trust.Profile{trust.Development, trust.Qualification} {
+		if workerEnvironment(profile, "production") == nil {
+			t.Fatal("production workerstarted", profile)
+		}
+		if e := workerEnvironment(profile, "development"); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if workerEnvironment(trust.Qualification, "") == nil {
+		t.Fatal("qualification accepted undeclaredenvironment")
+	}
+	if e := workerEnvironment(trust.Development, ""); e != nil {
+		t.Fatal("legacy development unsetenvironment rejected", e)
 	}
 }

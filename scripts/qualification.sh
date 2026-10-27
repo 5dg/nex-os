@@ -10,7 +10,7 @@ export NEX_QUAL_STATE_DIR="${NEX_QUAL_STATE_DIR:-$PWD/.local/qualification}"
 export NEX_UID="$(id -u)" NEX_GID="$(id -g)"
 compose() {
  env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
-  docker --host=unix:///var/run/docker.sock compose -f deploy/qualification/compose.yaml "$@"
+  docker --host=unix:///var/run/docker.sock compose --project-name nex-qualification -f deploy/qualification/compose.yaml "$@"
 }
 initialize() {
  python3 scripts/qualification-init.py --state "$NEX_QUAL_STATE_DIR"
@@ -30,9 +30,14 @@ case "${1:-}" in
  up|start)
   initialize
   compose up -d --wait postgres
+  # initdb may have completed before a temporary-server startup failure. Finish
+  # only the missing expected database; never recreate/reset an existing cluster.
+  task_database_exists="$(compose exec -T postgres psql -U nex -d postgres -X -t -A -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM pg_database WHERE datname='nex'")"
+  if [[ "$task_database_exists" == 0 ]]; then compose exec -T postgres psql -U nex -d postgres -X -v ON_ERROR_STOP=1 -c 'CREATE DATABASE nex'; fi
   compose run --rm migrate
   compose run --rm seed
   compose up -d --no-build --pull never issuer opa-edge opa evidence guard model executor control worker workspace workspace-edge
+  python3 scripts/qualification-relay.py start --state "$NEX_QUAL_STATE_DIR"
   for attempt in {1..60}; do
    if ready; then echo 'Synthetic qualification stack ready; no production/CUI authorization.';exit 0;fi
    sleep 1
@@ -44,12 +49,15 @@ case "${1:-}" in
   # All data is retained. Generate an additional trust generation, then restart
   # every peer so immutable trust snapshots change together. Existing sessions
   # are intentionally invalidated by process restart.
+  python3 scripts/qualification-relay.py stop --state "$NEX_QUAL_STATE_DIR"
   compose stop worker control workspace-edge workspace model executor guard evidence opa opa-edge issuer postgres
   python3 scripts/qualification-init.py --state "$NEX_QUAL_STATE_DIR" --rotate-pki
   exec "$0" up
   ;;
  ready) ready ;;
- down) compose down ;; # Never remove the qualification volume or historical keys.
+ down)
+  python3 scripts/qualification-relay.py stop --state "$NEX_QUAL_STATE_DIR"
+  compose down ;; # Never remove the qualification volume or historical keys.
  logs) compose logs --tail=80 ;;
  *) echo 'Usage: scripts/qualification.sh build|build-host|init|up|ready|rotate-pki|logs|down' >&2;exit 2;;
 esac

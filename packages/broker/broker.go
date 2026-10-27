@@ -42,6 +42,9 @@ func Token(key []byte, audience string, body []byte) string {
 	return p + "." + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 func Verify(key []byte, audience, token string, body []byte) error {
+	if len(key) != 32 {
+		return errors.New("32-byte capability key required")
+	}
 	p, s, ok := bytes.Cut([]byte(token), []byte("."))
 	if !ok {
 		return errors.New("invalid capability")

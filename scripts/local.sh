@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 # Only target the managed/local daemon. Preserve registry credentials and proxy defaults.
 compose() {
   env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
-    docker --host=unix:///var/run/docker.sock compose -f deploy/local/compose.yaml "$@"
+    docker --host=unix:///var/run/docker.sock compose --project-name nex-local -f deploy/local/compose.yaml "$@"
 }
 export NEX_BUILD_CA="${NEX_BUILD_CA:-/etc/ssl/certs/ca-certificates.crt}"
 export BUILDX_CONFIG="${BUILDX_CONFIG:-/tmp/nex-buildx}"

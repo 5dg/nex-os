@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -110,5 +111,33 @@ func TestQualifiedExportRechecksPeerBeforeArtifact(t *testing.T) {
 	expired = false
 	if w := exportRequest(t, s, in, "/execute", "export.execute"); w.Code == 200 || a.auth != 1 {
 		t.Fatal("unknown artifact repeated", w.Code, a.auth)
+	}
+}
+
+func TestExportReadinessHasSeparateCredentialScope(t *testing.T) {
+	s, a, _ := exportFixture(t)
+	call := func(key []byte, aud string) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(broker.ReadinessRequest{Nonce: strings.Repeat("b", 64)})
+		r := httptest.NewRequest("POST", "/readyz", bytes.NewReader(b))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Authorization", "Capability "+broker.Token(key, aud, b))
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		return w
+	}
+	if w := call(s.Key, "export.ready"); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	bad := make([]byte, 32)
+	bad[0] = 1
+	if call(bad, "export.ready").Code == 200 || call(s.Key, "export.execute").Code == 200 || call(s.Key, "export.status").Code == 200 {
+		t.Fatal("wrongexportreadycredentialaccepted")
+	}
+	if a.auth != 0 || a.complete != 0 {
+		t.Fatal("readiness authorized aneffect")
+	}
+	s.Key = nil
+	if call(nil, "export.ready").Code == 200 {
+		t.Fatal("missing keyqualified")
 	}
 }

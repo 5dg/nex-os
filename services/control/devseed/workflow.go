@@ -2,6 +2,7 @@ package devseed
 
 import (
 	"context"
+	"errors"
 	"github.com/5dg/nex-os/packages/broker"
 	"github.com/5dg/nex-os/packages/contracts"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,6 +37,13 @@ func seedWorkflow(ctx context.Context, db *pgxpool.Pool, issuer string, qualific
 		if qualification {
 			// Admission is for the exact predefined bytes, never a copied digest
 			// from a possibly edited existing body. Re-seeding cannot relabel it.
+			var actualContent, digest, version, classification, kind string
+			if e = tx.QueryRow(ctx, `SELECT b.content,b.content_digest,r.version,r.classification,r.kind FROM document_bodies b JOIN resources r ON r.tenant_id=b.tenant_id AND r.id=b.resource_id WHERE b.tenant_id=$1 AND b.resource_id=$2 FOR SHARE OF b,r`, x.tenant, "review-"+x.owner).Scan(&actualContent, &digest, &version, &classification, &kind); e != nil {
+				return e
+			}
+			if actualContent != content || digest != broker.Hash([]byte(content)) || version != "v1" || classification != "confidential" || kind != "document" {
+				return errors.New("qualification fixture differs from admitted synthetic source; existing data preserved")
+			}
 			_, e = tx.Exec(ctx, `INSERT INTO document_admissions(tenant_id,resource_id,version,content_digest,profile) VALUES($1,$2,'v1',$3,'synthetic-qualification') ON CONFLICT DO NOTHING`, x.tenant, "review-"+x.owner, broker.Hash([]byte(content)))
 			if e != nil {
 				return e

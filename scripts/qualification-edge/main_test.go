@@ -36,6 +36,9 @@ func TestEdgeCanonicalBoundary(t *testing.T) {
 		if r.Header.Get("X-Forwarded-Proto") != "https" || r.Header.Get("X-Forwarded-Host") != origin.Host {
 			t.Error("canonical frontend context missing")
 		}
+		if r.Header.Get("X-Nex-CSRF") != "session-csrf-proof" {
+			t.Error("session CSRF proof lost")
+		}
 		if r.Header.Get("Cookie") != "session=browser-cookie" {
 			t.Error("session cookie lost")
 		}
@@ -71,6 +74,7 @@ func TestEdgeCanonicalBoundary(t *testing.T) {
 			r.Header.Set("X-Nex-Actor", "other")
 			r.Header.Set("X-Remote-User", "admin")
 			r.Header.Set("Cookie", "session=browser-cookie")
+			r.Header.Set("X-Nex-CSRF", "session-csrf-proof")
 			before := calls
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)

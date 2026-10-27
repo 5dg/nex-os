@@ -29,7 +29,7 @@ func TestQualificationDatabaseRequiresVerifiedBoundedMinimalIdentity(t *testing.
 	if cfg.ConnConfig.TLSConfig == nil || cfg.ConnConfig.TLSConfig.InsecureSkipVerify || cfg.ConnConfig.TLSConfig.RootCAs == nil || cfg.ConnConfig.TLSConfig.ServerName != "postgres" || cfg.ConnConfig.TLSConfig.MinVersion != tls.VersionTLS13 || len(cfg.ConnConfig.Fallbacks) != 0 || cfg.ConnConfig.ConnectTimeout != 3*time.Second || cfg.MaxConns != 4 || cfg.ConnConfig.RuntimeParams["lock_timeout"] != "2000" {
 		t.Fatal("qualification DB configuration weakened")
 	}
-	for _, bad := range []string{"postgres://nex_control:synthetic@postgres/nex?sslmode=disable", "postgres://nex_control:synthetic@postgres/nex?sslmode=require", "postgres://nex_control:synthetic@postgres/nex?sslmode=prefer", "postgres://nex_control:synthetic@postgres/nex?sslmode=verify-full&sslmode=disable", "postgres://nex:synthetic@postgres/nex?sslmode=verify-full"} {
+	for _, bad := range []string{"postgres://nex_control:synthetic@localhost/nex?sslmode=verify-full", "postgres://nex_control:synthetic@unexpected/nex?sslmode=verify-full", "postgres://nex_control:synthetic@postgres/nex?sslmode=disable", "postgres://nex_control:synthetic@postgres/nex?sslmode=require", "postgres://nex_control:synthetic@postgres/nex?sslmode=prefer", "postgres://nex_control:synthetic@postgres/nex?sslmode=verify-full&sslmode=disable", "postgres://nex:synthetic@postgres/nex?sslmode=verify-full"} {
 		if _, e = poolConfig(bad, trust.Qualification, "serve"); e == nil {
 			t.Fatal("database downgrade accepted", bad)
 		}

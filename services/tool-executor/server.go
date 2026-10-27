@@ -1,11 +1,13 @@
 package executor
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/5dg/nex-os/packages/broker"
 	"github.com/5dg/nex-os/packages/contracts"
 	"net/http"
+	"time"
 )
 
 type Service struct {
@@ -31,6 +33,30 @@ func (s *Service) peer(r *http.Request) error {
 	}
 	return nil
 }
+func (s *Service) ready(r *http.Request) error {
+	if e := s.peer(r); e != nil {
+		return e
+	}
+	if s.Validate == nil {
+		return errors.New("receiver dependency required")
+	}
+	if s.Profile == "synthetic-qualification" {
+		if len(s.Key) != 32 {
+			return errors.New("receiver capability key required")
+		}
+		if e := s.Receipts.Ready(); e != nil {
+			return e
+		}
+		if e := s.Validate.Readiness(r.Context()); e != nil {
+			return e
+		}
+		if e := s.Receipts.CheckCustody(); e != nil {
+			return e
+		}
+		return s.peer(r)
+	}
+	return nil
+}
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -40,25 +66,62 @@ func (s *Service) Handler() http.Handler {
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if s.peer(r) != nil || s.Validate == nil {
-			http.Error(w, "receiver unavailable", 503)
+		if s.Profile == "synthetic-qualification" {
+			if s.peer(r) != nil {
+				http.Error(w, "peer denied", 403)
+				return
+			}
+			w.Header().Set("Allow", "POST")
+			http.Error(w, "authenticated readiness proof required", 405)
 			return
 		}
-		if s.Profile == "synthetic-qualification" && (s.Receipts.Ready() != nil || s.Validate.Readiness(r.Context()) != nil) {
-			http.Error(w, "receiver unavailable", 503)
-			return
-		}
-		if s.peer(r) != nil || (s.Profile == "synthetic-qualification" && s.Receipts.CheckCustody() != nil) {
+		if s.ready(r) != nil {
 			http.Error(w, "receiver unavailable", 503)
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	})
+	mux.HandleFunc("POST /readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		defer cancel()
+		r = r.WithContext(ctx)
+		if s.Profile != "synthetic-qualification" {
+			http.NotFound(w, r)
+			return
+		}
+		if s.peer(r) != nil {
+			http.Error(w, "peer denied", 403)
+			return
+		}
+		if len(s.Key) != 32 {
+			http.Error(w, "receiver configuration unavailable", 503)
+			return
+		}
+		var in broker.ReadinessRequest
+		if !broker.ReadLimit(w, r, s.Key, "export.ready", &in, 4096) {
+			return
+		}
+		if !broker.ValidNonce(in.Nonce) {
+			http.Error(w, "invalid readiness nonce", 400)
+			return
+		}
+		if s.ready(r) != nil {
+			http.Error(w, "receiver unavailable", 503)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(broker.ReadinessResponse{Ready: true, Profile: s.Profile, Nonce: in.Nonce})
+	})
 	for _, path := range []string{"/execute", "/status"} {
 		mux.HandleFunc("POST "+path, func(w http.ResponseWriter, r *http.Request) {
 			if s.peer(r) != nil {
 				http.Error(w, "peer denied", 403)
+				return
+			}
+			if s.Profile == "synthetic-qualification" && len(s.Key) != 32 {
+				http.Error(w, "receiver configuration unavailable", 503)
 				return
 			}
 			var in contracts.Export

@@ -9,7 +9,9 @@ import (
 	"github.com/5dg/nex-os/packages/contracts"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 type receiverAuthority struct {
@@ -17,6 +19,7 @@ type receiverAuthority struct {
 	onAuthorize        func()
 	readyError         error
 	onReady            func()
+	readyContext       func(context.Context)
 }
 
 func (a *receiverAuthority) AuthorizeEffect(context.Context, string, string) error {
@@ -30,7 +33,10 @@ func (a *receiverAuthority) CompleteExecution(context.Context, string, string, a
 	a.completions++
 	return nil
 }
-func (a *receiverAuthority) Readiness(context.Context) error {
+func (a *receiverAuthority) Readiness(ctx context.Context) error {
+	if a.readyContext != nil {
+		a.readyContext(ctx)
+	}
 	if a.onReady != nil {
 		a.onReady()
 	}
@@ -189,8 +195,7 @@ func TestQualificationLivenessIsNotDependencyReadiness(t *testing.T) {
 	if health.Code != 200 {
 		t.Fatal(health.Code)
 	}
-	ready := httptest.NewRecorder()
-	s.Handler().ServeHTTP(ready, httptest.NewRequest("GET", "/readyz", nil))
+	ready := modelReadinessRequest(t, s, s.Key, "model.ready")
 	if ready.Code != 503 {
 		t.Fatal("dependency failure reported ready", ready.Code)
 	}
@@ -239,9 +244,108 @@ func TestReadinessRechecksRequesterAfterDependency(t *testing.T) {
 		return nil
 	}
 	a.onReady = func() { expired = true }
-	response := httptest.NewRecorder()
-	s.Handler().ServeHTTP(response, httptest.NewRequest("GET", "/readyz", nil))
+	response := modelReadinessRequest(t, s, s.Key, "model.ready")
 	if response.Code != 503 {
 		t.Fatal("expired requester received readiness", response.Code)
+	}
+}
+
+func modelReadinessRequest(t *testing.T, s *Service, key []byte, audience string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, e := json.Marshal(broker.ReadinessRequest{Nonce: strings.Repeat("a", 64)})
+	if e != nil {
+		t.Fatal(e)
+	}
+	request := httptest.NewRequest("POST", "/readyz", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Capability "+broker.Token(key, audience, body))
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, request)
+	return response
+}
+func TestReceiverReadinessRequiresExactBodyCredentialAndNoEffect(t *testing.T) {
+	s, g, a := modelFixture(t)
+	positive := modelReadinessRequest(t, s, s.Key, "model.ready")
+	if positive.Code != 200 {
+		t.Fatal("valid nonce scope did not qualify", positive.Code, positive.Body.String())
+	}
+	var proof broker.ReadinessResponse
+	if e := json.Unmarshal(positive.Body.Bytes(), &proof); e != nil || !proof.Ready || proof.Profile != qualificationProfile || proof.Nonce != strings.Repeat("a", 64) {
+		t.Fatal("readiness echo invalid", proof, e)
+	}
+	bad := make([]byte, 32)
+	bad[0] = 1
+	for _, scope := range []struct {
+		key []byte
+		aud string
+	}{{bad, "model.ready"}, {s.Key, "model.execute"}, {s.Key, "model.status"}} {
+		if w := modelReadinessRequest(t, s, scope.key, scope.aud); w.Code == 200 {
+			t.Fatal("wrong readiness credential/scope accepted")
+		}
+	}
+	if g.calls != 0 || a.calls != 0 || a.completions != 0 {
+		t.Fatal("readiness caused effect", g.calls, a.calls, a.completions)
+	}
+	s.Key = nil
+	if w := modelReadinessRequest(t, s, nil, "model.ready"); w.Code == 200 {
+		t.Fatal("missing key reportedready")
+	}
+	health := httptest.NewRecorder()
+	s.Handler().ServeHTTP(health, httptest.NewRequest("GET", "/healthz", nil))
+	if health.Code != 200 {
+		t.Fatal("liveness incorrectlyusedascredentialproof")
+	}
+	get := httptest.NewRecorder()
+	s.Handler().ServeHTTP(get, httptest.NewRequest("GET", "/readyz", nil))
+	if get.Code != 405 {
+		t.Fatal("unauthenticated readiness GET permitted", get.Code)
+	}
+}
+
+func TestReceiverReadyDependencyHasBudgetAndHonorsCancellation(t *testing.T) {
+	s, g, a := modelFixture(t)
+	observed := time.Duration(0)
+	a.readyContext = func(ctx context.Context) {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Error("receiver handler lacks deadline")
+		}
+		observed = time.Until(deadline)
+	}
+	if response := modelReadinessRequest(t, s, s.Key, "model.ready"); response.Code != 200 {
+		t.Fatal("valid readiness control failed", response.Code)
+	}
+	if observed <= 0 || observed > 8*time.Second {
+		t.Fatal("receiver handler budget invalid", observed)
+	}
+	entered := make(chan struct{})
+	done := make(chan int, 1)
+	a.readyContext = func(ctx context.Context) { close(entered); <-ctx.Done() }
+	body, e := json.Marshal(broker.ReadinessRequest{Nonce: strings.Repeat("a", 64)})
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request := httptest.NewRequest("POST", "/readyz", bytes.NewReader(body)).WithContext(ctx)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Capability "+broker.Token(s.Key, "model.ready", body))
+	go func() {
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, request)
+		done <- response.Code
+	}()
+	<-entered
+	cancel()
+	select {
+	case status := <-done:
+		if status != 503 {
+			t.Fatal("cancelled dependency reported ready", status)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled readiness blocked")
+	}
+	if g.calls != 0 || a.calls != 0 || a.completions != 0 {
+		t.Fatal("readiness caused effect")
 	}
 }

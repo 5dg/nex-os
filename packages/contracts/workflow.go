@@ -63,13 +63,6 @@ type ExportResult struct {
 	ArtifactID    string `json:"artifact_id"`
 	ContentDigest string `json:"content_digest"`
 }
-type ValidateOperation struct {
-	OperationID   string `json:"operation_id"`
-	RequestDigest string `json:"request_digest"`
-}
-type OperationValidation struct {
-	Allowed bool `json:"allowed"`
-}
 type ExportRequest struct {
 	DestinationID string `json:"destination_id"`
 }

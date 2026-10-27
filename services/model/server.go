@@ -9,6 +9,7 @@ import (
 
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Generator interface {
@@ -64,6 +65,9 @@ func (s *Service) ready(r *http.Request) error {
 		return errors.New("receiver dependencies required")
 	}
 	if s.Profile == qualificationProfile {
+		if len(s.Key) != 32 {
+			return errors.New("receiver capability key required")
+		}
 		if e := s.Receipts.Ready(); e != nil {
 			return e
 		}
@@ -95,15 +99,60 @@ func (s *Service) Handler() http.Handler {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		if s.Profile == qualificationProfile {
+			if s.peer(r) != nil {
+				http.Error(w, "peer denied", 403)
+				return
+			}
+			w.Header().Set("Allow", "POST")
+			http.Error(w, "authenticated readiness proof required", 405)
+			return
+		}
 		if s.ready(r) != nil {
 			http.Error(w, "receiver unavailable", 503)
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	})
+
+	mux.HandleFunc("POST /readyz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		defer cancel()
+		r = r.WithContext(ctx)
+		if s.Profile != qualificationProfile {
+			http.NotFound(w, r)
+			return
+		}
+		if s.peer(r) != nil {
+			http.Error(w, "peer denied", 403)
+			return
+		}
+		if len(s.Key) != 32 {
+			http.Error(w, "receiver configuration unavailable", 503)
+			return
+		}
+		var in broker.ReadinessRequest
+		if !broker.ReadLimit(w, r, s.Key, "model.ready", &in, 4096) {
+			return
+		}
+		if !broker.ValidNonce(in.Nonce) {
+			http.Error(w, "invalid readiness nonce", 400)
+			return
+		}
+		if s.ready(r) != nil {
+			http.Error(w, "receiver unavailable", 503)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(broker.ReadinessResponse{Ready: true, Profile: s.Profile, Nonce: in.Nonce})
+	})
 	execute := func(w http.ResponseWriter, r *http.Request) {
 		if s.peer(r) != nil {
 			http.Error(w, "peer denied", 403)
+			return
+		}
+		if s.Profile == qualificationProfile && len(s.Key) != 32 {
+			http.Error(w, "receiver configuration unavailable", 503)
 			return
 		}
 		var in contracts.Generation

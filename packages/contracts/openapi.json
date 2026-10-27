@@ -91,13 +91,17 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Direct development route unavailable in qualification"
           }
         },
         "x-development-security": [
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "description": "Development-only direct policy laboratory route; unavailable (404) in synthetic qualification. Qualified workflows use Rust execution authority."
       }
     },
     "/v1/models/invoke": {
