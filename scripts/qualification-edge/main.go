@@ -82,6 +82,16 @@ func handler(origin *url.URL, transport http.RoundTripper) http.Handler {
 		proxy.ServeHTTP(w, r)
 	})
 }
+func guardedHandler(cfg *trust.Config, origin *url.URL, transport http.RoundTripper) http.Handler {
+	frontend := handler(origin, transport)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if cfg.CheckOwn() != nil {
+			http.Error(w, "frontend identity unavailable", 503)
+			return
+		}
+		frontend.ServeHTTP(w, r)
+	})
+}
 func main() {
 	originValue := flag.String("origin", os.Getenv("WORKSPACE_ORIGIN"), "canonical browser HTTPS origin")
 	listen := flag.String("listen", ":9443", "HTTPS listen address")
@@ -104,14 +114,7 @@ func main() {
 		log.Fatal("frontend certificate does not match canonical public origin")
 	}
 	transport := &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext, ResponseHeaderTimeout: 30 * time.Second, IdleConnTimeout: 30 * time.Second, MaxIdleConns: 10}
-	frontend := handler(origin, transport)
-	guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if cfg.CheckOwn() != nil {
-			http.Error(w, "frontend identity unavailable", 503)
-			return
-		}
-		frontend.ServeHTTP(w, r)
-	})
+	guarded := guardedHandler(cfg, origin, transport)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	if e = trust.ServeHTTP(ctx, *listen, guarded, cfg, false); e != nil {

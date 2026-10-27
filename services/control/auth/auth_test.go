@@ -124,6 +124,14 @@ func TestJWTAccessProfileSeparatesCredentialsAndCurrentIdentity(t *testing.T) {
 			t.Fatal("forged signature accepted")
 		}
 	})
+	t.Run("ambiguous bearer headers", func(t *testing.T) {
+		r := httptest.NewRequest("GET", "https://control/v1/me", nil)
+		r.Header.Add("Authorization", "Bearer "+sign(nil, nil, key))
+		r.Header.Add("Authorization", "Bearer "+sign(nil, nil, key))
+		if _, e := verifier.Verify(r); e == nil {
+			t.Fatal("duplicate bearer headers accepted")
+		}
+	})
 	t.Run("bounded bearer", func(t *testing.T) {
 		if _, e := verify(strings.Repeat("a", MaxBearerBytes+1)); e == nil {
 			t.Fatal("unbounded bearer accepted")

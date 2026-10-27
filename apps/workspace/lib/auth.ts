@@ -25,7 +25,7 @@ async function issuer(): Promise<oidc.Configuration> {
   return issuerConfiguration;
 }
 export function noStore(value: unknown, status = 200, headers: HeadersInit = {}): Response {
-  const result = new Headers(headers); result.set("Cache-Control", "no-store"); result.set("Vary", "Cookie"); result.set("X-Content-Type-Options", "nosniff");
+  const result = new Headers(headers); result.set("Cache-Control", "no-store"); result.set("Vary", "Cookie"); result.set("X-Content-Type-Options", "nosniff"); result.set("Referrer-Policy", "no-referrer");
   return Response.json(value, { status, headers: result });
 }
 function redirect(location: string, cookies: string[]): Response {

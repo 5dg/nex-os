@@ -36,8 +36,14 @@ func HandlerWithPeer(journal *Journal, controlKey, kernelKey []byte, peer func(*
 			if !broker.ReadLimit(w, r, key, "evidence.append."+source, &event, 128*1024) {
 				return
 			}
+			if peer != nil && (journal.custody == nil || journal.custody.Check() != nil) {
+				http.Error(w, "single writer custody unavailable", 503)
+				return
+			}
 			event.Producer = source
-			proof, e := journal.AppendContext(r.Context(), event, func() error {
+			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+			defer cancel()
+			proof, e := journal.AppendContext(ctx, event, func() error {
 				if peer != nil {
 					return peer(r, source)
 				}

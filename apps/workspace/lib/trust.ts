@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { createPrivateKey, createPublicKey, X509Certificate } from "node:crypto";
 import https from "node:https";
@@ -12,10 +13,17 @@ export function certificateRole(raw: Uint8Array): string {
   // quoted DNS values that look like URI entries and is never an identity API.
   const der = new Uint8Array(raw.byteLength); der.set(raw);
   const certificate = new ParsedCertificate(der.buffer);
+  if (certificate.extensions.filter(extension => extension.type === "2.5.29.17").length !== 1) throw new Error("One unambiguous SAN extension required");
   const names = certificate.getExtension(SubjectAlternativeNameExtension)?.names.items || [];
   const identities = names.filter(name => name.type === "url").map(name => name.value);
   if (identities.length !== 1 || !/^spiffe:\/\/nex\.local\/service\/[a-z]+$/.test(identities[0])) throw new Error("One exact workload URI required");
   return identities[0];
+}
+export function assertPeerIdentity(raw: Uint8Array, peer: Role, hostname: string): X509Certificate {
+  const certificate = new X509Certificate(Buffer.from(raw));
+  assertCertificateTime(certificate);
+  if (certificateRole(certificate.raw) !== URI_PREFIX + peer || !certificate.checkHost(hostname, { subject: "never", wildcards: false })) throw new Error("Exact service URI and DNS identity required");
+  return certificate;
 }
 export function assertCertificateTime(certificate: X509Certificate, now = Date.now()): void {
   const start = Date.parse(certificate.validFrom), end = Date.parse(certificate.validTo);
@@ -111,10 +119,7 @@ export async function verifiedRequest(target: URL, peer: "control" | "oidc", ini
       checkServerIdentity(host, certificate) {
         const error = tls.checkServerIdentity(host, certificate); if (error) return error;
         try {
-          const parsed = new X509Certificate(certificate.raw);
-          assertCertificateTime(parsed);
-          if (certificateRole(parsed.raw) !== URI_PREFIX + peer) throw new Error("Wrong workload identity");
-          peerCertificate = parsed;
+          peerCertificate = assertPeerIdentity(certificate.raw, peer, host);
           return undefined;
         } catch { return new Error("Service workload identity denied"); }
       },

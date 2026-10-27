@@ -107,6 +107,14 @@ func (s *Server) reconcileJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	statusClient := *rpc
+	if s.qualification() {
+		scoped, err := rpc.StatusClient()
+		if err != nil {
+			workflowError(w, err)
+			return
+		}
+		statusClient = *scoped
+	}
 	u, e := url.Parse(statusClient.URL)
 	if e != nil {
 		workflowError(w, e)
@@ -125,7 +133,7 @@ func (s *Server) reconcileJob(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]string{"state": state})
 		return
 	}
-	done, e := s.DB.Begin(r.Context())
+	done, e := s.begin(r.Context())
 	if e != nil {
 		workflowError(w, e)
 		return

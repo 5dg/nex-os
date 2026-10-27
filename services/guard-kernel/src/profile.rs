@@ -24,7 +24,10 @@ impl Profile {
         }
     }
     pub fn manifest_version(self) -> i32 {
-        match self { Self::Development => 2, Self::Qualification => 3 }
+        match self {
+            Self::Development => 2,
+            Self::Qualification => 3,
+        }
     }
 }
 #[cfg(test)]
@@ -33,8 +36,16 @@ mod tests {
     #[test]
     fn profiles_cannot_enable_production_or_silent_fallback() {
         assert_eq!(Profile::parse("development").unwrap(), Profile::Development);
-        assert_eq!(Profile::parse("synthetic-qualification").unwrap(), Profile::Qualification);
-        for value in ["", "production", "qualification", "synthetic-qualification "] {
+        assert_eq!(
+            Profile::parse("synthetic-qualification").unwrap(),
+            Profile::Qualification
+        );
+        for value in [
+            "",
+            "production",
+            "qualification",
+            "synthetic-qualification ",
+        ] {
             assert!(Profile::parse(value).is_err(), "{value}");
         }
     }

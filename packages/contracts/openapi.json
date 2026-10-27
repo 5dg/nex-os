@@ -2,14 +2,15 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Nex.os foundation control API",
-    "version": "0.2.0",
-    "description": "Local synthetic-data alpha. Go orchestration, Rust execution authority, gRPC contracts, explicit development inference, and controlled local export. Live GovCloud/Bedrock and production identity/TLS/cryptographic assessment remain deferred."
+    "version": "0.3.0",
+    "description": "Synthetic development and authenticated synthetic qualification profiles. Qualification requires workspace mTLS plus dedicated API access JWTs, server-owned input admission, and Rust execution authority. Production, CUI and live cloud/provider qualification remain closed."
   },
   "paths": {
     "/v1/actions/authorize": {
       "post": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -91,7 +92,12 @@
               }
             }
           }
-        }
+        },
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/models/invoke": {
@@ -179,13 +185,20 @@
               }
             }
           }
-        }
+        },
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Development laboratory only; always unavailable in synthetic qualification."
       }
     },
     "/v1/jobs": {
       "post": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -270,13 +283,19 @@
               }
             }
           }
-        }
+        },
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/jobs/{id}": {
       "get": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -352,6 +371,11 @@
               "minLength": 1
             }
           }
+        ],
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
         ]
       }
     },
@@ -359,6 +383,7 @@
       "post": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -434,6 +459,11 @@
               "minLength": 1
             }
           }
+        ],
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
         ]
       }
     },
@@ -441,6 +471,7 @@
       "post": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -526,6 +557,11 @@
               "minLength": 1
             }
           }
+        ],
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
         ]
       }
     },
@@ -533,6 +569,7 @@
       "get": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -608,6 +645,11 @@
               "minLength": 1
             }
           }
+        ],
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
         ]
       }
     },
@@ -615,6 +657,7 @@
       "get": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -679,13 +722,19 @@
               }
             }
           }
-        }
+        },
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/approvals": {
       "get": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -750,13 +799,19 @@
               }
             }
           }
-        }
+        },
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/approvals/{id}/decision": {
       "post": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -842,6 +897,11 @@
               "minLength": 1
             }
           }
+        ],
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
         ]
       }
     },
@@ -849,6 +909,7 @@
       "post": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -879,13 +940,19 @@
           "503": {
             "description": "Required state or evidence unavailable"
           }
-        }
+        },
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/jobs/{id}/retry": {
       "post": {
         "security": [
           {
+            "serviceMTLS": [],
             "bearerAuth": []
           }
         ],
@@ -916,6 +983,82 @@
           "503": {
             "description": "Required state or evidence unavailable"
           }
+        },
+        "x-development-security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "security": [
+          {
+            "serviceMTLS": [],
+            "bearerAuth": []
+          }
+        ],
+        "description": "Current server-resolved membership; browser claims never establish tenant, role or delegation. No valid delegation returns an empty delegation_id.",
+        "responses": {
+          "200": {
+            "description": "Verified current identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API access token invalid"
+          },
+          "403": {
+            "description": "Peer or membership denied"
+          },
+          "503": {
+            "description": "Required state unavailable"
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "security": [
+          {
+            "serviceMTLS": []
+          }
+        ],
+        "description": "Workspace peer only in qualification; bounded authenticated state/policy/signing readiness. No human credential or user data.",
+        "responses": {
+          "200": {
+            "description": "Required qualification dependencies verified"
+          },
+          "403": {
+            "description": "Wrong peer identity"
+          },
+          "503": {
+            "description": "Required identity/configuration/dependency unavailable"
+          }
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "security": [
+          {
+            "serviceMTLS": []
+          }
+        ],
+        "description": "Qualification workspace peer only, pre-login synthetic profile status with no user data.",
+        "responses": {
+          "200": {
+            "description": "Resolved synthetic profile status"
+          },
+          "403": {
+            "description": "Wrong peer identity"
+          }
         }
       }
     }
@@ -926,6 +1069,10 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+      },
+      "serviceMTLS": {
+        "type": "mutualTLS",
+        "description": "Qualification requires the declared verified service URI identity in addition to human API credentials; never a forwarded identity header."
       }
     },
     "schemas": {
@@ -1266,21 +1413,52 @@
           },
           "question": {
             "type": "string",
-            "minLength": 1,
+            "minLength": 0,
             "maxLength": 1000
           },
           "idempotency_key": {
             "type": "string",
             "minLength": 8,
             "maxLength": 100
+          },
+          "question_catalogue_id": {
+            "type": "string",
+            "const": "access-review-controls"
           }
         },
         "required": [
           "delegation_id",
           "document_id",
-          "question",
           "idempotency_key"
-        ]
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "question"
+            ],
+            "properties": {
+              "question": {
+                "minLength": 1
+              }
+            },
+            "not": {
+              "required": [
+                "question_catalogue_id"
+              ]
+            }
+          },
+          {
+            "required": [
+              "question_catalogue_id"
+            ],
+            "properties": {
+              "question": {
+                "maxLength": 0
+              }
+            }
+          }
+        ],
+        "description": "Development requires bounded raw question; qualification forbids raw text and resolves the fixed administrator-owned question catalogue."
       },
       "ReviewJob": {
         "type": "object",
@@ -1335,6 +1513,14 @@
             "minLength": 1
           },
           "export_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "question_catalogue_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "question_catalogue_version": {
             "type": "string",
             "minLength": 1
           }
@@ -1556,6 +1742,41 @@
         "required": [
           "approved"
         ]
+      },
+      "IdentityView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issuer",
+          "subject",
+          "user_id",
+          "tenant_id",
+          "delegation_id",
+          "permissions"
+        ],
+        "properties": {
+          "issuer": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "delegation_id": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   }

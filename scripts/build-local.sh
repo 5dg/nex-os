@@ -24,6 +24,13 @@ go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/model ./services/model/
 go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/executor ./services/tool-executor/cmd/executor
 go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/worker ./services/worker
 go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/evidence ./services/evidence
+if [[ "${NEX_BUILD_QUALIFICATION_FIXTURES:-0}" == 1 ]]; then
+  for task_fixture in qualification-edge qualification-policy-edge; do
+    go build -mod=readonly -trimpath -ldflags='-s -w' -o "bin/$task_fixture" "./scripts/$task_fixture"
+  done
+  go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/qualification-pki ./tests/qualification/cmd/pki
+  go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/qualification-issuer ./tests/qualification/cmd/oidc-issuer
+fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/nex-rust-target}"
 cargo build --locked --manifest-path services/guard-kernel/Cargo.toml -j 3
 cp "$CARGO_TARGET_DIR/debug/nex-guard-kernel" bin/guard-kernel.next

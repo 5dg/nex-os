@@ -14,7 +14,22 @@ import (
 
 func (s *Server) evidenceReady(ctx context.Context) error {
 	if s.EvidenceRPC == nil {
+		if s.qualification() {
+			return errors.New("required control signing dependency absent")
+		}
 		return nil
+	}
+	if s.qualification() {
+		if s.Trust == nil {
+			return errors.New("control identity absent")
+		}
+		if e := s.Trust.CheckOwn(); e != nil {
+			return e
+		}
+		if e := evidence.Challenge(ctx, s.EvidenceRPC, ed25519.PublicKey(s.EvidencePublic), "control"); e != nil {
+			return e
+		}
+		return s.Trust.CheckOwn()
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -35,8 +50,19 @@ func (s *Server) evidenceReady(ctx context.Context) error {
 
 func (s *Server) anchor(ctx context.Context, tx pgx.Tx, id string) error {
 	if s.EvidenceRPC == nil {
+		if s.qualification() {
+			return errors.New("required control signing dependency absent")
+		}
 		return nil
-	} // Legacy test fixtures explicitly exercise DB-only mode.
+	} // Explicit development-only legacy fixtures.
+	if s.qualification() {
+		if s.Trust == nil {
+			return errors.New("control identity absent")
+		}
+		if e := s.Trust.CheckOwn(); e != nil {
+			return e
+		}
+	}
 	var event evidence.Event
 	var detail []byte
 	var timestamp time.Time

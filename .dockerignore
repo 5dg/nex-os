@@ -5,3 +5,12 @@
 **/next-env.d.ts
 deploy/terraform/.terraform
 **/*.tfstate*
+
+**/target
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example

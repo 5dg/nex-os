@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type Event struct {
@@ -112,13 +113,13 @@ func VerifyContext(ctx context.Context, directory string, public ed25519.PublicK
 	}
 	return entries, nil
 }
-func (j *Journal) Append(event Event) (Proof, error) { return j.AppendChecked(event, nil) }
-
-func (j *Journal) AppendChecked(event Event, check func() error) (Proof, error) {
-	return j.AppendContext(context.Background(), event, check)
+func (j *Journal) Append(event Event) (Proof, error) {
+	return j.AppendContext(context.Background(), event, nil)
 }
 func (j *Journal) AppendContext(ctx context.Context, event Event, check func() error) (Proof, error) {
-	j.mu.Lock()
+	if e := j.lockContext(ctx); e != nil {
+		return Proof{}, e
+	}
 	defer j.mu.Unlock()
 	if len(j.Private) != ed25519.PrivateKeySize || event.ID == "" || event.TenantID == "" || event.Action == "" {
 		return Proof{}, errors.New("invalid evidence configuration/event")
@@ -146,6 +147,9 @@ func (j *Journal) AppendContext(ctx context.Context, event Event, check func() e
 	event = normalized(event)
 	canonical, _ := json.Marshal(event)
 	for _, entry := range all {
+		if e := ctx.Err(); e != nil {
+			return Proof{}, e
+		}
 		if entry.Event.ID == event.ID {
 			old, _ := json.Marshal(entry.Event)
 			if string(old) != string(canonical) {
@@ -184,4 +188,30 @@ func (j *Journal) AppendContext(ctx context.Context, event Event, check func() e
 	e = directory.Sync()
 	directory.Close()
 	return p, e
+}
+
+// Journal contention must honor the caller's bounded qualification request.
+func (j *Journal) lockContext(ctx context.Context) error {
+	if e := ctx.Err(); e != nil {
+		return e
+	}
+	if j.mu.TryLock() {
+		return nil
+	}
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if j.mu.TryLock() {
+				if e := ctx.Err(); e != nil {
+					j.mu.Unlock()
+					return e
+				}
+				return nil
+			}
+		}
+	}
 }

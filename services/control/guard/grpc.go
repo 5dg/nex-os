@@ -228,22 +228,23 @@ func NewRPCWithTrust(address string, legacyKey []byte, cfg *trust.Config) (*Clie
 }
 func (c *Client) Readiness(ctx context.Context) error {
 	if c.RPC == nil {
-		return errors.New("Guard readiness boundary required")
-	}
-	if c.RPC.trust == nil || c.RPC.trust.Profile == trust.Development {
 		return c.Health(ctx)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var remote peer.Peer
-	out, e := c.RPC.client.CheckReadiness(ctx, &pb.ReadinessRequest{}, grpc.Peer(&remote))
+	out, e := c.RPC.client.CheckReadiness(c.RPC.outgoing(ctx), &pb.ReadinessRequest{}, grpc.Peer(&remote))
 	if e == nil {
 		e = c.RPC.after(remote)
 	}
 	if e != nil {
 		return rpcError(e)
 	}
-	if !out.Ready || out.Profile != string(trust.Qualification) {
+	expected := string(trust.Development)
+	if c.RPC.trust != nil {
+		expected = string(c.RPC.trust.Profile)
+	}
+	if !out.Ready || out.Profile != expected {
 		return errors.New("qualification Guard dependencies not ready")
 	}
 	return nil

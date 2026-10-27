@@ -20,6 +20,7 @@ type storedJob struct {
 	contracts.ReviewJob
 	Owner, Delegation, Operation, Lease string
 	LeaseUntil                          *time.Time
+	ExecutionProfile                    string
 }
 
 func actorFor(ctx context.Context, tx pgx.Tx, id auth.Identity) (guard.Actor, error) {
@@ -40,7 +41,7 @@ func actorID(ctx context.Context, tx pgx.Tx, tenant, id string) (guard.Actor, er
 }
 func loadJob(ctx context.Context, tx pgx.Tx, id string) (storedJob, error) {
 	var j storedJob
-	e := tx.QueryRow(ctx, `SELECT id,tenant_id,state,phase,document_id,document_version,question,answer,provider,error_code,coalesce(approval_id,''),export_id,owner_id,delegation_id,operation_id,coalesce(lease_token,''),lease_until FROM jobs WHERE id=$1 FOR UPDATE`, id).Scan(&j.ID, &j.TenantID, &j.State, &j.Phase, &j.DocumentID, &j.DocumentVersion, &j.Question, &j.Answer, &j.Provider, &j.ErrorCode, &j.ApprovalID, &j.ExportID, &j.Owner, &j.Delegation, &j.Operation, &j.Lease, &j.LeaseUntil)
+	e := tx.QueryRow(ctx, `SELECT id,tenant_id,state,phase,document_id,document_version,question,answer,provider,error_code,coalesce(approval_id,''),export_id,owner_id,delegation_id,operation_id,coalesce(lease_token,''),lease_until,execution_profile,coalesce(question_id,''),coalesce(question_version,'') FROM jobs WHERE id=$1 FOR UPDATE`, id).Scan(&j.ID, &j.TenantID, &j.State, &j.Phase, &j.DocumentID, &j.DocumentVersion, &j.Question, &j.Answer, &j.Provider, &j.ErrorCode, &j.ApprovalID, &j.ExportID, &j.Owner, &j.Delegation, &j.Operation, &j.Lease, &j.LeaseUntil, &j.ExecutionProfile, &j.QuestionCatalogueID, &j.QuestionCatalogueVersion)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return j, errForbidden
 	}
@@ -96,6 +97,9 @@ func (s *Server) evaluateTx(ctx context.Context, tx pgx.Tx, a guard.Actor, deleg
 	return d, e
 }
 func (s *Server) reviewAuthority(ctx context.Context, tx pgx.Tx, j storedJob) (guard.Actor, string, string, error) {
+	if j.ExecutionProfile != "" && j.ExecutionProfile != string(s.profile()) {
+		return guard.Actor{}, "", "", errForbidden
+	}
 	a, e := actorID(ctx, tx, j.TenantID, j.Owner)
 	if e != nil {
 		return a, "", "", e
@@ -114,6 +118,12 @@ func (s *Server) reviewAuthority(ctx context.Context, tx pgx.Tx, j storedJob) (g
 	}
 	if version != j.DocumentVersion || digest != broker.Hash([]byte(content)) {
 		return a, "", "", errForbidden
+	}
+	if s.qualification() {
+		class, e = s.qualificationAdmission(ctx, tx, j, content, class)
+		if e != nil {
+			return a, "", "", e
+		}
 	}
 	return a, content, class, nil
 }

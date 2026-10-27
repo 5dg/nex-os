@@ -35,7 +35,8 @@ export function cookieHeader(name: string, value: string, seconds: number): stri
 export class SessionStore {
   private sessions = new Map<string, Session>();
   private logins = new Map<string, Login>();
-  constructor(private now: () => number = Date.now) {}
+  private now: () => number;
+  constructor(now: () => number = Date.now) { this.now = now; }
   private clean(): void {
     const now = this.now();
     for (const [key, value] of this.sessions) if (value.expires <= now || value.idleExpires <= now) this.sessions.delete(key);

@@ -1,6 +1,7 @@
 import { profile } from "../../../lib/profile.ts";
 import { controlJSON } from "../../../lib/trust.ts";
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 export async function GET() {
   try {
     if (profile() === "synthetic-qualification") {

@@ -1,6 +1,7 @@
 package trust
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -43,7 +44,7 @@ func LoadFiles(profile Profile, role Role, ca, cert, key string) (*Config, error
 	roots := x509.NewCertPool()
 	remaining := b
 	count := 0
-	for len(remaining) > 0 {
+	for len(bytes.TrimSpace(remaining)) > 0 {
 		block, rest := pem.Decode(remaining)
 		if block == nil {
 			return nil, ErrIdentity
@@ -88,7 +89,7 @@ func LoadFiles(profile Profile, role Role, ca, cert, key string) (*Config, error
 	return c, nil
 }
 func certificateRole(cert *x509.Certificate) Role {
-	if cert == nil || len(cert.URIs) != 1 {
+	if cert == nil || cert.IsCA || len(cert.URIs) != 1 {
 		return ""
 	}
 	for _, r := range []Role{Workspace, Control, Guard, Model, Export, Evidence, Worker, OPA, OIDC} {

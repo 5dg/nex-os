@@ -29,3 +29,15 @@ terraform-check:
 	terraform -chdir=deploy/terraform validate
 preflight:
 	./scripts/govcloud-preflight.sh
+
+.PHONY: qualification-build qualification-build-host qualification-up qualification-down qualification-ready
+qualification-build:
+	./scripts/qualification.sh build
+qualification-build-host:
+	./scripts/qualification.sh build-host
+qualification-up:
+	./scripts/qualification.sh up
+qualification-down:
+	./scripts/qualification.sh down
+qualification-ready:
+	./scripts/qualification.sh ready

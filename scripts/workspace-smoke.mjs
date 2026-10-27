@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 const base = "http://127.0.0.1:3000";
-const page = await fetch(base);
+const page = await fetch(`${base}/laboratory`);
 assert.equal(page.status, 200);
 assert.match(await page.text(), /Authority before action/);
 assert.equal((await fetch(`${base}/api/status`)).status, 200);

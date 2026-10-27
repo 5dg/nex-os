@@ -1,6 +1,7 @@
 import { profile } from "../../../lib/profile.ts";
 import { qualificationWorkflow } from "../../../lib/workflow.ts";
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 export async function POST(request: Request) {
   try { if (profile() === "synthetic-qualification") return await qualificationWorkflow(request); } catch { return Response.json({ code: "PROFILE_UNAVAILABLE" }, { status: 503 }); }
   if (process.env.APP_ENV !== "development") return Response.json({ code: "DEVELOPMENT_ONLY" }, { status: 403 });

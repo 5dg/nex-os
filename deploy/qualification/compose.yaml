@@ -1,0 +1,745 @@
+{
+  "name": "nex-qualification",
+  "services": {
+    "postgres": {
+      "image": "postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27",
+      "environment": {
+        "POSTGRES_DB": "nex",
+        "POSTGRES_USER": "nex",
+        "POSTGRES_PASSWORD_FILE": "/run/secrets/admin_database_password"
+      },
+      "entrypoint": [
+        "/bin/sh",
+        "/etc/nex/postgres-entrypoint.sh"
+      ],
+      "volumes": [
+        "postgres-data:/var/lib/postgresql/data",
+        "./postgres-entrypoint.sh:/etc/nex/postgres-entrypoint.sh:ro",
+        "./pg_hba.conf:/etc/nex/pg_hba.conf:ro"
+      ],
+      "tmpfs": [
+        "/run/pg-tls:mode=0700"
+      ],
+      "secrets": [
+        "admin_database_password",
+        "postgres_tls_cert",
+        "postgres_tls_key"
+      ],
+      "ports": [
+        "127.0.0.1:55432:5432"
+      ],
+      "networks": [
+        "db-link"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U nex -d nex"
+        ],
+        "interval": "2s",
+        "timeout": "3s",
+        "retries": 30
+      }
+    },
+    "migrate": {
+      "image": "nex-control:qualification",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "DATABASE_URL_FILE": "/run/secrets/admin_database_url",
+        "NEX_DB_CA_FILE": "/run/secrets/db_ca",
+        "OIDC_ISSUER": "https://issuer.nex.test:9444"
+      },
+      "command": [
+        "migrate"
+      ],
+      "profiles": [
+        "tools"
+      ],
+      "secrets": [
+        "admin_database_url",
+        "db_ca"
+      ],
+      "networks": [
+        "db-link"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        }
+      }
+    },
+    "seed": {
+      "image": "nex-control:qualification",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "DATABASE_URL_FILE": "/run/secrets/admin_database_url",
+        "NEX_DB_CA_FILE": "/run/secrets/db_ca",
+        "OIDC_ISSUER": "https://issuer.nex.test:9444",
+        "LOCAL_DATABASE_KEYS": "/run/secrets"
+      },
+      "command": [
+        "seed"
+      ],
+      "profiles": [
+        "tools"
+      ],
+      "secrets": [
+        "admin_database_url",
+        "db_ca",
+        "control_database_password",
+        "guard_database_password"
+      ],
+      "networks": [
+        "db-link"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        }
+      }
+    },
+    "issuer": {
+      "image": "nex-qualification-fixtures:local",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/oidc_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/oidc_tls_key",
+        "OIDC_ISSUER": "https://issuer.nex.test:9444",
+        "OIDC_CLIENT_ID": "nex-workspace",
+        "OIDC_AUDIENCE": "nex-api",
+        "OIDC_REQUIRED_SCOPE": "nex:access",
+        "OIDC_CLIENT_SECRET_FILE": "/run/secrets/oidc_client_secret",
+        "OIDC_REDIRECT_URI": "https://workspace.nex.test:9443/auth/callback"
+      },
+      "secrets": [
+        "tls_ca",
+        "oidc_tls_cert",
+        "oidc_tls_key",
+        "oidc_client_secret"
+      ],
+      "entrypoint": [
+        "/qualification-issuer"
+      ],
+      "ports": [
+        "127.0.0.1:9444:9444"
+      ],
+      "networks": {
+        "oidc-link": {
+          "aliases": [
+            "issuer.nex.test"
+          ]
+        }
+      }
+    },
+    "opa-edge": {
+      "image": "nex-qualification-fixtures:local",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/opa_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/opa_tls_key",
+        "LISTEN_ADDR": ":8181"
+      },
+      "secrets": [
+        "tls_ca",
+        "opa_tls_cert",
+        "opa_tls_key"
+      ],
+      "entrypoint": [
+        "/qualification-policy-edge"
+      ],
+      "networks": {
+        "policy-link": {
+          "aliases": [
+            "opa"
+          ]
+        }
+      },
+      "ports": [
+        "127.0.0.1:18181:8181"
+      ]
+    },
+    "opa": {
+      "image": "openpolicyagent/opa@sha256:02d31f4e34dcae04d87b542796aa0d089e42039fe6bbc5601587be44fb218963",
+      "command": [
+        "run",
+        "--server",
+        "--addr=127.0.0.1:8182",
+        "--disable-telemetry",
+        "/policies/guard.rego"
+      ],
+      "network_mode": "service:opa-edge",
+      "depends_on": [
+        "opa-edge"
+      ],
+      "volumes": [
+        "../../policies:/policies:ro"
+      ],
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "secrets": []
+    },
+    "guard": {
+      "image": "nex-guard:qualification",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/guard_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/guard_tls_key",
+        "GUARD_MODE": "execution",
+        "GUARD_LISTEN_ADDR": "0.0.0.0:50051",
+        "OPA_URL": "https://opa:8181",
+        "DATABASE_URL_FILE": "/run/secrets/guard_database_url",
+        "NEX_DB_CA_FILE": "/run/secrets/db_ca",
+        "EVIDENCE_URL": "https://evidence:8084",
+        "EVIDENCE_KEY_FILE": "/run/secrets/kernel_evidence_key",
+        "EVIDENCE_PUBLIC_FILE": "/run/secrets/evidence_public"
+      },
+      "secrets": [
+        "tls_ca",
+        "guard_tls_cert",
+        "guard_tls_key",
+        "guard_database_url",
+        "db_ca",
+        "kernel_evidence_key",
+        "evidence_public"
+      ],
+      "networks": [
+        "db-link",
+        "guard-link",
+        "policy-link",
+        "evidence-link"
+      ],
+      "ports": [
+        "127.0.0.1:55051:50051"
+      ],
+      "depends_on": [
+        "opa",
+        "evidence"
+      ]
+    },
+    "control": {
+      "image": "nex-control:qualification",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/control_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/control_tls_key",
+        "LISTEN_ADDR": ":8080",
+        "DATABASE_URL_FILE": "/run/secrets/control_database_url",
+        "NEX_DB_CA_FILE": "/run/secrets/db_ca",
+        "OIDC_ISSUER": "https://issuer.nex.test:9444",
+        "OIDC_AUDIENCE": "nex-api",
+        "OIDC_CLIENT_ID": "nex-workspace",
+        "OIDC_REQUIRED_SCOPE": "nex:access",
+        "OPA_URL": "https://opa:8181",
+        "GUARD_GRPC_ADDR": "guard:50051",
+        "MODEL_URL": "https://model:8082",
+        "MODEL_KEY_FILE": "/run/secrets/model_key",
+        "EXPORT_URL": "https://executor:8083",
+        "EXPORT_KEY_FILE": "/run/secrets/export_key",
+        "WORKER_KEY_FILE": "/run/secrets/worker_key",
+        "EVIDENCE_URL": "https://evidence:8084",
+        "EVIDENCE_KEY_FILE": "/run/secrets/evidence_key",
+        "EVIDENCE_PUBLIC_FILE": "/run/secrets/evidence_public"
+      },
+      "secrets": [
+        "tls_ca",
+        "control_tls_cert",
+        "control_tls_key",
+        "control_database_url",
+        "db_ca",
+        "model_key",
+        "export_key",
+        "worker_key",
+        "evidence_key",
+        "evidence_public"
+      ],
+      "networks": [
+        "db-link",
+        "guard-link",
+        "model-link",
+        "export-link",
+        "worker-link",
+        "user-link",
+        "oidc-link",
+        "evidence-link"
+      ],
+      "ports": [
+        "127.0.0.1:18080:8080"
+      ],
+      "depends_on": [
+        "guard",
+        "issuer",
+        "evidence"
+      ]
+    },
+    "model": {
+      "image": "nex-control:qualification",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/model_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/model_tls_key",
+        "MODEL_KEY_FILE": "/run/secrets/model_key",
+        "GUARD_GRPC_ADDR": "guard:50051",
+        "RECEIPTS_DIR": "/receipts"
+      },
+      "secrets": [
+        "tls_ca",
+        "model_tls_cert",
+        "model_tls_key",
+        "model_key"
+      ],
+      "entrypoint": [
+        "/model"
+      ],
+      "volumes": [
+        "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/model-receipts:/receipts"
+      ],
+      "networks": [
+        "model-link",
+        "guard-link"
+      ]
+    },
+    "executor": {
+      "image": "nex-control:qualification",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/export_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/export_tls_key",
+        "EXPORT_KEY_FILE": "/run/secrets/export_key",
+        "GUARD_GRPC_ADDR": "guard:50051",
+        "RECEIPTS_DIR": "/receipts"
+      },
+      "secrets": [
+        "tls_ca",
+        "export_tls_cert",
+        "export_tls_key",
+        "export_key"
+      ],
+      "entrypoint": [
+        "/executor"
+      ],
+      "volumes": [
+        "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/export-receipts:/receipts"
+      ],
+      "networks": [
+        "export-link",
+        "guard-link"
+      ]
+    },
+    "evidence": {
+      "image": "nex-control:qualification",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/evidence_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/evidence_tls_key",
+        "EVIDENCE_KEY_FILE": "/run/secrets/evidence_key",
+        "KERNEL_EVIDENCE_KEY_FILE": "/run/secrets/kernel_evidence_key",
+        "SIGNING_SEED_FILE": "/run/secrets/signing_seed",
+        "EVIDENCE_DIR": "/data/evidence"
+      },
+      "secrets": [
+        "tls_ca",
+        "evidence_tls_cert",
+        "evidence_tls_key",
+        "evidence_key",
+        "kernel_evidence_key",
+        "signing_seed"
+      ],
+      "entrypoint": [
+        "/evidence"
+      ],
+      "volumes": [
+        "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/evidence:/data/evidence"
+      ],
+      "networks": [
+        "evidence-link"
+      ]
+    },
+    "worker": {
+      "image": "nex-control:qualification",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/worker_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/worker_tls_key",
+        "CONTROL_URL": "https://control:8080",
+        "WORKER_KEY_FILE": "/run/secrets/worker_key"
+      },
+      "secrets": [
+        "tls_ca",
+        "worker_tls_cert",
+        "worker_tls_key",
+        "worker_key"
+      ],
+      "entrypoint": [
+        "/worker"
+      ],
+      "networks": [
+        "worker-link"
+      ],
+      "depends_on": [
+        "control"
+      ]
+    },
+    "workspace": {
+      "image": "nex-workspace:qualification",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/workspace_client_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/workspace_client_tls_key",
+        "NODE_ENV": "production",
+        "HOSTNAME": "127.0.0.1",
+        "PORT": "3000",
+        "CONTROL_URL": "https://control:8080",
+        "WORKSPACE_ORIGIN": "https://workspace.nex.test:9443",
+        "OIDC_ISSUER": "https://issuer.nex.test:9444",
+        "OIDC_CLIENT_ID": "nex-workspace",
+        "OIDC_AUDIENCE": "nex-api",
+        "OIDC_REQUIRED_SCOPE": "nex:access",
+        "OIDC_CLIENT_SECRET_FILE": "/run/secrets/oidc_client_secret",
+        "OIDC_REDIRECT_URI": "https://workspace.nex.test:9443/auth/callback"
+      },
+      "secrets": [
+        "tls_ca",
+        "workspace_client_tls_cert",
+        "workspace_client_tls_key",
+        "oidc_client_secret"
+      ],
+      "ports": [
+        "127.0.0.1:9443:9443"
+      ],
+      "networks": {
+        "user-link": {},
+        "oidc-link": {}
+      },
+      "depends_on": [
+        "control",
+        "issuer"
+      ],
+      "tmpfs": [
+        "/tmp"
+      ]
+    },
+    "workspace-edge": {
+      "image": "nex-qualification-fixtures:local",
+      "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
+      "read_only": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "environment": {
+        "APP_ENV": "development",
+        "NEX_PROFILE": "synthetic-qualification",
+        "MODEL_PROVIDER": "development",
+        "NO_PROXY": "issuer.nex.test,workspace.nex.test,postgres,opa,guard,control,model,executor,evidence,localhost,127.0.0.1",
+        "NEX_TLS_CA_FILE": "/run/secrets/tls_ca",
+        "NEX_TLS_CERT_FILE": "/run/secrets/workspace_server_tls_cert",
+        "NEX_TLS_KEY_FILE": "/run/secrets/workspace_server_tls_key",
+        "WORKSPACE_ORIGIN": "https://workspace.nex.test:9443"
+      },
+      "secrets": [
+        "tls_ca",
+        "workspace_server_tls_cert",
+        "workspace_server_tls_key"
+      ],
+      "entrypoint": [
+        "/qualification-edge"
+      ],
+      "command": [
+        "--synthetic-qualification",
+        "--origin",
+        "https://workspace.nex.test:9443",
+        "--listen",
+        ":9443"
+      ],
+      "network_mode": "service:workspace",
+      "depends_on": [
+        "workspace"
+      ]
+    }
+  },
+  "networks": {
+    "db-link": {
+      "internal": true
+    },
+    "guard-link": {
+      "internal": true
+    },
+    "policy-link": {
+      "internal": true
+    },
+    "evidence-link": {
+      "internal": true
+    },
+    "model-link": {
+      "internal": true
+    },
+    "export-link": {
+      "internal": true
+    },
+    "worker-link": {
+      "internal": true
+    },
+    "user-link": {
+      "internal": true
+    },
+    "oidc-link": {
+      "internal": true
+    }
+  },
+  "volumes": {
+    "postgres-data": {}
+  },
+  "secrets": {
+    "model_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/model-key"
+    },
+    "export_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/export-key"
+    },
+    "worker_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/worker-key"
+    },
+    "evidence_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/evidence-key"
+    },
+    "kernel_evidence_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/kernel-evidence-key"
+    },
+    "signing_seed": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/signing-seed"
+    },
+    "control_database_password": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/control-database-password"
+    },
+    "guard_database_password": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/guard-database-password"
+    },
+    "admin_database_password": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/admin-database-password"
+    },
+    "control_database_url": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/control-database-url"
+    },
+    "guard_database_url": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/guard-database-url"
+    },
+    "admin_database_url": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/admin-database-url"
+    },
+    "oidc_client_secret": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/secrets/oidc-client-secret"
+    },
+    "tls_ca": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/ca.crt"
+    },
+    "db_ca": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/ca.crt"
+    },
+    "evidence_public": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/evidence-public"
+    },
+    "control_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/control/tls.crt"
+    },
+    "control_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/control/tls.key"
+    },
+    "guard_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/guard/tls.crt"
+    },
+    "guard_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/guard/tls.key"
+    },
+    "model_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/model/tls.crt"
+    },
+    "model_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/model/tls.key"
+    },
+    "export_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/export/tls.crt"
+    },
+    "export_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/export/tls.key"
+    },
+    "evidence_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/evidence/tls.crt"
+    },
+    "evidence_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/evidence/tls.key"
+    },
+    "worker_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/worker/tls.crt"
+    },
+    "worker_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/worker/tls.key"
+    },
+    "workspace_client_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/workspace-client/tls.crt"
+    },
+    "workspace_client_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/workspace-client/tls.key"
+    },
+    "workspace_server_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/workspace-server/tls.crt"
+    },
+    "workspace_server_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/workspace-server/tls.key"
+    },
+    "opa_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/opa/tls.crt"
+    },
+    "opa_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/opa/tls.key"
+    },
+    "oidc_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/oidc/tls.crt"
+    },
+    "oidc_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/oidc/tls.key"
+    },
+    "postgres_tls_cert": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/postgres/tls.crt"
+    },
+    "postgres_tls_key": {
+      "file": "${NEX_QUAL_STATE_DIR:-../../.local/qualification}/current-pki/postgres/tls.key"
+    }
+  }
+}

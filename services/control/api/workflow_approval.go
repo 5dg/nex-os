@@ -15,11 +15,6 @@ import (
 	"time"
 )
 
-type exportBinding struct {
-	ApprovalID, JobID, TenantID, ActorID, DelegationID, Action, DocumentID, DocumentVersion, DocumentDigest, AnswerDigest, DestinationID, PolicyDigest string
-	Expires                                                                                                                                            int64
-}
-
 func bindingDigest(j storedJob, approval, destination, content string, expires time.Time) string {
 	fields := []string{approval, j.ID, j.TenantID, j.Owner, j.Delegation, "document.export", j.DocumentID, j.DocumentVersion, broker.Hash([]byte(content)), broker.Hash([]byte(j.Answer)), destination, guard.Digest(), strconv.FormatInt(expires.Unix(), 10)}
 	encoded := []byte("nex.export.v1\x00")

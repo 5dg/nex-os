@@ -31,6 +31,7 @@ Trust snapshots are loaded at process start; rotation means restart/recreate tha
 | Evidence /append/kernel,/challenge/kernel | guard |
 | Control /internal/work/claim,/internal/work/*/step | worker plus existing worker scope |
 | Control /v1 user routes | workspace plus separate API access JWT and DB membership/delegation |
+| Control /readyz | workspace mTLS only; bounded authenticated dependency readiness, no user/tenant data or execution grant |
 | Control /v1/status | workspace mTLS only; minimal profile/provider/synthetic status, no user data; explicit pre-login readiness exception |
 | OPA read source/decision endpoints | guard only; no management write capability |
 | OIDC discovery/JWKS/token/authorization | declared issuer HTTPS policy; browser authorization endpoint uses normal HTTPS |

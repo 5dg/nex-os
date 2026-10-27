@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/5dg/nex-os/packages/broker"
 	"github.com/5dg/nex-os/packages/contracts"
+	"github.com/5dg/nex-os/packages/trust"
 	"github.com/5dg/nex-os/services/control/auth"
 	"github.com/5dg/nex-os/services/control/guard"
 	"github.com/5dg/nex-os/services/model"
@@ -19,6 +20,8 @@ import (
 )
 
 type Server struct {
+	Profile           trust.Profile
+	Trust             *trust.Config
 	DB                *pgxpool.Pool
 	Auth              *auth.Verifier
 	Policy            *guard.Client
@@ -36,24 +39,55 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if s.DB.Ping(r.Context()) != nil || s.Policy.Health(r.Context()) != nil || s.evidenceReady(r.Context()) != nil {
+		probe, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		if s.qualification() && (s.Trust == nil || s.ModelRPC == nil || s.ToolRPC == nil || s.EvidenceRPC == nil || len(s.WorkerKey) != 32) {
+			fail(w, 503, "CONFIGURATION_UNAVAILABLE", "Required qualification dependency absent")
+			return
+		}
+		database, stop := context.WithTimeout(probe, 3*time.Second)
+		dbErr := s.DB.Ping(database)
+		stop()
+		if dbErr != nil || s.Policy.Health(probe) != nil || s.evidenceReady(probe) != nil {
 			fail(w, 503, "DEPENDENCY_UNAVAILABLE", "Required dependency unavailable")
 			return
+		}
+		if s.qualification() {
+			if e := s.Trust.CheckPeer(r.TLS, []trust.Role{trust.Workspace}); e != nil {
+				fail(w, 503, "IDENTITY_UNAVAILABLE", "Current qualification identity unavailable")
+				return
+			}
 		}
 		respond(w, 200, map[string]string{"status": "ready"})
 	})
 	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
-		respond(w, 200, map[string]any{"environment": s.Environment, "model_provider": "development", "synthetic_data_only": true, "milestone": "local-review-export", "guard_runtime": "rust-grpc"})
+		respond(w, 200, map[string]any{"environment": s.Environment, "profile": string(s.profile()), "model_provider": "development", "synthetic_data_only": true, "milestone": "local-review-export", "guard_runtime": "rust-grpc"})
 	})
+	mux.HandleFunc("GET /v1/me", s.me)
 	mux.HandleFunc("POST /v1/actions/authorize", s.authorize)
 	mux.HandleFunc("POST /v1/models/invoke", s.invoke)
 	s.workflowRoutes(mux)
+	handler := s.qualifiedHandler(mux)
+	admission := make(chan struct{}, 32)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		if s.qualification() {
+			select {
+			case admission <- struct{}{}:
+				defer func() { <-admission }()
+			default:
+				fail(w, 503, "ADMISSION_LIMIT", "Service request capacity unavailable")
+				return
+			}
+		}
+		timeout := 60 * time.Second
+		if s.qualification() && !strings.HasSuffix(r.URL.Path, "/step") {
+			timeout = 15 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
-		mux.ServeHTTP(w, r.WithContext(ctx))
+		handler.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -107,7 +141,7 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) invoke(w http.ResponseWriter, r *http.Request) {
-	if s.Environment != "development" {
+	if s.Environment != "development" || s.qualification() {
 		fail(w, 404, "NOT_AVAILABLE", "Direct development route unavailable")
 		return
 	}
@@ -147,7 +181,7 @@ func (s *Server) invoke(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) decide(ctx context.Context, id auth.Identity, req contracts.ActionRequest) (contracts.Decision, error) {
-	tx, err := s.DB.Begin(ctx)
+	tx, err := s.begin(ctx)
 	if err != nil {
 		return contracts.Decision{}, err
 	}

@@ -22,7 +22,8 @@ def digest(path):
 
 def inputs():
     listed = subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=root, capture_output=True, check=True).stdout.split(b'\0')
-    paths = [root / os.fsdecode(p) for p in listed if p and pathlib.Path(os.fsdecode(p)).parts[0] in ('services', 'packages', 'policies') and not os.fsdecode(p).endswith('_test.go')]
+    prefixes = ('services/', 'packages/', 'policies/', 'scripts/qualification-', 'tests/qualification/fixtures/', 'tests/qualification/cmd/', 'apps/workspace/')
+    paths = [root / os.fsdecode(p) for p in listed if p and os.fsdecode(p).startswith(prefixes) and not os.fsdecode(p).endswith('_test.go')]
     paths = [p for p in paths if p.is_file()]
     paths.extend(root / p for p in ('go.mod', 'go.sum', '.tool-versions', 'rust-toolchain.toml'))
     files = {str(p.relative_to(root)): digest(p) for p in sorted(set(paths))}
@@ -72,7 +73,11 @@ else:
     record = json.loads(path.read_text())
     if record['inputs'] != inputs():
         raise SystemExit('Build inputs changed during compilation; freeze source and rebuild.')
-    record['binaries'] = {name: digest(root / 'bin' / name) for name in ('control', 'dev-issuer', 'model', 'executor', 'worker', 'evidence', 'guard-kernel')}
+    names = ['control', 'dev-issuer', 'model', 'executor', 'worker', 'evidence', 'guard-kernel']
+    if os.environ.get('NEX_BUILD_QUALIFICATION_FIXTURES') == '1':
+        names += ['qualification-edge', 'qualification-policy-edge', 'qualification-pki', 'qualification-issuer']
+        record['build_mode'] = 'local-host-synthetic-qualification'
+    record['binaries'] = {name: digest(root / 'bin' / name) for name in names}
     record['rust_dynamic_dependencies'] = command('ldd', str(root / 'bin/guard-kernel')).splitlines()
     write(root / 'bin/build-inputs.json', record)
     print('Recorded host development inputs, compiler/ABI identity and binary hashes; no production attestation claimed.')

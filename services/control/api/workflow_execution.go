@@ -43,7 +43,7 @@ func (s *Server) step(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	tx, e := s.DB.Begin(ctx)
+	tx, e := s.begin(ctx)
 	if e != nil {
 		workflowError(w, e)
 		return
@@ -136,7 +136,7 @@ func (s *Server) step(w http.ResponseWriter, r *http.Request) {
 	// Persist completion in a new transaction after the external boundary. Lease
 	// fencing prevents a stale worker from overwriting a newer attempt or cancel.
 	resultErr := e
-	done, e := s.DB.Begin(ctx)
+	done, e := s.begin(ctx)
 	if e != nil {
 		workflowError(w, e)
 		return
@@ -220,7 +220,7 @@ func (s *Server) step(w http.ResponseWriter, r *http.Request) {
 func (s *Server) preExecutionFailure(parent context.Context, j storedJob, lease, code string) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
 	defer cancel()
-	tx, e := s.DB.Begin(ctx)
+	tx, e := s.begin(ctx)
 	if e != nil {
 		return e
 	}
@@ -243,7 +243,7 @@ func (s *Server) preExecutionFailure(parent context.Context, j storedJob, lease,
 	// signed event separately, and roll it back entirely if anchoring fails.
 	evidenceCtx, stop := context.WithTimeout(ctx, 2*time.Second)
 	defer stop()
-	evidenceTx, e := s.DB.Begin(evidenceCtx)
+	evidenceTx, e := s.begin(evidenceCtx)
 	if e != nil {
 		return nil
 	}

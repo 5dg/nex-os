@@ -84,6 +84,9 @@ func newVerifier(ctx context.Context, issuer, audience, clientID, scope string, 
 
 func (v *Verifier) Verify(r *http.Request) (Identity, error) {
 	unauthorized := func() (Identity, error) { return Identity{}, errors.New("valid API bearer credential required") }
+	if len(r.Header.Values("Authorization")) != 1 {
+		return unauthorized()
+	}
 	value := r.Header.Get("Authorization")
 	if len(value) > MaxBearerBytes+7 {
 		return unauthorized()

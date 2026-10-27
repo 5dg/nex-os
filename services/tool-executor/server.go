@@ -49,6 +49,10 @@ func (s *Service) Handler() http.Handler {
 			http.Error(w, "receiver unavailable", 503)
 			return
 		}
+		if s.peer(r) != nil || (s.Profile == "synthetic-qualification" && s.Receipts.CheckCustody() != nil) {
+			http.Error(w, "receiver unavailable", 503)
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	})
 	for _, path := range []string{"/execute", "/status"} {
@@ -66,7 +70,11 @@ func (s *Service) Handler() http.Handler {
 				return
 			}
 			if in.DestinationID != "local-evidence" || in.TenantID == "" || in.RequestDigest == "" || len(in.Content) == 0 || len(in.Content) > 13000 {
-				broker.WriteError(w, broker.ErrNotStarted)
+				outcome := broker.ErrNotStarted
+				if s.Profile == "synthetic-qualification" {
+					outcome = broker.ErrUnknown
+				}
+				broker.WriteError(w, outcome)
 				return
 			}
 			if s.Profile == "synthetic-qualification" {
@@ -121,6 +129,10 @@ func (s *Service) Handler() http.Handler {
 			}
 			artifact := stored.ExportResult
 			if e = s.Validate.CompleteExecution(r.Context(), in.OperationID, digest, artifact); e != nil {
+				broker.WriteError(w, broker.ErrUnknown)
+				return
+			}
+			if s.peer(r) != nil {
 				broker.WriteError(w, broker.ErrUnknown)
 				return
 			}

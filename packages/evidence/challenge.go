@@ -112,9 +112,13 @@ func (j *Journal) Close() error {
 	return j.custody.Close()
 }
 func (j *Journal) Ready() error {
-	j.mu.Lock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if e := j.lockContext(ctx); e != nil {
+		return e
+	}
 	defer j.mu.Unlock()
-	return j.readyLocked(context.Background())
+	return j.readyLocked(ctx)
 }
 func (j *Journal) readyLocked(ctx context.Context) error {
 	if len(j.Private) != ed25519.PrivateKeySize || j.custody == nil {
@@ -147,14 +151,13 @@ func (j *Journal) readyLocked(ctx context.Context) error {
 	defer directory.Close()
 	return directory.Sync()
 }
-func (j *Journal) Challenge(producer, nonce string, check func() error) (ChallengeProof, error) {
-	return j.ChallengeContext(context.Background(), producer, nonce, check)
-}
 func (j *Journal) ChallengeContext(ctx context.Context, producer, nonce string, check func() error) (ChallengeProof, error) {
 	if !validChallenge(producer, nonce) {
 		return ChallengeProof{}, errors.New("invalid signing challenge")
 	}
-	j.mu.Lock()
+	if e := j.lockContext(ctx); e != nil {
+		return ChallengeProof{}, e
+	}
 	defer j.mu.Unlock()
 	if e := j.readyLocked(ctx); e != nil {
 		return ChallengeProof{}, e

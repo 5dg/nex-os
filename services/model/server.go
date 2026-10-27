@@ -75,7 +75,13 @@ func (s *Service) ready(r *http.Request) error {
 		if actual.Provider != contracts.QualificationProvider || actual.Region != contracts.QualificationRegion || actual.ModelID != contracts.QualificationModelID || actual.EffectiveEndpoint != contracts.QualificationEndpoint || len(actual.Features) != 0 {
 			return errors.New("synthetic generator required")
 		}
-		return s.Validate.Readiness(r.Context())
+		if e := s.Validate.Readiness(r.Context()); e != nil {
+			return e
+		}
+		if e := s.Receipts.CheckCustody(); e != nil {
+			return e
+		}
+		return s.peer(r)
 	}
 	return nil
 }
@@ -109,7 +115,11 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		if in.RouteID != "dev-model" || in.OperationID == "" || in.TenantID == "" {
-			broker.WriteError(w, broker.ErrNotStarted)
+			outcome := broker.ErrNotStarted
+			if s.Profile == qualificationProfile {
+				outcome = broker.ErrUnknown
+			}
+			broker.WriteError(w, outcome)
 			return
 		}
 		if s.Profile == qualificationProfile {
@@ -168,6 +178,10 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		if e = s.Validate.CompleteExecution(r.Context(), in.OperationID, digest, result); e != nil {
+			broker.WriteError(w, broker.ErrUnknown)
+			return
+		}
+		if s.peer(r) != nil {
 			broker.WriteError(w, broker.ErrUnknown)
 			return
 		}

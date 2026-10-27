@@ -114,17 +114,22 @@ func ServeHTTP(ctx context.Context, address string, handler http.Handler, c *Con
 		return e
 	}
 	server := &http.Server{Addr: address, Handler: handler, TLSConfig: cfg, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 65 * time.Second, IdleTimeout: 15 * time.Second, MaxHeaderBytes: 16384}
-	drained := make(chan struct{})
+	serveDone := make(chan struct{})
+	drainDone := make(chan error, 1)
 	go func() {
 		select {
 		case <-ctx.Done():
 			shutdown, stop := context.WithTimeout(context.Background(), 5*time.Second)
-			if e := server.Shutdown(shutdown); e != nil {
-				_ = server.Close()
-			}
+			err := server.Shutdown(shutdown)
 			stop()
-		case <-drained:
-			return
+			if err != nil {
+				_ = server.Close()
+				drainDone <- ErrUncleanShutdown
+				return
+			}
+			drainDone <- nil
+		case <-serveDone:
+			drainDone <- nil
 		}
 	}()
 
@@ -133,17 +138,15 @@ func ServeHTTP(ctx context.Context, address string, handler http.Handler, c *Con
 	} else {
 		e = server.ListenAndServe()
 	}
+	close(serveDone)
+	drainErr := <-drainDone
 	if errors.Is(e, http.ErrServerClosed) {
-		// Shutdown returns ErrServerClosed to the listener before its handlers
-		// finish. Hold custody until the bounded drain (or forced close) ends.
-		shutdown, stop := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := server.Shutdown(shutdown); err != nil {
-			_ = server.Close()
-		}
-		stop()
-		close(drained)
-		return nil
+		return drainErr
 	}
-	close(drained)
 	return e
 }
+
+// ErrUncleanShutdown requires a process-fatal exit before releasing custody:
+// forced connection closure cannot prove a callback that ignored cancellation
+// has stopped. Current service mains terminate on every ServeHTTP error.
+var ErrUncleanShutdown = errors.New("HTTP drain exceeded bound; terminate process before releasing custody")

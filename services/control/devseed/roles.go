@@ -41,12 +41,13 @@ func LocalRoles(ctx context.Context, db *pgxpool.Pool, directory string) error {
             IF c IS NOT NULL THEN EXECUTE format('REVOKE ALL (%s) ON public.%I FROM nex_control,nex_guard',c,t.tablename); END IF;
           END LOOP;
         END $body$`,
-		`GRANT SELECT ON tenants,users,delegations,resources,document_bodies,model_routes,export_destinations,jobs,approvals,execution_operations,execution_manifests,audit_events TO nex_control,nex_guard`,
+		`GRANT SELECT ON tenants,users,delegations,resources,document_bodies,model_routes,export_destinations,jobs,approvals,execution_operations,execution_manifests,audit_events,question_catalogue,document_admissions TO nex_control,nex_guard`,
 		`GRANT UPDATE(lock_version) ON users,delegations,resources,document_bodies,model_routes,export_destinations,approvals TO nex_control,nex_guard`,
-		`GRANT INSERT(id,tenant_id,delegation_id,state,owner_id,document_id,document_version,question,idempotency_key,request_digest,operation_id) ON jobs TO nex_control`,
+		`GRANT INSERT(id,tenant_id,delegation_id,state,owner_id,document_id,document_version,question,idempotency_key,request_digest,operation_id,question_id,question_version,execution_profile) ON jobs TO nex_control`,
 		`GRANT UPDATE(state,phase,error_code,lease_token,lease_until,approval_id,operation_id) ON jobs TO nex_control`,
 		`GRANT INSERT(id,tenant_id,job_id,request_digest,destination_id,expires_at,policy_digest) ON approvals TO nex_control`,
 		`GRANT INSERT ON execution_operations,execution_manifests TO nex_guard`,
+		`GRANT UPDATE(lock_version) ON question_catalogue,document_admissions TO nex_guard`,
 		`GRANT UPDATE(approved_at,rejected_at,approver_id,consumed_at,consumed_operation_id) ON approvals TO nex_guard`,
 		`GRANT UPDATE(state,phase,error_code,answer,provider,export_id,review_operation_id) ON jobs TO nex_guard`,
 		`GRANT UPDATE(status,result,completed_at) ON execution_operations TO nex_guard`,

@@ -50,7 +50,7 @@ func (s *Server) userTx(w http.ResponseWriter, r *http.Request) (pgx.Tx, guard.A
 		fail(w, 401, "UNAUTHENTICATED", "Valid bearer token required")
 		return nil, guard.Actor{}, false
 	}
-	tx, e := s.DB.Begin(r.Context())
+	tx, e := s.begin(r.Context())
 	if e != nil {
 		workflowError(w, e)
 		return nil, guard.Actor{}, false
@@ -71,6 +71,21 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	var in contracts.CreateJob
 	if !decode(w, r, &in) {
+		return
+	}
+	if s.qualification() {
+		if in.Question != "" || in.QuestionCatalogueID != contracts.QualificationQuestionID {
+			fail(w, 400, "INPUT_ADMISSION_REQUIRED", "Select the server-owned synthetic question")
+			return
+		}
+		var e error
+		in.Question, _, e = s.qualificationQuestion(r.Context(), tx)
+		if e != nil {
+			workflowError(w, e)
+			return
+		}
+	} else if in.QuestionCatalogueID != "" {
+		fail(w, 400, "INVALID_REQUEST", "Question catalogue requires qualification profile")
 		return
 	}
 	if len(in.Question) < 1 || len(in.Question) > 1000 || len(in.IdempotencyKey) < 8 || len(in.IdempotencyKey) > 100 || in.DelegationID == "" || in.DocumentID == "" {
@@ -100,7 +115,11 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request) {
 		workflowError(w, e)
 		return
 	}
-	j := storedJob{ReviewJob: contracts.ReviewJob{ID: rand.Text(), TenantID: a.TenantID, State: "queued", Phase: "review", DocumentID: in.DocumentID, Question: in.Question}, Owner: a.ID, Delegation: in.DelegationID, Operation: rand.Text()}
+	j := storedJob{ReviewJob: contracts.ReviewJob{ID: rand.Text(), TenantID: a.TenantID, State: "queued", Phase: "review", DocumentID: in.DocumentID, Question: in.Question}, Owner: a.ID, Delegation: in.DelegationID, Operation: rand.Text(), ExecutionProfile: string(s.profile())}
+	if s.qualification() {
+		j.QuestionCatalogueID = contracts.QualificationQuestionID
+		j.QuestionCatalogueVersion = contracts.QualificationQuestionVersion
+	}
 	if _, e = tx.Exec(r.Context(), `SELECT set_config('nex.job_id',$1,true)`, j.ID); e != nil {
 		workflowError(w, e)
 		return
@@ -118,7 +137,20 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request) {
 		workflowError(w, errForbidden)
 		return
 	}
-	_, e = tx.Exec(r.Context(), `INSERT INTO jobs(id,tenant_id,delegation_id,state,owner_id,document_id,document_version,question,idempotency_key,request_digest,operation_id) VALUES($1,$2,$3,'queued',$4,$5,$6,$7,$8,$9,$10)`, j.ID, j.TenantID, j.Delegation, j.Owner, j.DocumentID, j.DocumentVersion, j.Question, in.IdempotencyKey, digest, j.Operation)
+	if s.qualification() {
+		var content, class string
+		e = tx.QueryRow(r.Context(), `SELECT b.content,r.classification FROM document_bodies b JOIN resources r ON r.tenant_id=b.tenant_id AND r.id=b.resource_id WHERE b.tenant_id=$1 AND b.resource_id=$2 FOR SHARE OF b,r`, j.TenantID, j.DocumentID).Scan(&content, &class)
+		if e == nil {
+			_, e = s.qualificationAdmission(r.Context(), tx, j, content, class)
+		}
+		if e != nil {
+			workflowError(w, e)
+			return
+		}
+		_, e = tx.Exec(r.Context(), `INSERT INTO jobs(id,tenant_id,delegation_id,state,owner_id,document_id,document_version,question,idempotency_key,request_digest,operation_id,question_id,question_version,execution_profile) VALUES($1,$2,$3,'queued',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, j.ID, j.TenantID, j.Delegation, j.Owner, j.DocumentID, j.DocumentVersion, j.Question, in.IdempotencyKey, digest, j.Operation, j.QuestionCatalogueID, j.QuestionCatalogueVersion, j.ExecutionProfile)
+	} else {
+		_, e = tx.Exec(r.Context(), `INSERT INTO jobs(id,tenant_id,delegation_id,state,owner_id,document_id,document_version,question,idempotency_key,request_digest,operation_id) VALUES($1,$2,$3,'queued',$4,$5,$6,$7,$8,$9,$10)`, j.ID, j.TenantID, j.Delegation, j.Owner, j.DocumentID, j.DocumentVersion, j.Question, in.IdempotencyKey, digest, j.Operation)
+	}
 	if e == nil {
 		e = s.record(r.Context(), tx, j, "job.created", "queued")
 	}
@@ -294,7 +326,7 @@ func (s *Server) claim(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	tx, e := s.DB.Begin(ctx)
+	tx, e := s.begin(ctx)
 	if e != nil {
 		workflowError(w, e)
 		return
