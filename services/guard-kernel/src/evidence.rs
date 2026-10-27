@@ -16,6 +16,7 @@ pub struct Writer {
 #[derive(Deserialize)]
 struct Proof {
     sequence: u64,
+    previous: String,
     head: String,
     signature: String,
     event_id: String,
@@ -158,7 +159,7 @@ impl Writer {
             .post(format!("{}/append/kernel", self.url))
             .header("content-type", "application/json")
             .header("authorization", format!("Capability {token}"))
-            .body(body)
+            .body(body.clone())
             .send()
             .await
             .map_err(|_| fail())?;
@@ -170,6 +171,8 @@ impl Writer {
                 .await
                 .map_err(|_| fail())?;
         let proof: Proof = serde_json::from_value(raw.clone()).map_err(|_| fail())?;
+        let expected_head =
+            crate::evidence_v1::head(&body, "kernel", &proof.previous).map_err(|_| fail())?;
         let signature = URL_SAFE_NO_PAD
             .decode(proof.signature)
             .map_err(|_| fail())?;
@@ -180,6 +183,7 @@ impl Writer {
         );
         if proof.event_id != id
             || proof.producer != "kernel"
+            || proof.head != expected_head
             || self.public.verify(message.as_bytes(), &signature).is_err()
         {
             return Err(fail());

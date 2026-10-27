@@ -1,0 +1,98 @@
+[
+  {
+    "name": "empty-job-and-sorted-object",
+    "event_json": "{\"action\":\"model.prepared\",\"actor_id\":\"alice\",\"delegation_id\":\"delegation-alice\",\"detail\":{\"a\":\"first\",\"z\":\"last\"},\"event_id\":\"vector-basic\",\"job_id\":\"\",\"resource_id\":\"review-alice\",\"tenant_id\":\"tenant-a\",\"timestamp_us\":1793123456123456}",
+    "canonical_json": "{\"event\":{\"resource_id\":\"review-alice\",\"delegation_id\":\"delegation-alice\",\"timestamp_us\":1793123456123456,\"producer\":\"kernel\",\"event_id\":\"vector-basic\",\"tenant_id\":\"tenant-a\",\"actor_id\":\"alice\",\"action\":\"model.prepared\",\"detail\":{\"a\":\"first\",\"z\":\"last\"}},\"previous\":\"\"}",
+    "previous": "",
+    "head": "609a84e80da5800f40f9581437a20b67b347af2042e21548f53092513451618e",
+    "public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "proof": {
+      "producer": "kernel",
+      "previous": "",
+      "sequence": 1,
+      "head": "609a84e80da5800f40f9581437a20b67b347af2042e21548f53092513451618e",
+      "signature": "jbZU3Zsn2H-CjRYmYOtV62xdI0JAluSgAO2NrGAPMcUvIwA10dEck4VNx5CDqntpLpl1wmBUEH9g-v-vUuk_Dw",
+      "event_id": "vector-basic"
+    }
+  },
+  {
+    "name": "unicode-html-and-line-separators",
+    "event_json": "{\"action\":\"model.prepared\",\"actor_id\":\"alice\",\"delegation_id\":\"delegation-alice\",\"detail\":{\"nested\":{\"β\":\"\u003c\u003e\u0026\"},\"text\":\"\u003ctag\u003e\u0026 雪 🙂 \u2028\u2029\"},\"event_id\":\"vector-unicode\",\"job_id\":\"job-unicode\",\"resource_id\":\"doc\u003c\u003e\u0026\",\"tenant_id\":\"tenant-a\",\"timestamp_us\":1793123456123456}",
+    "canonical_json": "{\"event\":{\"resource_id\":\"doc\\u003c\\u003e\\u0026\",\"delegation_id\":\"delegation-alice\",\"timestamp_us\":1793123456123456,\"producer\":\"kernel\",\"event_id\":\"vector-unicode\",\"tenant_id\":\"tenant-a\",\"actor_id\":\"alice\",\"job_id\":\"job-unicode\",\"action\":\"model.prepared\",\"detail\":{\"nested\":{\"β\":\"\\u003c\\u003e\\u0026\"},\"text\":\"\\u003ctag\\u003e\\u0026 雪 🙂 \\u2028\\u2029\"}},\"previous\":\"609a84e80da5800f40f9581437a20b67b347af2042e21548f53092513451618e\"}",
+    "previous": "609a84e80da5800f40f9581437a20b67b347af2042e21548f53092513451618e",
+    "head": "1535bc2bea399e3c671ff53b18d075a2190b27565c366137b176f9da7ff1846f",
+    "public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "proof": {
+      "producer": "kernel",
+      "previous": "609a84e80da5800f40f9581437a20b67b347af2042e21548f53092513451618e",
+      "sequence": 2,
+      "head": "1535bc2bea399e3c671ff53b18d075a2190b27565c366137b176f9da7ff1846f",
+      "signature": "t0MiLrzucNmi9d7WBt8Y64JVeziJ5XHETscPN7NdqFTpJheGCOG_F81DZKYtigrGbngU7vGD3bqDoE1bFEKXBg",
+      "event_id": "vector-unicode"
+    }
+  },
+  {
+    "name": "null-detail",
+    "event_json": "{\"action\":\"model.prepared\",\"actor_id\":\"alice\",\"delegation_id\":\"delegation-alice\",\"detail\":null,\"event_id\":\"vector-null\",\"job_id\":\"job-null\",\"resource_id\":\"review-alice\",\"tenant_id\":\"tenant-a\",\"timestamp_us\":1793123456123456}",
+    "canonical_json": "{\"event\":{\"resource_id\":\"review-alice\",\"delegation_id\":\"delegation-alice\",\"timestamp_us\":1793123456123456,\"producer\":\"kernel\",\"event_id\":\"vector-null\",\"tenant_id\":\"tenant-a\",\"actor_id\":\"alice\",\"job_id\":\"job-null\",\"action\":\"model.prepared\",\"detail\":null},\"previous\":\"1535bc2bea399e3c671ff53b18d075a2190b27565c366137b176f9da7ff1846f\"}",
+    "previous": "1535bc2bea399e3c671ff53b18d075a2190b27565c366137b176f9da7ff1846f",
+    "head": "d762e05b8c4d20b65171974c72a3280e81d503f8d3787dafd32b660f301bf552",
+    "public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "proof": {
+      "producer": "kernel",
+      "previous": "1535bc2bea399e3c671ff53b18d075a2190b27565c366137b176f9da7ff1846f",
+      "sequence": 3,
+      "head": "d762e05b8c4d20b65171974c72a3280e81d503f8d3787dafd32b660f301bf552",
+      "signature": "1PYDRK3AoUnVg8Mq6aQMo6Ea3wPTnMkDZZrqmvvh_Dmd8jG3_NLI7MHjt2QISJs3nQ00EgLDiMSJUed8f5OXCA",
+      "event_id": "vector-null"
+    }
+  },
+  {
+    "name": "rust-wire-number-spellings",
+    "event_json": "{\"action\":\"model.prepared\",\"actor_id\":\"alice\",\"delegation_id\":\"delegation-alice\",\"detail\":{\"bool\":true,\"floats\":[1.0,1.25,1e+30,1e-7,-0.0],\"integers\":[0,-7,9007199254740993]},\"event_id\":\"vector-numbers\",\"job_id\":\"job-numbers\",\"resource_id\":\"review-alice\",\"tenant_id\":\"tenant-a\",\"timestamp_us\":1793123456123456}",
+    "canonical_json": "{\"event\":{\"resource_id\":\"review-alice\",\"delegation_id\":\"delegation-alice\",\"timestamp_us\":1793123456123456,\"producer\":\"kernel\",\"event_id\":\"vector-numbers\",\"tenant_id\":\"tenant-a\",\"actor_id\":\"alice\",\"job_id\":\"job-numbers\",\"action\":\"model.prepared\",\"detail\":{\"bool\":true,\"floats\":[1.0,1.25,1e+30,1e-7,-0.0],\"integers\":[0,-7,9007199254740993]}},\"previous\":\"d762e05b8c4d20b65171974c72a3280e81d503f8d3787dafd32b660f301bf552\"}",
+    "previous": "d762e05b8c4d20b65171974c72a3280e81d503f8d3787dafd32b660f301bf552",
+    "head": "ba4edb25e28c796467201c8ad09913e75b9bc4c260c27350105a839a75812b35",
+    "public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "proof": {
+      "producer": "kernel",
+      "previous": "d762e05b8c4d20b65171974c72a3280e81d503f8d3787dafd32b660f301bf552",
+      "sequence": 4,
+      "head": "ba4edb25e28c796467201c8ad09913e75b9bc4c260c27350105a839a75812b35",
+      "signature": "ApvX7L2JlmEwbkfxDSie298HMA4b9fTpTxprPF4c_GwvuU1l6fCUP9p1yAHPW-rqdr76mJ6Y_Ps7X2y2KhLZBQ",
+      "event_id": "vector-numbers"
+    }
+  },
+  {
+    "name": "empty-strings-and-array-detail",
+    "event_json": "{\"action\":\"model.prepared\",\"actor_id\":\"alice\",\"delegation_id\":\"\",\"detail\":[\"\",{},[],false,null],\"event_id\":\"vector-array\",\"job_id\":\"\",\"resource_id\":\"\",\"tenant_id\":\"tenant-a\",\"timestamp_us\":0}",
+    "canonical_json": "{\"event\":{\"resource_id\":\"\",\"delegation_id\":\"\",\"timestamp_us\":0,\"producer\":\"kernel\",\"event_id\":\"vector-array\",\"tenant_id\":\"tenant-a\",\"actor_id\":\"alice\",\"action\":\"model.prepared\",\"detail\":[\"\",{},[],false,null]},\"previous\":\"ba4edb25e28c796467201c8ad09913e75b9bc4c260c27350105a839a75812b35\"}",
+    "previous": "ba4edb25e28c796467201c8ad09913e75b9bc4c260c27350105a839a75812b35",
+    "head": "4cff8fd368b9937ee2cf2b5279d43fcb6360b7c4e7a5548c3714ac3a3c431085",
+    "public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "proof": {
+      "producer": "kernel",
+      "previous": "ba4edb25e28c796467201c8ad09913e75b9bc4c260c27350105a839a75812b35",
+      "sequence": 5,
+      "head": "4cff8fd368b9937ee2cf2b5279d43fcb6360b7c4e7a5548c3714ac3a3c431085",
+      "signature": "bJ7UD3F_K8mnYrpiNDN1s7t5rn5ro5Ruw3s5ouNncR9cPkhaUT20ASSiljxibAUmy935M_kcKtoWFVTWcZUECw",
+      "event_id": "vector-array"
+    }
+  },
+  {
+    "name": "legacy-use-number-token-preservation",
+    "event_json": "{\"event_id\":\"vector-lexemes\",\"tenant_id\":\"tenant-a\",\"actor_id\":\"alice\",\"job_id\":\"\",\"action\":\"model.prepared\",\"resource_id\":\"review-alice\",\"delegation_id\":\"delegation-alice\",\"timestamp_us\":1793123456123456,\"detail\":{\"fraction\":1.2300,\"exponent\":1e+06,\"small\":0.0000001,\"large\":9007199254740993}}",
+    "canonical_json": "{\"event\":{\"resource_id\":\"review-alice\",\"delegation_id\":\"delegation-alice\",\"timestamp_us\":1793123456123456,\"producer\":\"kernel\",\"event_id\":\"vector-lexemes\",\"tenant_id\":\"tenant-a\",\"actor_id\":\"alice\",\"action\":\"model.prepared\",\"detail\":{\"exponent\":1e+06,\"fraction\":1.2300,\"large\":9007199254740993,\"small\":0.0000001}},\"previous\":\"4cff8fd368b9937ee2cf2b5279d43fcb6360b7c4e7a5548c3714ac3a3c431085\"}",
+    "previous": "4cff8fd368b9937ee2cf2b5279d43fcb6360b7c4e7a5548c3714ac3a3c431085",
+    "head": "7bd42e437cd883aaaa8794ec01394e2cd7aebb3088c53d28f528be5c90cb6b72",
+    "public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+    "proof": {
+      "producer": "kernel",
+      "previous": "4cff8fd368b9937ee2cf2b5279d43fcb6360b7c4e7a5548c3714ac3a3c431085",
+      "sequence": 6,
+      "head": "7bd42e437cd883aaaa8794ec01394e2cd7aebb3088c53d28f528be5c90cb6b72",
+      "signature": "52uds9z3UDmDRlBv6NwwaZTrJvNc5t-TgHYCE8frJkXQTb-NRIi5toCypC0DuNr-snP2Xd1vFLqgiYO8qo7ZDw",
+      "event_id": "vector-lexemes"
+    }
+  }
+]

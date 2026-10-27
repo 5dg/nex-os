@@ -4,6 +4,7 @@ use std::time::Duration;
 use subtle::ConstantTimeEq;
 use tonic::{Request, Response, Status};
 mod evidence;
+mod evidence_v1;
 mod execution;
 pub mod profile;
 mod state;
