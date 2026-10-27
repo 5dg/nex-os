@@ -21,30 +21,6 @@ type Error struct {
 	RequestID string `json:"request_id"`
 }
 
-type Delegation struct {
-	ID          string   `json:"id"`
-	TenantID    string   `json:"tenant_id"`
-	UserID      string   `json:"user_id"`
-	Permissions []string `json:"permissions"`
-	ExpiresAt   string   `json:"expires_at"`
-	RevokedAt   *string  `json:"revoked_at,omitempty"`
-}
-
-type Job struct {
-	ID           string `json:"id"`
-	TenantID     string `json:"tenant_id"`
-	DelegationID string `json:"delegation_id"`
-	State        string `json:"state"`
-}
-
-type Approval struct {
-	ID            string  `json:"id"`
-	TenantID      string  `json:"tenant_id"`
-	RequestDigest string  `json:"request_digest"`
-	ExpiresAt     string  `json:"expires_at"`
-	ConsumedAt    *string `json:"consumed_at,omitempty"`
-}
-
 type ModelInvocation struct {
 	DelegationID    string `json:"delegation_id"`
 	ResourceID      string `json:"resource_id"`
@@ -57,21 +33,4 @@ type ModelResult struct {
 	ModelID    string `json:"model_id"`
 	Text       string `json:"text"`
 	DecisionID string `json:"decision_id"`
-}
-
-type DocumentReference struct {
-	ID             string `json:"id"`
-	TenantID       string `json:"tenant_id"`
-	Classification string `json:"classification"`
-	Version        string `json:"version"`
-}
-
-type AuditEvent struct {
-	ID           string   `json:"event_id"`
-	TenantID     string   `json:"tenant_id"`
-	ActorID      string   `json:"actor_id"`
-	DelegationID string   `json:"delegation_id"`
-	Action       string   `json:"action"`
-	ResourceID   string   `json:"resource_id"`
-	Decision     Decision `json:"decision"`
 }

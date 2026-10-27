@@ -71,10 +71,48 @@ not pending cleanup work or evidence that an implementation can be deleted.
   was added, and no package dependencies or generated contracts changed.
 - Review/publication: D independently accepted the deletion and the existing
   checks after reviewing the diff and consumer searches. The lead also accepted
-  the diff and verification. Publication is not yet recorded; E alone may stage
-  and publish these approved files. Record the verified publisher revision in
-  the next ledger update rather than introducing a self-referential commit hash.
+  the diff and verification. E published the two approved files in
+  `25c7d680d23a6f467cd268725ac5963b05f8ce25` and verified remote `main` matches that
+  revision. The exclusive source-file window was returned to A afterward.
   No final-candidate claim is made here.
+
+### F-002 — unused foundation DTOs and unreachable OpenAPI definitions
+
+- Producing revision: `ada368e20b57a38f2b19e2683a897a0337a6d9cc`; the five
+  definitions predate that batch and were already published in the Alpha 0.3
+  source.
+- Scope: remove only exported Go DTOs `Delegation`, `Job`, `Approval`,
+  `DocumentReference` and `AuditEvent` from `packages/contracts/types.go`, and the
+  same five schema definitions from `packages/contracts/openapi.json`.
+- Consumer evidence: no supported Go consumers were found. Both F and D
+  independently followed nested OpenAPI schema references from the API roots;
+  exactly these five definitions were unreachable. The similarly named UI
+  types, active `ReviewJob`, `ApprovalView`, document/event list schemas, Protobuf
+  messages and v2/v3 payloads remain intact. No version tags or stable Go SDK
+  promise are known; this is not a claim about every possible external consumer.
+- Authorization: the lead approved this narrow removal conditional on D's
+  independent closure audit and A's exclusive two-file handoff. Both conditions
+  were met before editing; no other A-owned production file was changed by F.
+- Verification: the resulting OpenAPI object equals the saved baseline after
+  removing exactly the approved five definitions. All paths, security settings,
+  remaining schema values and reachable references are identical; no dangling
+  references remain. `go test -mod=readonly -race ./packages/contracts` passed
+  using Go's valid test cache. All Go packages and integration-tagged tests
+  compiled with `go test -mod=readonly -tags=integration -run '^$' ./...`; that
+  command was compilation only, not an integration-test execution. Formatting
+  and diff-whitespace checks passed. No deletion-mirroring tests were added.
+- Review/publication: D accepted the post-deletion diff after independently
+  repeating the whole-document semantic comparison and confirming the exact
+  approved DTO removals. The lead accepted the exact diff, closure and compile
+  evidence. Publication is pending. The two-file handoff remains held until
+  the approved separate publication; E alone stages and publishes. No
+  final-candidate claim is made here.
+
+## Reviewed implementation batches
+
+| Published batch | Consumer audit | Cleanup decision |
+|---|---|---|
+| `ada368e20b57a38f2b19e2683a897a0337a6d9cc` — exact Rust evidence content | The new `evidence_v1` head/canonical/normalization helpers, event/envelope fields and `serde_json` raw-value feature all have active writer or conformance-test consumers. The fixed v1 vectors and real signed-wrong-content regression remain active verification. | No deletion justified. B's overlapping lifecycle files remain reserved for active implementation; no cleanup edits there. |
 
 For each future batch record: producing revision, exclusive files, obsolete
 items, consumer checks, validation commands/results, independent and lead review,
