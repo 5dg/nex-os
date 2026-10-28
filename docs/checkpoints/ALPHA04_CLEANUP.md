@@ -41,7 +41,7 @@ that audit.
 | Rust `check_readiness`, preparation, authorization, completion and state RPC methods | Implement the generated Tonic `Guard` trait in `services/guard-kernel/src/lib.rs`. | Keep. Generated server dispatch is a consumer. |
 | Direct OPA client and development adapter paths | Existing integration tests and development routes still exercise them. | Keep while those supported paths remain. |
 | Bedrock constructor and provider seam | Offline tests retain routing validation and provider behavior; live runtime construction remains prohibited in the supported synthetic profiles. | Keep the deliberate tested seam. |
-| `QualificationManifestVersion` in `packages/contracts/qualification.go` | The published baseline has no tracked consumer beyond its declaration, but A has reserved the file and may consume the constant during the current validation work. No exclusive edit handoff exists. | Hold. Recheck after A's completed batch; do not race or remove planned contract work. |
+| `QualificationManifestVersion` in `packages/contracts/qualification.go` | The published baseline had no supported consumer beyond its declaration. A initially reserved the file, then finished validation work without consuming the constant and explicitly released the reservation. | Initially held; resolved by the approved F-003 batch below. |
 
 The entry-point and publication-status documentation findings from the preceding
 review were corrected in `3650f10`: the README and current build/risk records now
@@ -53,8 +53,10 @@ not pending cleanup work or evidence that an implementation can be deleted.
 
 ### F-001 — unused cached workspace configuration fields
 
-- Producing revision: `3650f10`; the underlying implementation was already
-  published and qualified before this cleanup.
+- Producing revision: `3650f10`; the underlying implementation had prior
+  qualification evidence for the exact snapshots disclosed in
+  `docs/ALPHA_0_3.md`. This cleanup does not relabel those images as builds of a
+  later source revision.
 - Exclusive files: A granted `apps/workspace/lib/trust.ts` for removal of only
   the stored `WorkspaceConfig.audience` and `.scope` properties and their object
   shorthand values. No other A-owned source file was edited by F.
@@ -104,9 +106,31 @@ not pending cleanup work or evidence that an implementation can be deleted.
 - Review/publication: D accepted the post-deletion diff after independently
   repeating the whole-document semantic comparison and confirming the exact
   approved DTO removals. The lead accepted the exact diff, closure and compile
-  evidence. Publication is pending. The two-file handoff remains held until
-  the approved separate publication; E alone stages and publishes. No
-  final-candidate claim is made here.
+  evidence. E published the three approved files in
+  `958e775daf14b7f77da836c5edbae9303795aedb` and verified remote `main` matches that
+  revision. The two source files were then returned to A. No final-candidate
+  claim is made here.
+
+### F-003 — unused qualification version declaration
+
+- Producing scope: the already published `958e775` baseline. A completed its
+  validation work without consuming the reserved declaration and explicitly
+  granted the one-line file handoff once the lead approved removal.
+- Scope: remove only the unused exported `QualificationManifestVersion`
+  constant from `packages/contracts/qualification.go`. The validator's literal
+  version 3, all other tuple constants, v2/v3 payload code and conformance vectors
+  remain unchanged.
+- Consumer evidence: F and D independently found no supported code consumer.
+  The cleanup ledger was the only other name reference. As with F-002, no stable
+  SDK promise or release tag is known; this is not a universal external-consumer
+  compatibility assertion.
+- Verification: the existing contracts race suite passed with Go's valid test
+  cache. The actual source diff is exactly the approved declaration deletion;
+  Go formatting and diff-whitespace checks passed. No new tests were introduced.
+- Review/publication: D independently accepted the exact one-line source diff
+  and proportionate checks. The lead accepted the exact diff and verification.
+  Publication is pending. The one-file handoff remains held until E's approved
+  separate publication.
 
 ## Reviewed implementation batches
 

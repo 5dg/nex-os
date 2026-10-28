@@ -2,7 +2,6 @@ package contracts
 
 import "errors"
 
-const QualificationManifestVersion = 3
 const QualificationProvider = "development"
 const QualificationRegion = "local"
 const QualificationModelID = "deterministic-review-v1"
