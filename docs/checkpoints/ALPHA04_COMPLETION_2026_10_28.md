@@ -63,3 +63,35 @@ Canonical builds, two-build comparison, full current-image DOM/service checks,
 packaged lifecycle execution, rotation/restore and actual-image scans remain
 unrun at this checkpoint. No engineering-complete, reproducible, attested,
 release-eligible or production-ready claim is made.
+
+## Bounded history and workspace checkpoint
+
+The compatible opt-in history endpoint now returns a stable, authenticated
+cursor page, capped at 32 events and 96 KiB. Legacy arrays remain available within
+the bound and otherwise return a typed pagination-required error. Snapshot
+visibility excludes later commits and the new audit rows created by traversing
+pages. Paginated signing-sequence order and central same-job write locking close
+the earlier-transaction timestamp ordering issue without changing old event
+timestamps, signatures or legacy array ordering.
+
+The workspace now renders job state independently of history, provides explicit
+continuation/refresh controls, schedules a single automatic read cycle at a time,
+backs off errors and invalidates obsolete job/identity responses. The BFF accepts
+a scoped `event_page` operation without changing historical `events` callers.
+
+Independent PostgreSQL source integration passed with race instrumentation:
+195 events / 168,509 encoded bytes across seven bounded pages, signatures,
+stable snapshot exclusion, cursor integrity/scope/expiry, same-token permission
+and delegation revocation, legacy oversized refusal, malformed historical sequence
+data and a real earlier-started transaction appending after the prior signed
+prefix. A first fixture incorrectly assumed an event timestamped 30 seconds ago
+must be oldest after approximately 49 seconds of signing work; that failed attempt
+is retained. The corrected test traverses the complete fresh snapshot and checks
+exact membership rather than making that wall-clock assumption.
+
+Workspace unit/security checks and type checking passed. Independent browser
+acceptance helpers reject reordered/substituted history, oversized pages, overlap,
+unexpected errors and excessive read growth. Real DOM drivers now include long
+signed history, stale-job response, history failure/recovery, terminal polling,
+in-flight logout and same-session revocation cases. Actual browser execution
+against the new packaged source remains pending at this checkpoint.

@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,6 +32,8 @@ type Server struct {
 	ModelRPC, ToolRPC *broker.Client
 	EvidenceRPC       *broker.Client
 	EvidencePublic    []byte
+	historySecretOnce sync.Once
+	historySecret     [32]byte
 }
 
 var errMembership = errors.New("registered tenant membership required")

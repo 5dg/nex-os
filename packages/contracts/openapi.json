@@ -579,11 +579,18 @@
         ],
         "responses": {
           "200": {
-            "description": "Completed or accepted workflow operation",
+            "description": "Bounded historical array or a stable history page when page=1",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuditEventList"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AuditEventList"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AuditEventPage"
+                    }
+                  ]
                 }
               }
             }
@@ -637,24 +644,47 @@
                 }
               }
             }
+          },
+          "413": {
+            "description": "A single event exceeds the bounded page; HISTORY_EVENT_TOO_LARGE. No event is silently omitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "parameters": [
           {
-            "name": "id",
-            "in": "path",
-            "required": true,
+            "name": "page",
+            "in": "query",
+            "required": false,
             "schema": {
               "type": "string",
-              "minLength": 1
-            }
+              "const": "1"
+            },
+            "description": "Opt in to the bounded history envelope."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 4096,
+              "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+            },
+            "description": "Continuation from next_cursor. Requires page=1; invalid, expired or wrong-scope cursors return INVALID_HISTORY_CURSOR."
           }
         ],
         "x-development-security": [
           {
             "bearerAuth": []
           }
-        ]
+        ],
+        "description": "Returns the historical array by default, bounded to 96 KiB and 1024 events; oversized history returns HISTORY_PAGINATION_REQUIRED. With page=1, returns at most 32 events and a 96 KiB envelope, ordered by immutable signed evidence sequence then timestamp/id; missing or invalid historical sequences sort at zero. The legacy array preserves timestamp/id order. Original event timestamps and proof bytes are unchanged. Opaque cursors bind the authorized actor, tenant, job and an immutable visibility snapshot for 15 minutes; restart invalidates them. Every page rechecks current authority and records an audited read. New page reads and late commits are excluded from the original snapshot. Refresh without a cursor to start a new snapshot."
       }
     },
     "/v1/documents": {
@@ -1598,6 +1628,91 @@
             }
           }
         }
+      },
+      "AuditEventPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "event_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "action": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "detail": {
+                  "type": "object"
+                },
+                "integrity_reference": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "integrity_verified": {
+                  "type": "boolean"
+                },
+                "producer": {
+                  "type": "string"
+                },
+                "tenant_id": {
+                  "type": "string"
+                },
+                "actor_id": {
+                  "type": "string"
+                },
+                "job_id": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "delegation_id": {
+                  "type": "string"
+                },
+                "timestamp_us": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "event_id",
+                "action",
+                "timestamp",
+                "detail",
+                "integrity_reference",
+                "integrity_verified",
+                "producer",
+                "tenant_id",
+                "actor_id",
+                "job_id",
+                "resource_id",
+                "delegation_id",
+                "timestamp_us"
+              ]
+            }
+          },
+          "next_cursor": {
+            "type": "string",
+            "maxLength": 4096,
+            "description": "Empty when the stable snapshot is complete. Otherwise pass unchanged with page=1."
+          }
+        },
+        "required": [
+          "events",
+          "next_cursor"
+        ]
       }
     }
   }

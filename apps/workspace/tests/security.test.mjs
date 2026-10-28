@@ -103,7 +103,7 @@ test('qualification sessions enforce origin/CSRF, omit tokens and cannot select 
   const view = await sessionView(request()).json();
   assert.equal(view.subject, 'alice'); assert.equal(view.csrf_token, value.csrf);
   assert.ok(!JSON.stringify(view).includes('PRIVATE_ACCESS_TOKEN'));
-  for (const body of [ { operation: 'documents', subject: 'bob' }, { operation: 'create', document_id: 'review-alice', idempotency_key: 'test-123456', question: 'arbitrary' }, { operation: 'documents', tenant_id: 'tenant-b' }, { operation: 'documents', roles: ['admin'] } ]) assert.equal((await qualificationWorkflow(request({}, body))).status, 400);
+  for (const body of [ { operation: 'documents', subject: 'bob' }, { operation: 'create', document_id: 'review-alice', idempotency_key: 'test-123456', question: 'arbitrary' }, { operation: 'documents', tenant_id: 'tenant-b' }, { operation: 'documents', roles: ['admin'] }, { operation: 'event_page', id: 'job-123456', cursor: 'bad&cursor=other' }, { operation: 'event_page', id: 'job-123456', cursor: 'x.y', tenant_id: 'tenant-b' }, { operation: 'event_page', id: 'job-123456', cursor: 'x'.repeat(4097) + '.y' } ]) assert.equal((await qualificationWorkflow(request({}, body))).status, 400);
   const response = await logout(request()); assert.equal(response.status, 200);
   assert.ok(response.headers.get('set-cookie').includes('Max-Age=0'));
   assert.equal(sessions().get(value.id), undefined);

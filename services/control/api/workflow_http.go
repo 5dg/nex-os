@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -10,12 +9,10 @@ import (
 	"errors"
 	"github.com/5dg/nex-os/packages/broker"
 	"github.com/5dg/nex-os/packages/contracts"
-	"github.com/5dg/nex-os/packages/evidence"
 	"github.com/5dg/nex-os/services/control/guard"
 	"github.com/jackc/pgx/v5"
 	"net/http"
 	"slices"
-	"time"
 )
 
 func (s *Server) workflowRoutes(mux *http.ServeMux) {
@@ -273,48 +270,6 @@ func (s *Server) documents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, 200, allowed)
-}
-func (s *Server) jobEvents(w http.ResponseWriter, r *http.Request) {
-	tx, a, ok := s.userTx(w, r)
-	if !ok {
-		return
-	}
-	defer tx.Rollback(r.Context())
-	j, e := s.visibleJob(r.Context(), tx, a, r.PathValue("id"))
-	if e != nil {
-		workflowError(w, finishDenied(r.Context(), tx, e))
-		return
-	}
-	rows, e := tx.Query(r.Context(), `SELECT id,action,decision,created_at,actor_id,delegation_id,resource_id,integrity_reference FROM audit_events WHERE tenant_id=$1 AND job_id=$2 ORDER BY created_at,id`, a.TenantID, j.ID)
-	if e != nil {
-		workflowError(w, e)
-		return
-	}
-	out := []map[string]any{}
-	for rows.Next() {
-		var id, action string
-		var detail, rawProof json.RawMessage
-		var actor, delegation, resource string
-		var at time.Time
-		if e = rows.Scan(&id, &action, &detail, &at, &actor, &delegation, &resource, &rawProof); e != nil {
-			rows.Close()
-			workflowError(w, e)
-			return
-		}
-		var proof evidence.Proof
-		verified := json.Unmarshal(rawProof, &proof) == nil && evidence.VerifyEvent(ed25519.PublicKey(s.EvidencePublic), proof, evidence.Event{ID: id, TenantID: j.TenantID, ActorID: actor, JobID: j.ID, Action: action, Detail: detail, ResourceID: resource, DelegationID: delegation, Timestamp: at.UnixMicro(), Producer: proof.Producer})
-		out = append(out, map[string]any{"event_id": id, "action": action, "detail": detail, "timestamp": at, "integrity_reference": rawProof, "integrity_verified": verified, "producer": proof.Producer, "tenant_id": j.TenantID, "actor_id": actor, "job_id": j.ID, "resource_id": resource, "delegation_id": delegation, "timestamp_us": at.UnixMicro()})
-	}
-	e = rows.Err()
-	rows.Close()
-	if e == nil {
-		e = tx.Commit(r.Context())
-	}
-	if e != nil {
-		workflowError(w, e)
-		return
-	}
-	respond(w, 200, out)
 }
 func (s *Server) workerAuthorized(w http.ResponseWriter, r *http.Request) bool {
 	expected := "Bearer " + base64.RawURLEncoding.EncodeToString(s.WorkerKey)

@@ -4,14 +4,24 @@ set -euo pipefail
 umask 077
 cd "$(dirname "$0")/.."
 source scripts/qualification-context.sh
-[[ $# == 0 && -n "${NEX_QUAL_CANDIDATE_MANIFEST:-}" && "$NEX_QUAL_PROJECT" == "$NEX_QUAL_PRIMARY_PROJECT" ]] || {
- echo 'A source-bound primary candidate is required for browser qualification.' >&2;exit 2;
-}
+task_diagnostic=0
+if [[ $# == 1 && "$1" == --diagnostic ]]; then
+ [[ -z "${NEX_QUAL_CANDIDATE_MANIFEST:-}" && "$NEX_QUAL_PROJECT" == nex-qualification && \
+    "${NEX_QUAL_EVIDENCE_DIR:-}" == /* && "${NEX_QUAL_DIAGNOSTIC_RECEIPT:-}" == /* ]] || {
+  echo 'Diagnostic browser execution requires its own host-build receipt and absolute evidence directory, without a canonical manifest.' >&2;exit 2;
+ }
+ task_diagnostic=1
+else
+ [[ $# == 0 && -n "${NEX_QUAL_CANDIDATE_MANIFEST:-}" && "$NEX_QUAL_PROJECT" == "$NEX_QUAL_PRIMARY_PROJECT" ]] || {
+  echo 'A source-bound primary candidate is required for browser qualification (or explicit --diagnostic).' >&2;exit 2;
+ }
+fi
 [[ "${NEX_BROWSER_FIXTURE_IMAGE:-}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
  echo 'An immutable browser fixture image is required.' >&2;exit 2;
 }
 case "${NEX_BROWSER_FIXTURE_NO_SANDBOX:-0}" in 0|1) ;; *) exit 2;; esac
-python3 - "$NEX_QUAL_CANDIDATE_MANIFEST" "$PWD" <<'PY'
+if [[ "$task_diagnostic" == 0 ]]; then
+ python3 - "$NEX_QUAL_CANDIDATE_MANIFEST" "$PWD" <<'PY'
 import pathlib,sys
 sys.path.insert(0,'scripts')
 from candidate import load
@@ -19,7 +29,8 @@ _,_,source=load(pathlib.Path(sys.argv[1]))
 if source.resolve()!=pathlib.Path(sys.argv[2]).resolve():
  raise SystemExit('Run the browser coordinator from the captured source, not a different checkout.')
 PY
-python3 scripts/candidate.py verify-images --candidate "$NEX_QUAL_CANDIDATE_MANIFEST" --build "$NEX_QUAL_BUILD"
+ python3 scripts/candidate.py verify-images --candidate "$NEX_QUAL_CANDIDATE_MANIFEST" --build "$NEX_QUAL_BUILD"
+fi
 task_project="$NEX_QUAL_PROJECT"
 task_state="$NEX_QUAL_STATE_DIR"
 task_output="$NEX_QUAL_EVIDENCE_DIR/browser"
@@ -33,11 +44,42 @@ task_browser_created=0
 task_wrong_created=0
 [[ -f "$task_state/synthetic-qualification.state" && "$(cat "$task_state/synthetic-qualification.state")" == synthetic-qualification ]]
 mkdir "$task_output" "$task_private"
-mkdir "$task_output/dom" "$task_output/revocation"
+mkdir "$task_output/dom" "$task_output/operator" "$task_output/revocation"
 docker_local() {
  env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
   docker --host=unix:///var/run/docker.sock "$@"
 }
+if [[ "$task_diagnostic" == 1 ]]; then
+ # This validates a coordinator's diagnostic build receipt; it does not create
+ # canonical provenance or admit these host artifacts to candidate release gates.
+ python3 - "$NEX_QUAL_DIAGNOSTIC_RECEIPT" "$NEX_QUAL_TOOL_DIR/build-inputs.json" "$task_output" <<'PY'
+import hashlib,json,os,pathlib,subprocess,sys
+sys.path.insert(0,'scripts')
+from source_record import identity,verify_artifacts
+receipt_path,record_path,output=map(pathlib.Path,sys.argv[1:])
+if receipt_path.is_symlink() or not receipt_path.is_file():raise SystemExit('Regular diagnostic build receipt required')
+receipt=json.loads(receipt_path.read_text())
+source=identity(pathlib.Path.cwd())
+names=('control','guard-kernel','model','executor','worker','evidence','qualification-issuer','qualification-edge','qualification-policy-edge','qualification-pki')
+record=verify_artifacts(record_path,pathlib.Path.cwd(),names)
+if receipt.get('schema_version')!=1 or receipt.get('build_mode')!='local-host-synthetic-qualification' or record.get('build_mode')!='local-host-synthetic-qualification' or receipt.get('source_input_sha256')!=source['inputs']['sha256']:
+ raise SystemExit('Diagnostic source/host artifact identity mismatch')
+services=('control','guard','model','executor','worker','evidence','workspace','issuer','workspace-edge','opa-edge','postgres','opa')
+env={k:v for k,v in os.environ.items() if k not in ('DOCKER_HOST','DOCKER_CONTEXT','DOCKER_TLS','DOCKER_TLS_VERIFY','DOCKER_CERT_PATH')}
+containers=json.loads(subprocess.run(['docker','--host=unix:///var/run/docker.sock','inspect',*[f'nex-qualification-{name}-1' for name in services]],env=env,capture_output=True,text=True,check=True,timeout=20).stdout)
+images={}
+for name,container in zip(services,containers):
+ labels=container['Config'].get('Labels',{})
+ if labels.get('com.docker.compose.project')!='nex-qualification' or labels.get('com.docker.compose.service')!=name or not container['State']['Running']:
+  raise SystemExit('Diagnostic container ownership/readiness mismatch')
+ images[name]=container['Image']
+if receipt.get('images')!=images:raise SystemExit('Actual diagnostic images differ from coordinator build receipt')
+report={'schema_version':1,'scope':'diagnostic host build only; not canonical candidate qualification','source':source,'actual_images':images,'build_receipt_sha256':hashlib.sha256(receipt_path.read_bytes()).hexdigest(),'host_record_sha256':hashlib.sha256(record_path.read_bytes()).hexdigest()}
+(output/'diagnostic-binding.json').write_text(json.dumps(report,indent=2)+'\n')
+(output/'diagnostic-build-receipt.json').write_bytes(receipt_path.read_bytes())
+(output/'diagnostic-host-build-inputs.json').write_bytes(record_path.read_bytes())
+PY
+fi
 # timeout wraps the CLI, never an unbounded database statement or host sleep.
 sql() {
  timeout 10s env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
@@ -130,6 +172,8 @@ start_browser() {
   --tmpfs /tmp:rw,nosuid,nodev,size=64m,mode=1777 \
   --mount "type=bind,src=$task_state/current-pki/ca.crt,dst=/trust/ca.crt,readonly" \
   --mount "type=bind,src=$PWD/tests/qualification/browser/$task_driver,dst=/driver/qualification-browser.mjs,readonly" \
+  --mount "type=bind,src=$PWD/tests/qualification/browser/acceptance.mjs,dst=/driver/acceptance.mjs,readonly" \
+  --mount "type=bind,src=$PWD/tests/qualification/browser/workflow-fixture.mjs,dst=/driver/workflow-fixture.mjs,readonly" \
   --mount "type=bind,src=$task_mounted_results,dst=/results" \
   -e APP_ENV=development -e NEX_PROFILE=synthetic-qualification \
   -e "NEX_BROWSER_FIXTURE_NO_SANDBOX=${NEX_BROWSER_FIXTURE_NO_SANDBOX:-0}" \
@@ -140,7 +184,7 @@ start_browser() {
 }
 finish_browser() {
  local task_code
- task_code="$(timeout 150s env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
+ task_code="$(timeout 240s env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
   docker --host=unix:///var/run/docker.sock wait "$task_browser")"
  # Logs are deliberately bounded fixture status codes, never Chromium logs.
  docker_local logs "$task_browser"
@@ -154,6 +198,10 @@ finish_browser() {
 start_browser qualification-browser.mjs "$task_output/dom" \
  --base-url=https://workspace.nex.test:9443 --wrong-ca-url=https://untrusted.nex.test:9445 \
  --output=/results/browser-results.json --measure-polling=true
+finish_browser
+
+start_browser operator-browser.mjs "$task_output/operator" \
+ --base-url=https://workspace.nex.test:9443 --output=/results/browser-results.json
 finish_browser
 
 # A genuinely idle, owned synthetic state is required. Legitimate policy/read
@@ -243,12 +291,13 @@ finish_browser
 restore_authority
 authority_hash > "$task_private/authority-after.sha256"
 cmp "$task_private/authority-before.sha256" "$task_private/authority-after.sha256"
-python3 - "$task_output" <<'PY'
+python3 - "$task_output" "$task_diagnostic" <<'PY'
 import json,pathlib,sys
 root=pathlib.Path(sys.argv[1])
-for run in ('dom','revocation'):
+for run in ('dom','operator','revocation'):
  if json.loads((root/run/'browser-results.json').read_text()).get('status')!='passed':raise SystemExit('Incomplete browser assertion result')
-report={'schema_version':1,'status':'passed','scope':'source-bound synthetic browser qualification only','same_session_permission_and_delegation_revocation':True,'job_operation_and_receipt_snapshots_unchanged_after_each_denial':True,'exact_prior_authority_restored':True}
+report={'schema_version':1,'status':'passed','scope':'source-bound synthetic browser qualification only','bounded_polling_and_audit_growth':True,'stale_job_and_history_error_regressions':True,'large_signed_history_stable_traversal':True,'same_session_permission_and_delegation_revocation':True,'job_operation_and_receipt_snapshots_unchanged_after_each_denial':True,'exact_prior_authority_restored':True}
+if sys.argv[2]=='1':report['scope']='diagnostic host build only; not canonical candidate qualification'
 (root/'coordinator-results.json').write_text(json.dumps(report,indent=2)+'\n')
 PY
-echo 'Native browser TLS/DOM, same-session revocation and polling measurements completed.'
+echo 'Native browser TLS/DOM, operator/history regressions, same-session revocation and polling acceptance completed; inspect recorded build scope.'

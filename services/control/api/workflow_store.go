@@ -52,6 +52,15 @@ func loadJob(ctx context.Context, tx pgx.Tx, id string) (storedJob, error) {
 	return j, e
 }
 func (s *Server) record(ctx context.Context, tx pgx.Tx, j storedJob, event, outcome string) error {
+	// Every supported same-job event is signed while holding this row lock.
+	// Most callers already own it through loadJob; the separate best-effort
+	// preparation-failure evidence transaction must acquire it too. This keeps
+	// signing order aligned with commit order for each job, even when a caller's
+	// transaction started earlier and waited for another request.
+	var locked string
+	if e := tx.QueryRow(ctx, `SELECT id FROM jobs WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, j.TenantID, j.ID).Scan(&locked); e != nil {
+		return e
+	}
 	id := rand.Text()
 	b, _ := json.Marshal(map[string]string{"event_type": event, "outcome": outcome, "job_id": j.ID, "policy_digest": guard.Digest(), "operation_id": j.Operation, "document_id": j.DocumentID, "document_version": j.DocumentVersion, "approval_id": j.ApprovalID, "model_provider": j.Provider, "artifact_id": j.ExportID, "answer_digest": broker.Hash([]byte(j.Answer))})
 	_, e := tx.Exec(ctx, `INSERT INTO audit_events(id,tenant_id,actor_id,delegation_id,resource_id,action,decision,job_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, id, j.TenantID, j.Owner, j.Delegation, j.DocumentID, event, b, j.ID)

@@ -28,18 +28,20 @@ export async function qualificationWorkflow(request: Request): Promise<Response>
   try { input = await boundedJSON(request); } catch { return noStore({ code: "INVALID_REQUEST" }, 400); }
   const operation = input.operation;
   const keys: Record<string, string[]> = {
-    documents: [], approvals: [], job: ["id"], events: ["id"],
+    documents: [], approvals: [], job: ["id"], events: ["id"], event_page: ["id", "cursor"],
     create: ["document_id", "idempotency_key", "question_catalogue_id"],
     export: ["id"], reconcile: ["id"], retry: ["id"], decide: ["id", "approve", "request_digest"],
   };
   if (typeof operation !== "string" || !Object.hasOwn(keys, operation) || Object.keys(input).some(key => key !== "operation" && !keys[operation].includes(key))) return noStore({ code: "INVALID_REQUEST" }, 400);
   const id = typeof input.id === "string" && /^[A-Za-z0-9_-]{8,100}$/.test(input.id) ? input.id : "";
-  if (["job", "events", "export", "reconcile", "retry", "decide"].includes(operation) && !id) return noStore({ code: "INVALID_REQUEST" }, 400);
+  if (["job", "events", "event_page", "export", "reconcile", "retry", "decide"].includes(operation) && !id) return noStore({ code: "INVALID_REQUEST" }, 400);
+  if (operation === "event_page" && input.cursor !== undefined && (typeof input.cursor !== "string" || (input.cursor.length > 4096 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(input.cursor)))) return noStore({ code: "INVALID_REQUEST" }, 400);
   if (operation === "create" && (!session.actor.delegation_id || typeof input.document_id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(input.document_id) || typeof input.idempotency_key !== "string" || !/^[A-Za-z0-9_-]{8,100}$/.test(input.idempotency_key) || input.question_catalogue_id !== "access-review-controls")) return noStore({ code: "INVALID_REQUEST" }, 400);
   if (operation === "decide" && (typeof input.approve !== "boolean" || typeof input.request_digest !== "string" || !/^[a-f0-9]{64}$/.test(input.request_digest))) return noStore({ code: "INVALID_REQUEST" }, 400);
   const operations: Record<string, { method: string; path: string; body?: unknown }> = {
     documents: { method: "GET", path: "/v1/documents" }, approvals: { method: "GET", path: "/v1/approvals" },
     job: { method: "GET", path: `/v1/jobs/${id}` }, events: { method: "GET", path: `/v1/jobs/${id}/events` },
+    event_page: { method: "GET", path: `/v1/jobs/${id}/events?page=1${input.cursor ? "&cursor=" + encodeURIComponent(input.cursor as string) : ""}` },
     create: { method: "POST", path: "/v1/jobs", body: { delegation_id: session.actor.delegation_id, document_id: input.document_id, question_catalogue_id: "access-review-controls", idempotency_key: input.idempotency_key } },
     export: { method: "POST", path: `/v1/jobs/${id}/export`, body: { destination_id: "local-evidence" } },
     reconcile: { method: "POST", path: `/v1/jobs/${id}/reconcile` }, retry: { method: "POST", path: `/v1/jobs/${id}/retry` },

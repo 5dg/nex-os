@@ -98,18 +98,42 @@ bounds; deployment behavior requires an actual controlled shutdown check.
 ## Polling and evidence
 
 Job and timeline reads intentionally revalidate authority and append signed read
-events. Measure the real current polling cadence, overlap, request cancellation,
-evidence growth and bounded dependency behavior before changing it. If overlap
-or unbounded failure polling is demonstrated, bound client polling and backoff
-without removing authorization, audit writes or historical events. A read that
-adds a verified read event must preserve the previous signed history prefix.
+events. Automatic workspace polling waits for the entire read cycle before
+scheduling the next attempt, stops for terminal states and invalidates old
+identity/job selections. Backoff is bounded at 30 seconds. Current job state is
+displayed independently of history availability. History is fetched initially
+and on state/phase transitions, with explicit refresh/continuation controls;
+unchanged pending polls need only the job read.
+
+`GET /v1/jobs/{id}/events?page=1` returns at most 32 records and 96 KiB including
+the envelope/cursor. An authenticated continuation binds actor, tenant, job,
+visibility snapshot, original transaction, signing-sequence boundaries and a
+15-minute expiry. Restart invalidates process-local cursors; users can start a
+new snapshot without changing job execution. Every page rechecks current
+authority and records its own read. Snapshot membership excludes later commits
+and continuation-read audits, so complete traversal terminates.
+
+Paginated history orders immutable signed sequence before original timestamp/ID.
+Go and Rust same-job event writers serialize using the existing job row lock;
+the Go best-effort preparation-failure evidence transaction acquires it too.
+An older transaction-start timestamp cannot insert a newly admitted signed event
+ahead of an already returned signed prefix. Existing event timestamps/proofs are
+unchanged. Historical missing/malformed sequences remain available at sequence
+zero. Legacy no-query arrays retain timestamp/ID ordering and fail explicitly
+with `HISTORY_PAGINATION_REQUIRED` above their bound; they never truncate silently.
+
+Measure actual DOM concurrency, cancellation, error and signed-read growth under
+the fixed browser budget. The independent browser fixture counts audited request
+attempts and allows one boundary read in its predeclared growth bound. Exact
+ordered immutable content, not event-ID membership alone, establishes prefix
+preservation. No authorization, audit events or proof history are removed to
+meet polling or response-size budgets.
 
 ## Ownership and verification
 
-A owns control/shared Go/application changes and this operation contract. B owns
-Rust and receiver/signing invariants. C owns build/deployment configuration. D
-owns independent regression, revocation, browser and load/fault tests. E alone
-owns shared runtime, source freezes, commits and normal pushes to `main`. F
-removes only proved dead code after an explicit source-owner handoff, with
-independent verification and a separate cleanup checkpoint before the final
-candidate freeze. Root audits the contracts, reproduced failures and evidence.
+Current ownership follows the [ten-agent completion plan](../FINISH_GOAL_2026_10_28.md):
+A workspace, B control/contracts, C governance/effects, D builds, E security,
+F independent browser and G independent service verification. H alone owns Git
+publication; I alone coordinates shared runtime. J removes only proved dead code
+after an exclusive handoff and independent review before final candidate capture.
+Root audits contracts, reproduced failures and evidence.

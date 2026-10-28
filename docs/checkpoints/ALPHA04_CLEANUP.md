@@ -168,3 +168,27 @@ and uncertain receipts. This records static call-path inspection only: no new
 behavioral tests, canonical builds, hosted CI, reproducibility checks or release
 qualification were executed by the cleanup owner. Later implementation batches
 still need their own consumer audit before final candidate capture.
+
+## Packaging and operator completion audit — 2026-10-28
+
+Producing delivery revision: `b65cf7bb02eb21c0067c6cdf084062c1c5c9e94a`.
+The lead released the diagnostic snapshot window before granting this ledger
+update. The application/history/browser review below covers the then-uncommitted
+completion batch based on that revision; it is not a publication or candidate
+qualification claim for that batch.
+
+| Reviewed scope | Consumer evidence | Cleanup decision |
+|---|---|---|
+| Pinned workspace runtime preparation | `canonical-compiler.sh` invokes `prepare-workspace-runtime.mjs`; its CLI invokes `prepareWorkspaceRuntime`. The source/layout, manifest, key-occurrence and symlink checks guard admitted packaging; counters and source hashes populate its emitted report. `test_workspace_packaging.py` exercises this path. | Keep the preparation and rejection paths. No orphan helper or field was established by this review. |
+| Packaged lifecycle wrapper and required evidence | `candidate-pipeline.sh` invokes `qualification-packaged-lifecycle.sh`; the wrapper dispatches `TestQualificationPackagedLifecycle`. Candidate sealing and retained verification both require `packaged-shutdown`. Canonical and explicitly selected diagnostic modes have distinct supported callers. | Keep both modes and the state-preserving lifecycle fixtures. Diagnostic mode is not obsolete merely because the candidate pipeline uses canonical mode. |
+| Browser dependency inventory and scanning | `release-audit.py` invokes the source inventory and the workspace/browser lock-only audits. Inventory components merge shared dependency properties and hashes; source inventory regressions exercise both locks. | Keep the browser tooling inventory and merge logic. No dependency deletion is justified. |
+| Workflow polling, history selection and refresh adapter | `Workflow.tsx` consumes `pollJob`, `historyPage` and `appendHistory`; their existing unit tests exercise scheduling, cancellation and history continuation. `refresh(id)` still serves the load, reconcile, retry and export handlers and returns the promise expected by the `run` action contract. | Keep these reachable helpers. The old interval polling body was replaced within the implementation; the remaining async adapter is active code, not a dead function. |
+| History cursor, ordering and compatibility fields | The routed `jobEvents` handler consumes option parsing, event verification and cursor encode/decode. Cursor snapshot/XID, sequence/time/ID boundaries and scope/expiry fields participate in SQL selection, continuation or authenticated validation. `historySecretOnce` and `historySecret` feed the MAC. The row-lock scan supports serialized same-job signing. Both BFF profiles retain the legacy `events` operation alongside `event_page`. | Keep cursor fields, lock acquisition and bounded legacy handling. The implementation already removed the superseded handler body/imports from `workflow_http.go`; no further deletion is established. |
+| Operator browser helpers and drivers | The browser harness mounts `acceptance.mjs` and `workflow-fixture.mjs` and invokes `operator-browser.mjs`. Workflow/operator drivers and acceptance tests consume the limits, history verification, request helpers and polling assertions. | Keep the shared helpers and genuine signed-history fixtures. They are active acceptance paths, not production dead code. |
+
+Decision: no additional executable deletion justified. This is a bounded static
+consumer audit, with no deletion quota and no source-file handoff requested.
+Only this ledger changed; the cleanup owner did not run behavioral tests, mutate
+shared runtime state, stage files or publish commits. Independent review and
+publication remain with the lead and publisher. Any later edits to the reviewed
+application batch require a follow-up audit before final candidate capture.

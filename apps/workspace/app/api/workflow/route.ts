@@ -14,11 +14,13 @@ export async function POST(request: Request) {
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     if (!["alice", "bob", "carol", "dave"].includes(input.subject)) return Response.json({ code: "INVALID_IDENTITY" }, { status: 400 });
     const id = typeof input.id === "string" && /^[A-Za-z0-9_-]{8,100}$/.test(input.id) ? input.id : "";
+    if (input.operation === "event_page" && (Object.keys(input).some(key => !["subject", "operation", "id", "cursor"].includes(key)) || (input.cursor !== undefined && (typeof input.cursor !== "string" || (input.cursor.length > 4096 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(input.cursor)))))) return Response.json({ code: "INVALID_REQUEST" }, { status: 400 });
     const operations: Record<string, { method: string; path: string; body?: unknown }> = {
       documents: { method: "GET", path: "/v1/documents" },
       approvals: { method: "GET", path: "/v1/approvals" },
       job: { method: "GET", path: `/v1/jobs/${id}` },
       events: { method: "GET", path: `/v1/jobs/${id}/events` },
+      event_page: { method: "GET", path: `/v1/jobs/${id}/events?page=1${input.cursor ? "&cursor=" + encodeURIComponent(input.cursor) : ""}` },
       create: { method: "POST", path: "/v1/jobs", body: { delegation_id: `delegation-${input.subject}`, document_id: input.document_id, question: input.question, idempotency_key: input.idempotency_key } },
       reconcile: { method: "POST", path: `/v1/jobs/${id}/reconcile` },
       retry: { method: "POST", path: `/v1/jobs/${id}/retry` },
@@ -26,7 +28,7 @@ export async function POST(request: Request) {
       decide: { method: "POST", path: `/v1/approvals/${id}/decision`, body: { approve: input.approve, request_digest: input.request_digest } },
     };
     const operation = operations[input.operation];
-    if (!operation || (["job", "events", "export", "decide", "reconcile", "retry"].includes(input.operation) && !id)) return Response.json({ code: "INVALID_OPERATION" }, { status: 400 });
+    if (!operation || (["job", "events", "event_page", "export", "decide", "reconcile", "retry"].includes(input.operation) && !id)) return Response.json({ code: "INVALID_OPERATION" }, { status: 400 });
     const issuer = process.env.DEV_ISSUER_URL, control = process.env.CONTROL_URL;
     if (!issuer || !control) throw new Error("Missing configuration");
     const token = await fetch(`${issuer}/token`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ subject: input.subject }), cache: "no-store", signal: AbortSignal.timeout(3000) });
