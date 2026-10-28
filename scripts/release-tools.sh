@@ -8,7 +8,24 @@ export CARGO_HOME="${CARGO_HOME:-$task_tools/cargo}" RUSTUP_HOME="${RUSTUP_HOME:
 export PATH="$task_tools/go/bin:$task_tools/bin:$CARGO_HOME/bin:$PATH"
 export GOPATH="${GOPATH:-$task_tools/gopath}" GOCACHE="${GOCACHE:-/tmp/nex-go-cache}"
 mkdir -p "$task_tools/bin"
-GOBIN="$task_tools/bin" go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+task_govuln_metadata="$(mktemp)"
+trap 'rm -f "$task_govuln_metadata"' EXIT
+# Resolve outside the app module; validate the official tag's SumDB content
+# before installing. Never mutate app locks or disable public checksum checks.
+export GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org
+export GOPRIVATE= GONOSUMDB= GONOPROXY=
+(cd /tmp && GOWORK=off go mod download -json golang.org/x/vuln@v1.9.0) > "$task_govuln_metadata"
+python3 - "$task_govuln_metadata" <<'PY'
+import json, sys
+record = json.load(open(sys.argv[1]))
+expected = {'Path': 'golang.org/x/vuln', 'Version': 'v1.9.0',
+    'Sum': 'h1:12VaqnI9kJfqwRoPptxoqsUhQtdfrSbdksT7X/KY/sc=',
+    'GoModSum': 'h1:E/Frwm0xp49fTyBW+6CQHdkvobknbwUM49yEpMGUauw='}
+if any(record.get(key) != value for key, value in expected.items()) or record.get('Error'):
+    raise SystemExit('Official govulncheck module checksum mismatch')
+PY
+GOBIN="$task_tools/bin" GOWORK=off go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+rm -f "$task_govuln_metadata"
 CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-3}" cargo install cargo-audit --version 0.22.2 --locked
 [[ "$(uname -s)/$(uname -m)" == Linux/x86_64 ]] || { echo 'Select the verified Trivy build for this platform.' >&2; exit 2; }
 task_scanner_archive="$(mktemp)";trap 'rm -f "$task_scanner_archive"' EXIT

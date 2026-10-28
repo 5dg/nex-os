@@ -66,7 +66,7 @@ export NEX_QUAL_BUILD=one NEX_QUAL_PROJECT="$task_pipeline_primary"
 python3 - "$task_base/evidence/verification-tools.json" <<'PY'
 import hashlib,json,pathlib,shutil,subprocess,sys
 tools={}
-for name,args,required in [('go',['version'],'go1.27.3'),('rustc',['--version'],'rustc 1.99.1'),('node',['--version'],'v24.19.0'),('npm',['--version'],None),('govulncheck',['-version'],'v1.1.4'),('cargo-audit',['--version'],'0.22.2'),('trivy',['--version'],'0.76.1')]:
+for name,args,required in [('go',['version'],'go1.27.3'),('rustc',['--version'],'rustc 1.99.1'),('node',['--version'],'v24.19.0'),('npm',['--version'],None),('govulncheck',['-version'],'v1.9.0'),('cargo-audit',['--version'],'0.22.2'),('trivy',['--version'],'0.76.1')]:
     path=shutil.which(name)
     if not path: raise SystemExit('Pinned verification prerequisite missing: '+name)
     result=subprocess.run([path,*args],capture_output=True,text=True,timeout=30)

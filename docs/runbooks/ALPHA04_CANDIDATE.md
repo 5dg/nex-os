@@ -166,5 +166,33 @@ zero exit, unsigned manifest, source push or mock verifier can stand in for thes
 remote facts. Current source does not establish that hosted CI, attestation or
 independent retrieval has executed successfully.
 
+## Scanner compatibility
+
+The Go source scanner is the official `golang.org/x/vuln` release `v1.9.0`,
+whose `x/tools v0.52.0` supports the pinned Go 1.27.3 compiler. The installer
+checks its module and `go.mod` checksums against the official public SumDB values.
+It does not modify application dependencies. Version `v1.1.4` crashed during
+hosted SSA analysis and must not be used as evidence of a completed source scan.
+
+To reproduce the scanner regression with the installed binary:
+
+```bash
+python3 -B scripts/check-govulncheck.py --binary "$NEX_TOOLS_DIR/bin/govulncheck" --output /tmp/nex-scanner-compatibility-NEW
+```
+
+This uses a synthetic local advisory database and Go 1.27 promoted-field literals.
+The real scanner runs through the release-audit coordinator; unrelated scanners
+and inventory are isolated test stubs. A reachable imported vulnerable symbol
+must produce a multi-frame call trace and block that test audit. Uncalled and
+fixed-version controls must remain distinct. These results verify scanner and
+parser compatibility only; they do not establish project vulnerability clearance.
+
+Govulncheck JSON mode exits zero even when it reports reachable vulnerabilities.
+The release gate therefore requires a valid completed full source/symbol stream
+and blocks reported reachable symbols. Module and package findings remain in raw
+output and recorded counts. Scanner errors, unsupported modes, malformed or
+incomplete output all block the gate. Live advisory scans and all exact runtime
+image scans remain required without suppressions or weaker scan-level fallbacks.
+
 All candidate content is synthetic. Live GovCloud/Bedrock, customer identity,
 approved production cryptography, CUI and formal assessments remain deferred.

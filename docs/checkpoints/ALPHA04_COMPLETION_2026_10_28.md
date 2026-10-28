@@ -337,3 +337,41 @@ hardlinked export bytes remain unchanged. All **156** offline release tests
 passed after the correction, including realistic gosu scratch links, retained
 links and failed traversal. Independent review accepted the fixes; the full log
 is `release-tests-readonly-scratch-retention.log`.
+
+## Go scanner compatibility and finding enforcement
+
+The completed `5e0f6a3` hosted foundation run passed functional, qualification and
+Terraform checks, but its pinned `govulncheck` 1.1.4 crashed in old SSA tooling on
+Go 1.27 syntax. This is distinct from the local advisory feed's network-policy
+denial. The official 1.9.0 release, tag commit
+`e672cbe8fbc8c76e28fcb6db0efd9ce354e0dac5`, uses `x/tools` 0.52.0 with explicit
+Go 1.27 support. Independent proxy/SumDB evidence verified the module and module
+manifest hashes. The installer checks both identities; Go remains pinned at
+1.27.3. No downstream scanner overlay or reduced analysis level is used.
+
+Actual compatibility cases exercise a promoted-field literal and an imported
+vulnerable symbol against an explicitly synthetic local advisory database. The
+reachable case has a real multi-frame call trace; uncalled and fixed-version
+cases remain separate. They are scanner validation, not project advisory
+clearance. The old binary and panic evidence are retained.
+
+Those cases also demonstrated that JSON mode returns zero with reachable
+findings. Release auditing now requires complete supported source/symbol JSON,
+retains every finding, and blocks reachable vulnerable symbols independently of
+the exit code. Malformed/incomplete streams and conflicting repeated advisory
+data fail closed. Identical repeated advisory records are accepted because the
+official emitter may report one advisory for multiple modules. Module/package
+findings remain explicit in raw output and counts rather than being labeled
+absent. Final source and actual-image scans still require fresh evidence.
+All **162** offline release tests passed after the reviewed parser correction.
+The actual end-to-end audit fixture blocks the reachable case despite scanner
+exit zero, retains two lower-precision findings in the uncalled case, and passes
+the zero-finding fixed-version case. Exact source/tool/raw-result hashes are in
+`security/govulncheck-compatibility/validation-reviewed-record.json`; full test
+output is retained in that directory's `release-tests-reviewed.stderr`.
+
+The same hosted foundation image scans contained 793 retained finding rows,
+fourteen fewer than the earlier diagnostic baseline: control and fixtures zero,
+Guard 162, workspace 228, PostgreSQL 400 and OPA three. Supported fixes cleared
+their advertised fixed rows; vendor findings were not suppressed. These were
+host-build qualification images for `5e0f6a3`, not a completed canonical candidate.

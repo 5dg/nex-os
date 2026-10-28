@@ -14,6 +14,7 @@ import subprocess
 import sys
 sys.dont_write_bytecode = True
 from source_record import resolve_image
+from go_vulnerability_gate import classify as classify_go
 
 root = pathlib.Path(__file__).resolve().parent.parent
 output = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else root / '.local/release-evidence')
@@ -47,6 +48,13 @@ def run(name, command, cwd=root):
             record['status'] = 'passed' if result.returncode == 0 else 'failed'
             if result.returncode:
                 record['reason'] = 'Findings or scanner failure; inspect the retained scanner output.'
+            elif name == 'go-vulnerabilities':
+                # JSON mode exits zero even with called vulnerabilities. Preserve
+                # the raw stream and classify its full source/symbol findings.
+                try:
+                    record.update(classify_go(result.stdout))
+                except (ValueError, UnicodeDecodeError, TypeError, KeyError):
+                    record.update(status='failed', reason='Invalid or incomplete govulncheck JSON; no clean scan established.')
         except subprocess.TimeoutExpired as error:
             (output / (name + '.stdout')).write_bytes(error.stdout or b'')
             (output / (name + '.stderr')).write_bytes(error.stderr or b'')
@@ -74,7 +82,7 @@ for tool, arguments in {'govulncheck': ['-version'], 'cargo-audit': ['--version'
         versions[tool] = {'status': 'not_installed'}
 (output / 'scanner-versions.json').write_text(json.dumps({'schema_version': 1, 'scope': 'Tool version queries only; scan outcomes are in vulnerability-status.json.', 'tools': versions}, indent=2) + '\n')
 
-run('go-vulnerabilities', ['govulncheck', '-json', './...'])
+run('go-vulnerabilities', ['govulncheck', '-json', '-mode=source', '-scan=symbol', './...'])
 run('rust-vulnerabilities', ['cargo-audit', 'audit', '--file', 'services/guard-kernel/Cargo.lock', '--json'])
 run('npm-vulnerabilities', ['npm', 'audit', '--package-lock-only', '--ignore-scripts', '--json', '--audit-level=low'], root / 'apps/workspace')
 run('browser-npm-vulnerabilities', ['npm', 'audit', '--package-lock-only', '--ignore-scripts', '--json', '--audit-level=low'], root / 'apps/workspace/tests/browser')

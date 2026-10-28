@@ -346,3 +346,24 @@ This entry records only the cleanup owner's static consumer audit, not a new
 test run or evidence that the failed candidate became qualified. Only the ledger
 was edited. Ledger frozen and returned for publication before a fresh capture;
 earlier failed captures and their evidence retain their original identities.
+
+### Scanner compatibility and finding-classification audit — 2026-10-28
+
+Inspected the frozen pending scanner batch against published
+`50c1a4f30c3b13a1536112b11cbba3b9575a58b1`. `release-audit.py` imports and calls
+the new `go_vulnerability_gate.classify` on successful full source/symbol JSON
+output; its `unique_object` helper is consumed by the decoder hook. Protocol,
+advisory and trace validation feed the retained finding counts and gate status.
+The implementation replaces the old Go exit-code-only success path rather than
+leaving an unreachable duplicate. Installer and pipeline now consume the same
+`v1.9.0` pin; the former pin remains only as historical context or a rejection
+fixture, not an active scanner selection in these paths.
+
+`check-govulncheck.py` is a documented manual compatibility entry point. Its CLI
+calls `check`, which runs the real release coordinator and consumes `messages`
+to inspect the scanner's reachable, uncalled and fixed-version controls. The new
+unit/coordinator tests consume the classifier and installer validation paths.
+Keep these helpers and raw-finding retention; no executable deletion justified.
+Only this ledger changed during the static audit. Root/G acceptance and their
+reported test evidence remain separate; this entry claims no new scanner run or
+project vulnerability clearance. Ledger frozen and released for publication.
