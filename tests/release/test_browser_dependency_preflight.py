@@ -28,14 +28,18 @@ elif action=='create':
  ca=next(x.split('src=')[1].split(',dst=')[0] for x in mounts if 'dst=/trust/ca.crt' in x)
  assert not pathlib.Path(ca).with_name('ca.key').exists()
  state={'Image':image,'Config':{'Labels':{'org.nex.browser-preflight':args[args.index('--label')+1].split('=',1)[1]}},'public_ca_sha256':hashlib.sha256(pathlib.Path(ca).read_bytes()).hexdigest()}
+ environment=dict(args[i+1].split('=',1) for i,x in enumerate(args) if x=='-e')
+ state['sandbox_mode']=environment['NEX_BROWSER_PREFLIGHT_SANDBOX_MODE']
+ state['approval_reference']=environment['NEX_BROWSER_PREFLIGHT_SANDBOX_APPROVAL'] or None
  (root/'state.json').write_text(json.dumps(state));print(cid)
 elif action=='wait':print('1' if mode=='sandbox' else '0')
 elif action=='logs':print('BROWSER_SANDBOX_UNAVAILABLE' if mode=='sandbox' else '')
 elif action=='cp':
  if mode=='sandbox':sys.exit(1)
  state=json.loads((root/'state.json').read_text())
- value={'effective_sandbox':'native','public_ca_sha256':state['public_ca_sha256']} if 'browser-engine.json' in args[1] else {'status':'passed'}
- if mode=='bad-engine' and 'effective_sandbox' in value:value['effective_sandbox']='disabled-fixture-only'
+ value={'effective_sandbox':state['sandbox_mode'],'public_ca_sha256':state['public_ca_sha256']} if 'browser-engine.json' in args[1] else {'status':'passed','effective_sandbox':state['sandbox_mode'],'approval_reference':state['approval_reference']}
+ if mode=='bad-engine' and 'public_ca_sha256' in value:value['effective_sandbox']='disabled-fixture-only' if state['sandbox_mode']=='native' else 'native'
+ if mode=='bad-driver-approval' and 'approval_reference' in value:value['approval_reference']='different-approval'
  pathlib.Path(args[2]).write_text(json.dumps(value))
 elif action=='inspect':
  state=json.loads((root/'state.json').read_text())
@@ -46,7 +50,7 @@ elif action not in ('start','rm'):sys.exit(2)
 
 
 class DependencyPreflightTests(unittest.TestCase):
-    def execute(self, mode):
+    def execute(self, mode, flags=()):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             for command in ('docker', 'openssl'):
@@ -58,7 +62,7 @@ class DependencyPreflightTests(unittest.TestCase):
                        PREFLIGHT_TEST_MODE=mode, NEX_BROWSER_FIXTURE_NO_SANDBOX='1',
                        DOCKER_HOST='tcp://forbidden.example:2375')
             output = root / 'public-output'
-            command = ['bash', str(ROOT / 'scripts/browser-dependency-preflight.sh'), '--output', str(output)]
+            command = ['bash', str(ROOT / 'scripts/browser-dependency-preflight.sh'), '--output', str(output), *flags]
             if mode == 'timeout':
                 # Inject the process-boundary timeout rather than sleeping45s;
                 # execute the unchanged coordinator body and all other stubbed
@@ -76,7 +80,7 @@ with unittest.mock.patch('subprocess.run',side_effect=bounded):exec(compile(body
                 command = [os.sys.executable, '-c', launcher, str(ROOT / 'scripts/browser-dependency-preflight.sh'), str(output)]
             result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=20)
             report = json.loads((output / 'startup-result.json').read_text())
-            calls = [json.loads(line) for line in (root / 'calls.jsonl').read_text().splitlines()]
+            calls = [json.loads(line) for line in (root / 'calls.jsonl').read_text().splitlines()] if (root / 'calls.jsonl').exists() else []
             self.assertEqual(bool(list(root.glob('.browser-preflight-private-*'))), mode == 'foreign-owner')
             return result, report, calls
 
@@ -128,6 +132,39 @@ with unittest.mock.patch('subprocess.run',side_effect=bounded):exec(compile(body
         self.assertEqual(report['status'], 'failed')
         self.assertEqual(report['cleanup_failure'], 'OWNED_CONTAINER_CLEANUP_FAILED')
         self.assertFalse(any(call[0] == 'docker' and call[2] == 'rm' for call in calls))
+
+    def test_reviewed_fixture_exception_is_explicit_and_recorded(self):
+        reference = 'https://github.com/5dg/nex-os/actions/runs/40786456380'
+        result, report, calls = self.execute('pass', ('--sandbox-mode', 'disabled-fixture-only', '--sandbox-approval', reference))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(report['effective_sandbox'], 'disabled-fixture-only')
+        self.assertEqual(report['approval_reference'], reference)
+        create = next(call for call in calls if call[0] == 'docker' and call[2] == 'create')
+        self.assertIn('NEX_BROWSER_FIXTURE_NO_SANDBOX=1', create)
+        self.assertEqual(create[create.index('--network') + 1], 'none')
+        self.assertEqual(sum(call[0] == 'docker' and call[2] == 'start' for call in calls), 1)
+
+    def test_missing_or_wrong_approval_never_builds_or_launches(self):
+        for flags in [('--sandbox-mode', 'disabled-fixture-only'),
+                      ('--sandbox-mode', 'disabled-fixture-only', '--sandbox-approval', 'unreviewed')]:
+            with self.subTest(flags=flags):
+                result, report, calls = self.execute('pass', flags)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(report['failure'], 'SANDBOX_APPROVAL_REQUIRED')
+                self.assertEqual(calls, [])
+
+    def test_native_mode_cannot_silently_consume_exception_approval(self):
+        result, report, calls = self.execute('pass', ('--sandbox-approval', 'https://github.com/5dg/nex-os/actions/runs/40786456380'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(report['failure'], 'UNEXPECTED_SANDBOX_APPROVAL')
+        self.assertEqual(calls, [])
+
+    def test_exception_driver_approval_or_engine_mode_mismatch_fails(self):
+        for mode in ('bad-driver-approval', 'bad-engine'):
+            with self.subTest(mode=mode):
+                result, report, _ = self.execute(mode, ('--sandbox-mode', 'disabled-fixture-only', '--sandbox-approval', 'https://github.com/5dg/nex-os/actions/runs/40786456380'))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(report['status'], 'failed')
 
 
 if __name__ == '__main__':

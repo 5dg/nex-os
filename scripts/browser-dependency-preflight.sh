@@ -5,9 +5,12 @@ cd "$(dirname "$0")/.."
 exec python3 - "$@" <<'PY'
 import argparse, hashlib, json, os, pathlib, re, secrets, shutil, subprocess, tempfile, time
 
-parser=argparse.ArgumentParser(description='Build and check the exact browser fixture with native sandbox; no fallback.')
+parser=argparse.ArgumentParser(description='Build and check the exact browser fixture; native sandbox default, no automatic fallback.')
 parser.add_argument('--output',type=pathlib.Path,required=True)
+parser.add_argument('--sandbox-mode',choices=('native','disabled-fixture-only'),default='native')
+parser.add_argument('--sandbox-approval')
 args=parser.parse_args()
+approved_exception='https://github.com/5dg/nex-os/actions/runs/40786456380'
 source=pathlib.Path.cwd()
 output=args.output
 if not output.is_absolute() or output.exists() or output.is_symlink() or output.resolve().is_relative_to(source):
@@ -18,7 +21,7 @@ env={k:v for k,v in os.environ.items() if k not in ('DOCKER_HOST','DOCKER_CONTEX
 docker=['docker','--host=unix:///var/run/docker.sock']
 owner='nex-browser-preflight-'+secrets.token_hex(6)
 report={'schema_version':1,'scope':'browser dependency startup only; not DOM, application TLS or candidate qualification',
-        'status':'failed','stage':'build fixture','startup_budget_seconds':45,'effective_sandbox':'native','network':'none'}
+        'status':'failed','stage':'validate explicit sandbox mode','startup_budget_seconds':45,'effective_sandbox':args.sandbox_mode,'network':'none'}
 container=None
 private=None
 image=None
@@ -28,6 +31,14 @@ def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def write_report():
     (output/'startup-result.json').write_text(json.dumps(report,indent=2)+'\n')
 try:
+    if args.sandbox_mode=='disabled-fixture-only':
+        # Root reviewed the measured native startup failure in this hosted run.
+        # This opt-in is a synthetic tool exception, not an application setting.
+        if args.sandbox_approval!=approved_exception:raise ValueError('SANDBOX_APPROVAL_REQUIRED')
+        report['approval_reference']=approved_exception
+    elif args.sandbox_approval is not None:
+        raise ValueError('UNEXPECTED_SANDBOX_APPROVAL')
+    report['stage']='build fixture'
     fixture=source/'apps/workspace/tests/browser'
     driver=source/'tests/qualification/browser/dependency-preflight.mjs'
     inputs={name:digest(fixture/name) for name in ('Dockerfile','entry.mjs','package.json','package-lock.json')}
@@ -66,10 +77,13 @@ try:
         '--mount',f'type=bind,src={private}/ca.crt,dst=/trust/ca.crt,readonly',
         '--mount',f'type=bind,src={driver},dst=/driver/qualification-browser.mjs,readonly',
         '--mount',f'type=bind,src={results},dst=/results',
-        '-e','APP_ENV=development','-e','NEX_PROFILE=synthetic-qualification','-e','NEX_BROWSER_FIXTURE_NO_SANDBOX=0',image])
+        '-e','APP_ENV=development','-e','NEX_PROFILE=synthetic-qualification',
+        '-e','NEX_BROWSER_FIXTURE_NO_SANDBOX='+('1' if args.sandbox_mode=='disabled-fixture-only' else '0'),
+        '-e','NEX_BROWSER_PREFLIGHT_SANDBOX_MODE='+args.sandbox_mode,
+        '-e','NEX_BROWSER_PREFLIGHT_SANDBOX_APPROVAL='+report.get('approval_reference',''),image])
     container=created.stdout.strip()
     if not re.fullmatch(r'[0-9a-f]{64}',container):raise ValueError('INVALID_CONTAINER_ID')
-    report['stage']='native browser startup'
+    report['stage']='browser startup'
     started=time.monotonic()
     try:
         run(docker+['start',container],timeout=5)
@@ -90,11 +104,11 @@ try:
     engine_path=output/'browser-engine.json';driver_path=output/'dependency-driver.json'
     if engine_path.stat().st_size>1024*1024 or driver_path.stat().st_size>4096:raise ValueError('INVALID_RESULT_SIZE')
     engine=json.loads(engine_path.read_text());driver_result=json.loads(driver_path.read_text())
-    if engine.get('effective_sandbox')!='native' or engine.get('public_ca_sha256')!=report['public_ca_sha256'] or driver_result.get('status')!='passed':
+    if engine.get('effective_sandbox')!=args.sandbox_mode or engine.get('public_ca_sha256')!=report['public_ca_sha256'] or driver_result.get('status')!='passed' or driver_result.get('effective_sandbox')!=args.sandbox_mode or driver_result.get('approval_reference')!=report.get('approval_reference'):
         raise ValueError('INVALID_STARTUP_RESULT')
     report['status']='passed';report['stage']='complete'
 except Exception as error:
-    report.setdefault('failure','DEPENDENCY_PREFLIGHT_FAILED')
+    report.setdefault('failure',str(error) if str(error) in ('SANDBOX_APPROVAL_REQUIRED','UNEXPECTED_SANDBOX_APPROVAL') else 'DEPENDENCY_PREFLIGHT_FAILED')
 finally:
     if container:
         try:

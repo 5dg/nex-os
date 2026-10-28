@@ -121,12 +121,26 @@ inventing a subject or weakening storage admission.
 
 Before either cold compilation, the trusted-main job builds the pinned browser
 fixture from the captured source and runs `scripts/browser-dependency-preflight.sh`
-with a 45-second startup limit, no network, the native sandbox enabled, a public
+with a 45-second startup limit, no network, a public
 CA and private temporary storage. A failure stops compilation and retains the
 small sanitized startup result. A successful check passes the immutable fixture
 image ID to the later pipeline, which checks its captured helper inputs during
 browser qualification. This dependency check does not exercise Nex OS, replace
-the DOM gate, or establish release readiness; no sandbox fallback is attempted.
+the DOM gate, or establish release readiness; no automatic sandbox fallback is attempted.
+
+The script defaults to the native sandbox. Hosted diagnostic run
+[`40786456380`](https://github.com/5dg/nex-os/actions/runs/40786456380), at source
+`89ac2a65f995459964ee200fac15d73ce6a81b9a`, retained a native
+`BROWSER_SANDBOX_UNAVAILABLE` failure after 637 ms with verified fixture inputs.
+Based on that measured failure, root approved the explicit hosted synthetic
+fixture exception `--sandbox-mode disabled-fixture-only --sandbox-approval
+https://github.com/5dg/nex-os/actions/runs/40786456380`. The workflow validates
+successful status, exact approval reference, mode and image identity before
+exporting that same fixture ID and `NEX_BROWSER_FIXTURE_NO_SANDBOX=1` to the
+later browser gate. The isolated fixture retains its read-only filesystem,
+private temporary storage and restricted networks. Native TLS validation and
+all DOM assertions remain required; this exception does not apply to application
+images or production operation.
 
 A separate scoped job downloads
 the retained subject, compares its SHA256 to the producer output, and uses the
@@ -154,6 +168,12 @@ python3 -B scripts/verify-provenance.py --subject /absolute/candidate-bundle.tar
 ```
 
 Install the checksum-pinned verifier first using `scripts/install-gh-attestation.sh`.
+The verifier also needs a writable cache for its authenticated TUF metadata. If
+the environment's default cache is read-only, set `XDG_CACHE_HOME` to an isolated
+writable directory outside the captured source. This does not replace the
+official trust roots or remove their network requirement. A denied TUF fetch or
+failed signature verification remains blocked even when all downloaded byte
+hashes match; retain the failed receipt and raw error.
 The same repository, workflow, source, issuer and hosted-runner constraints apply;
 required trusted-root material must also be available. A missing dependency or
 failed cryptographic check remains blocked. This separate origin receipt does not

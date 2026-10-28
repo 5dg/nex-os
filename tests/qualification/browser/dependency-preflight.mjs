@@ -6,7 +6,15 @@ const {chromium}=await import(process.env.NEX_PLAYWRIGHT_MODULE || '/fixture/nod
 const report={schema_version:1,scope:'browser dependency startup only; not DOM qualification',status:'failed'};
 let browser;
 try {
-  assert.equal(process.env.NEX_BROWSER_EFFECTIVE_SANDBOX,'native');
+  const mode=process.env.NEX_BROWSER_PREFLIGHT_SANDBOX_MODE;
+  assert(['native','disabled-fixture-only'].includes(mode));
+  assert.equal(process.env.NEX_BROWSER_EFFECTIVE_SANDBOX,mode);
+  const approval=process.env.NEX_BROWSER_PREFLIGHT_SANDBOX_APPROVAL;
+  if(mode==='disabled-fixture-only'){
+    assert.equal(approval,'https://github.com/5dg/nex-os/actions/runs/40786456380');
+    report.approval_reference=approval;
+  }else assert(!approval);
+  report.effective_sandbox=mode;
   browser=await chromium.connectOverCDP('http://127.0.0.1:9222');
   report.engine=browser.version();
   const context=await browser.newContext();

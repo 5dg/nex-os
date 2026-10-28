@@ -389,3 +389,27 @@ No executable deletion justified. Only this ledger changed during static
 consumer review. F/G acceptance and their focused test results remain separate;
 this entry claims no hosted startup, DOM qualification, final candidate or
 reproducibility pass. Ledger frozen and released for the diagnostic checkpoint.
+
+### Explicit browser fixture exception audit — 2026-10-28
+
+Reviewed the frozen six-path F/E delta against published
+`89ac2a65f995459964ee200fac15d73ce6a81b9a`: workflow, candidate runbook,
+preflight coordinator and driver, and their two regression suites. Concurrent
+D OCI/archive/backend changes remain outside this audit.
+
+The new mode and exact approval-reference arguments are consumed before any
+fixture build, passed to the mounted driver, checked against engine and driver
+results, and retained in the startup report. The workflow consumes that report's
+status, immutable image identity, mode and approval reference before exporting
+the fixture settings to the existing browser coordinator. Native mode remains
+the script default; the explicit exception adds no retry/fallback path. The
+regressions consume the valid exception, missing/wrong approval, native-mode
+approval rejection and result-mismatch branches. The runbook documents the
+measured-failure basis and the separate full DOM/TLS requirements; its verifier
+cache guidance preserves the existing verification entry point.
+
+No new helper, argument or result field was shown to be unused; no executable
+deletion justified. Only this ledger changed during static consumer review.
+Root approval, F/E test reports and G's independent review remain separate;
+this entry claims no new test run, hosted startup or candidate qualification.
+Ledger frozen and released for the bounded diagnostic checkpoint.

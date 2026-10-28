@@ -161,10 +161,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash /tmp/nex-ci-candidate/source/scripts/browser-dependency-preflight.sh --output /tmp/nex-ci-candidate/evidence/browser-dependency-preflight
+          # Explicit fixture-only exception reviewed after the bound native startup
+          # failure in run 40786456380; never an automatic fallback or TLS bypass.
+          bash /tmp/nex-ci-candidate/source/scripts/browser-dependency-preflight.sh --output /tmp/nex-ci-candidate/evidence/browser-dependency-preflight --sandbox-mode disabled-fixture-only --sandbox-approval https://github.com/5dg/nex-os/actions/runs/40786456380
           task_browser_image="$(cat /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/browser-image-id)"
           [[ "$task_browser_image" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Immutable browser fixture identity required.' >&2; exit 2; }
+          python3 - "$task_browser_image" <<'PY'
+          import json, pathlib, sys
+          result = json.loads(pathlib.Path('/tmp/nex-ci-candidate/evidence/browser-dependency-preflight/startup-result.json').read_text())
+          if result.get('status') != 'passed' or result.get('image_id') != sys.argv[1] or result.get('effective_sandbox') != 'disabled-fixture-only' or result.get('approval_reference') != 'https://github.com/5dg/nex-os/actions/runs/40786456380':
+              raise SystemExit('Successful startup bound to the reviewed fixture exception is required')
+          PY
           printf 'NEX_BROWSER_FIXTURE_IMAGE=%s\n' "$task_browser_image" >> "$GITHUB_ENV"
+          printf 'NEX_BROWSER_FIXTURE_NO_SANDBOX=1\n' >> "$GITHUB_ENV"
       - name: Execute canonical candidate with capacity and overlap admission
         run: bash /tmp/nex-ci-candidate/source/scripts/candidate-pipeline.sh /tmp/nex-ci-candidate/candidate.json 10.231.0.0/20
       - name: Prepare evidence even when setup or the canonical build is blocked

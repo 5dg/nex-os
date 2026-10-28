@@ -237,27 +237,38 @@ class BrowserDependencyPreflightTests(unittest.TestCase):
         step = block.split('      - name: ' + self.STEP + '\n', 1)[1].split('\n      - ', 1)[0]
         self.assertNotIn('continue-on-error', step)
         self.assertNotIn('if:', step)
-        self.assertNotIn('NEX_BROWSER_FIXTURE_NO_SANDBOX', step)
+        self.assertIn('--sandbox-mode disabled-fixture-only --sandbox-approval https://github.com/5dg/nex-os/actions/runs/40786456380', step)
+        self.assertEqual(step.count('NEX_BROWSER_FIXTURE_NO_SANDBOX=1'), 1)
+        self.assertNotIn('--ignore-certificate-errors', step)
         self.assertNotIn('dom-browser', step)
 
     def test_only_successful_preflight_forwards_an_immutable_image(self):
-        for exit_code, image_id in [(0, 'sha256:' + 'a' * 64), (1, 'sha256:' + 'a' * 64),
-                                    (0, 'mutable:tag'), (0, 'sha256:' + 'a' * 63),
-                                    (0, 'sha256:' + 'a' * 64 + '\nINJECTED=value')]:
-            with self.subTest(exit_code=exit_code, image_id=image_id), tempfile.TemporaryDirectory() as temporary:
+        valid_image = 'sha256:' + 'a' * 64
+        approval = 'https://github.com/5dg/nex-os/actions/runs/40786456380'
+        valid_result = {'status': 'passed', 'image_id': valid_image,
+                        'effective_sandbox': 'disabled-fixture-only', 'approval_reference': approval}
+        cases = [(0, valid_image, valid_result), (1, valid_image, valid_result),
+                 (0, 'mutable:tag', valid_result), (0, 'sha256:' + 'a' * 63, valid_result),
+                 (0, valid_image + '\nINJECTED=value', valid_result)]
+        for field, value in [('status', 'failed'), ('image_id', 'sha256:' + 'b' * 64),
+                             ('effective_sandbox', 'native'), ('approval_reference', None),
+                             ('approval_reference', 'https://github.com/other/repo/actions/runs/40786456380')]:
+            cases.append((0, valid_image, {**valid_result, field: value}))
+        for exit_code, image_id, result in cases:
+            with self.subTest(exit_code=exit_code, image_id=image_id, result=result), tempfile.TemporaryDirectory() as temporary:
                 base = Path(temporary)
                 script = base / 'source/scripts/browser-dependency-preflight.sh'
                 script.parent.mkdir(parents=True)
-                script.write_text('set -eu\n[[ "$1" == --output ]]\nmkdir -p "$2"\nprintf "%s\\n" "$FIXTURE_IMAGE" > "$2/browser-image-id"\nexit "$FIXTURE_EXIT"\n')
+                script.write_text('set -eu\n[[ "$1" == --output && "$3" == --sandbox-mode && "$4" == disabled-fixture-only && "$5" == --sandbox-approval && "$6" == https://github.com/5dg/nex-os/actions/runs/40786456380 ]]\nmkdir -p "$2"\nprintf "%s\\n" "$FIXTURE_IMAGE" > "$2/browser-image-id"\nprintf "%s\\n" "$FIXTURE_RESULT" > "$2/startup-result.json"\nexit "$FIXTURE_EXIT"\n')
                 environment = base / 'github-env'
                 shell = step_shell('canonical-candidate', self.STEP).replace('/tmp/nex-ci-candidate', str(base))
                 completed = subprocess.run(['bash', '-c', shell], capture_output=True, timeout=5,
                     env={**os.environ, 'GITHUB_ENV': str(environment), 'FIXTURE_IMAGE': image_id,
-                         'FIXTURE_EXIT': str(exit_code)})
-                expected = exit_code == 0 and image_id == 'sha256:' + 'a' * 64
+                         'FIXTURE_EXIT': str(exit_code), 'FIXTURE_RESULT': json.dumps(result)})
+                expected = exit_code == 0 and image_id == valid_image and result == valid_result
                 self.assertEqual(completed.returncode == 0, expected)
                 if expected:
-                    self.assertEqual(environment.read_text(), 'NEX_BROWSER_FIXTURE_IMAGE=' + image_id + '\n')
+                    self.assertEqual(environment.read_text(), 'NEX_BROWSER_FIXTURE_IMAGE=' + image_id + '\nNEX_BROWSER_FIXTURE_NO_SANDBOX=1\n')
                 else:
                     self.assertFalse(environment.exists(), 'failed or malformed startup must not export a fixture')
 
