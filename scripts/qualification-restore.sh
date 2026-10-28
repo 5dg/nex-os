@@ -38,7 +38,7 @@ mkdir -p "$task_backup"
 NEX_QUAL_PROJECT=nex-qualification python3 scripts/qualification-relay.py stop --state "$task_source"
 # Stop every application/evidence writer before taking either snapshot. PostgreSQL
 # remains up only to produce the consistent dump; no source writer is restarted.
-compose_source stop -t 5 worker control workspace-edge workspace model executor guard evidence
+compose_source stop worker control workspace-edge workspace model executor guard evidence
 task_running="$(docker_local ps --filter label=com.docker.compose.project=nex-qualification --format '{{.Label "com.docker.compose.service"}}')"
 while IFS= read -r task_service; do
  case "$task_service" in postgres|issuer|opa|opa-edge|'') ;; *) echo 'Source application writer still running; refusing snapshot.' >&2;exit 1;; esac
@@ -63,7 +63,7 @@ record={'source_project':'nex-qualification','restore_project':'nex-qualificatio
  'custody_sha256':digests,'source_state_retained':True,'production_backup_claim':False}
 (backup/'checkpoint.json').write_text(json.dumps(record,indent=2)+'\n')
 PY
-compose_source stop -t 5 postgres issuer opa opa-edge
+compose_source stop postgres issuer opa opa-edge
 compose_restore up -d --wait postgres
 # A newly initialized fixture volume must have no application tables. Never
 # restore over an existing schema or use --clean against retained data.

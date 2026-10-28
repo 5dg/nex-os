@@ -119,7 +119,10 @@ func ServeHTTP(ctx context.Context, address string, handler http.Handler, c *Con
 	go func() {
 		select {
 		case <-ctx.Done():
-			shutdown, stop := context.WithTimeout(context.Background(), 5*time.Second)
+			// The longest admitted control request is 60 seconds, followed by
+			// at most seven seconds of fenced operational/evidence cleanup.
+			// Compose supplies a 75-second outer stop grace.
+			shutdown, stop := context.WithTimeout(context.Background(), 70*time.Second)
 			err := server.Shutdown(shutdown)
 			stop()
 			if err != nil {

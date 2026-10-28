@@ -411,6 +411,7 @@ impl ServerCertVerifier for UriServerVerifier {
 pub async fn incoming(
     address: std::net::SocketAddr,
     trust: Arc<Trust>,
+    shutdown: crate::Shutdown,
 ) -> Result<
     tokio_stream::wrappers::ReceiverStream<
         Result<tokio_rustls::server::TlsStream<tokio::net::TcpStream>, std::io::Error>,
@@ -423,21 +424,41 @@ pub async fn incoming(
     let handshakes = Arc::new(tokio::sync::Semaphore::new(32));
     tokio::spawn(async move {
         loop {
-            let Ok((stream, _)) = listener.accept().await else {
-                break;
+            let accepted = tokio::select! {
+                biased;
+                _ = shutdown.started() => break,
+                _ = sender.closed() => break,
+                result = listener.accept() => result,
+            };
+            let (stream, _) = match accepted {
+                Ok(value) => value,
+                Err(error) => {
+                    let _ =
+                        tokio::time::timeout(Duration::from_secs(1), sender.send(Err(error))).await;
+                    break;
+                }
             };
             let Ok(permit) = handshakes.clone().try_acquire_owned() else {
                 continue;
             };
             let acceptor = acceptor.clone();
             let sender = sender.clone();
+            let shutdown = shutdown.clone();
             tokio::spawn(async move {
                 let _permit = permit;
-                if let Ok(Ok(stream)) =
-                    tokio::time::timeout(Duration::from_secs(3), acceptor.accept(stream)).await
-                {
-                    let _ =
-                        tokio::time::timeout(Duration::from_secs(1), sender.send(Ok(stream))).await;
+                let accepted = tokio::select! {
+                    biased;
+                    _ = shutdown.started() => return,
+                    _ = sender.closed() => return,
+                    result = tokio::time::timeout(Duration::from_secs(3), acceptor.accept(stream)) => result,
+                };
+                if let Ok(Ok(stream)) = accepted {
+                    tokio::select! {
+                        biased;
+                        _ = shutdown.started() => {},
+                        _ = sender.closed() => {},
+                        _ = tokio::time::timeout(Duration::from_secs(1), sender.send(Ok(stream))) => {},
+                    }
                 }
             });
         }

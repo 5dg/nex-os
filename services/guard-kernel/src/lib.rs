@@ -7,12 +7,16 @@ mod evidence;
 mod evidence_v1;
 mod execution;
 pub mod profile;
+mod shutdown;
 mod state;
 pub mod trust;
 use profile::Profile;
+pub use shutdown::{DRAIN_TIMEOUT, Shutdown};
 use std::{future::Future, sync::Arc};
 use tokio::sync::Semaphore;
 use trust::{PeerIdentity, Role, Trust};
+
+const REQUEST_CAPACITY: usize = 16;
 
 pub mod protocol {
     tonic::include_proto!("nex.guard.v1");
@@ -97,7 +101,7 @@ impl Kernel {
             state: None,
             profile,
             trust,
-            admission: Arc::new(Semaphore::new(16)),
+            admission: Arc::new(Semaphore::new(REQUEST_CAPACITY)),
             model_token: String::new(),
             export_token: String::new(),
             evidence: None,
@@ -171,14 +175,25 @@ impl Kernel {
         &self,
         operation: impl Future<Output = Result<Response<T>, Status>>,
     ) -> Result<Response<T>, Status> {
-        let _permit = self
-            .admission
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| Status::resource_exhausted("bounded request capacity exhausted"))?;
+        let _permit = self.admission.clone().try_acquire_owned().map_err(|_| {
+            if self.admission.is_closed() {
+                Status::unavailable("workload is draining")
+            } else {
+                Status::resource_exhausted("bounded request capacity exhausted")
+            }
+        })?;
         tokio::time::timeout(Duration::from_secs(15), operation)
             .await
             .map_err(|_| Status::deadline_exceeded("bounded authority request deadline exceeded"))?
+    }
+
+    /// The process keeps this handle before moving the kernel into Tonic. It
+    /// controls only lifecycle admission, never authorization or result state.
+    pub fn shutdown_control(&self) -> Shutdown {
+        Shutdown::new(
+            self.admission.clone(),
+            self.state.as_ref().map(state::StateStore::admission),
+        )
     }
 }
 

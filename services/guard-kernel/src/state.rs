@@ -9,6 +9,8 @@ use tokio_postgres::{
 };
 use tonic::Status;
 
+pub(crate) const CONNECTION_CAPACITY: usize = 8;
+
 pub struct StateStore {
     config: Config,
     profile: Profile,
@@ -81,8 +83,11 @@ impl StateStore {
             config,
             profile,
             tls,
-            permits: Arc::new(Semaphore::new(8)),
+            permits: Arc::new(Semaphore::new(CONNECTION_CAPACITY)),
         })
+    }
+    pub(crate) fn admission(&self) -> Arc<Semaphore> {
+        self.permits.clone()
     }
     pub async fn connect(&self) -> Result<Client, Status> {
         let permit =

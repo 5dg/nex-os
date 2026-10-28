@@ -79,6 +79,8 @@ type qualificationKernel struct {
 	delay           atomic.Bool
 	entered         chan struct{}
 	release         chan struct{}
+	command         *exec.Cmd
+	diagnostic      *qualProcessLog
 }
 
 // The process has complete qualification CONFIGURATION, but deliberately no
@@ -159,6 +161,7 @@ func startQualificationKernel(t *testing.T, opaExpiry ...time.Time) *qualificati
 	ctx, cancel := context.WithCancel(context.Background())
 	command := exec.CommandContext(ctx, binary)
 	diagnostic := &qualProcessLog{}
+	q.command, q.diagnostic = command, diagnostic
 	command.Stderr = diagnostic
 	command.Stdout = diagnostic
 	for _, item := range os.Environ() {

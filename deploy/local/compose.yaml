@@ -2,6 +2,7 @@ name: nex-local
 
 x-control: &control
   image: nex-control:local
+  stop_grace_period: 75s
   environment: &control-env
     APP_ENV: development
     MODEL_PROVIDER: development
@@ -19,6 +20,7 @@ x-control: &control
 services:
   postgres:
     image: postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27
+    stop_grace_period: 75s
     environment:
       POSTGRES_DB: nex
       POSTGRES_USER: nex
@@ -33,6 +35,7 @@ services:
       retries: 30
   opa:
     image: openpolicyagent/opa@sha256:02d31f4e34dcae04d87b542796aa0d089e42039fe6bbc5601587be44fb218963
+    stop_grace_period: 75s
     command: [run, --server, --addr=0.0.0.0:8181, --disable-telemetry, /policies/guard.rego]
     ports: ["127.0.0.1:8181:8181"]
     volumes: [../../policies:/policies:ro]
@@ -95,6 +98,7 @@ services:
       opa: {condition: service_started}
   workspace:
     image: nex-workspace:local
+    stop_grace_period: 75s
     build:
       context: ../..
       dockerfile: deploy/local/Dockerfile.workspace
@@ -113,6 +117,7 @@ services:
     depends_on: [control]
   model:
     image: nex-control:local
+    stop_grace_period: 75s
     entrypoint: [/model]
     user: ${NEX_UID:-1000}:${NEX_GID:-1000}
     environment:
@@ -132,6 +137,7 @@ services:
     security_opt: [no-new-privileges:true]
   executor:
     image: nex-control:local
+    stop_grace_period: 75s
     entrypoint: [/executor]
     user: ${NEX_UID:-1000}:${NEX_GID:-1000}
     environment:
@@ -150,6 +156,7 @@ services:
     security_opt: [no-new-privileges:true]
   worker:
     image: nex-control:local
+    stop_grace_period: 75s
     entrypoint: [/worker]
     user: ${NEX_UID:-1000}:${NEX_GID:-1000}
     environment:
@@ -164,6 +171,7 @@ services:
     depends_on: [control]
   guard:
     image: nex-guard:local
+    stop_grace_period: 75s
     build:
       context: ../..
       dockerfile: deploy/local/Dockerfile.guard
@@ -188,6 +196,7 @@ services:
     depends_on: [opa]
   evidence:
     image: nex-control:local
+    stop_grace_period: 75s
     entrypoint: [/evidence]
     user: ${NEX_UID:-1000}:${NEX_GID:-1000}
     environment:
