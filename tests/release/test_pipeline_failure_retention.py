@@ -21,7 +21,7 @@ class PipelineFailureRetentionTests(unittest.TestCase):
             base = Path(tmp)
             root = base / 'source'
             (root / 'scripts').mkdir(parents=True)
-            for name in ('candidate-pipeline.sh', 'candidate.py', 'candidate-evidence.py', 'source_record.py', 'image_record.py', 'phase_admission.py'):
+            for name in ('candidate-pipeline.sh', 'candidate.py', 'candidate-evidence.py', 'source_record.py', 'image_record.py', 'phase_admission.py', 'image_archive.py'):
                 shutil.copy2(SCRIPTS / name, root / 'scripts' / name)
             (root / 'go.mod').write_text('module example.invalid/early-failure\n')
             source_record.atomic_json(root / source_record.COMPANION, {

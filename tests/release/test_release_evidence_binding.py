@@ -21,6 +21,7 @@ sys.path.insert(0, str(SCRIPTS))
 import candidate
 import image_record
 import source_record
+import image_archive
 spec = importlib.util.spec_from_file_location('candidate_evidence', SCRIPTS / 'candidate-evidence.py')
 evidence = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(evidence)
@@ -61,7 +62,7 @@ class ReleaseEvidenceBindingTests(unittest.TestCase):
             self.save_build(name)
         source_record.atomic_json(self.manifest, self.record)
 
-    def make_image(self, directory, name, content):
+    def make_image(self, directory, name, content, raw_mtime=0):
         layer_bytes = io.BytesIO()
         with tarfile.open(fileobj=layer_bytes, mode='w') as layer:
             member = tarfile.TarInfo('usr/bin/synthetic')
@@ -75,13 +76,21 @@ class ReleaseEvidenceBindingTests(unittest.TestCase):
         images = directory / 'images'
         images.mkdir(exist_ok=True)
         archive = images / (name + '.tar')
-        with tarfile.open(archive, 'w') as saved:
+        raw = directory / (name + '-raw.tar')
+        with tarfile.open(raw, 'w') as saved:
             for path, value in blobs.items():
                 member = tarfile.TarInfo(path)
                 member.size = len(value)
+                member.mtime = raw_mtime
                 saved.addfile(member, io.BytesIO(value))
+        archive.unlink(missing_ok=True)
+        image_id = 'sha256:' + hashlib.sha256(config).hexdigest()
+        preparation = image_archive.canonicalize(raw, archive, self.record['source']['source_epoch'], image_id)
+        raw.unlink()
+        report = directory / (name + '-archive-preparation.json')
+        source_record.atomic_json(report, preparation)
         payload = image_record.payload(archive, directory / (name + '-payload.json'))
-        return {'id': 'sha256:' + hashlib.sha256(config).hexdigest(),
+        return {'id': image_id, 'archive_preparation': {'path': report.name, 'sha256': source_record.sha256(report)},
             'layers': ['sha256:' + hashlib.sha256(layer).hexdigest()],
             'archive': {'path': 'images/' + name + '.tar', 'sha256': source_record.sha256(archive)}, 'payload': payload}
 
@@ -97,6 +106,28 @@ class ReleaseEvidenceBindingTests(unittest.TestCase):
 
     def test_matching_actual_artifacts_compare_successfully(self):
         self.assertEqual(self.compare(), 0)
+
+    def test_raw_export_difference_is_visible_while_emitted_archive_bytes_match(self):
+        self.builds['two']['images']['control'] = self.make_image(self.base / 'builds/two', 'control', b'A', raw_mtime=1700000020)
+        self.save_build('two')
+        self.assertEqual(self.compare(), 0)
+        report = json.loads((self.base / 'reproducibility.json').read_text())
+        self.assertTrue(report['oci_bytes_identical'])
+        self.assertFalse(report['raw_docker_export_archives_identical'])
+        control = report['images']['control']
+        self.assertTrue(control['canonical_image_archive_identical'])
+        self.assertFalse(control['raw_docker_export_archive_identical'])
+        self.assertNotEqual(control['raw_docker_export_archive_sha256']['one'], control['raw_docker_export_archive_sha256']['two'])
+        self.assertIn('actual emitted canonical', report['targets']['oci'])
+
+    def test_archive_transformation_proof_cannot_replace_emitted_non_time_metadata(self):
+        path = self.base / 'builds/two/control-archive-preparation.json'
+        report = json.loads(path.read_text()); report['members']['manifest.json']['mode'] = 0o777
+        source_record.atomic_json(path, report)
+        self.builds['two']['images']['control']['archive_preparation']['sha256'] = source_record.sha256(path)
+        self.save_build('two')
+        with self.assertRaisesRegex(ValueError, 'exact transformation proof'):
+            self.compare()
 
     def test_host_diagnostic_record_cannot_be_canonical_comparison(self):
         self.builds['one']['build_mode'] = 'local-host-development'

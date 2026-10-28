@@ -17,6 +17,7 @@ from candidate import load
 from image_record import payload
 from source_record import atomic_json, sha256
 from phase_admission import admit, gzip_bound, QUALIFICATION_FORECAST, RESERVE
+from image_archive import inspect as inspect_image_archive
 
 
 def now():
@@ -49,12 +50,28 @@ def compare(args):
         left, right = first["images"][name], second["images"].get(name)
         if right is None:
             raise ValueError("image set differs between builds")
+        preparations = {}
         for build, image in (("one", left), ("two", right)):
             if image["archive"]["path"] != "images/" + name + ".tar":
                 raise ValueError("unexpected image archive path")
             archive = base / "builds" / build / image["archive"]["path"]
             if sha256(archive) != image["archive"]["sha256"]:
                 raise ValueError("saved image archive is stale or substituted")
+            preparation = image.get("archive_preparation", {})
+            report_path = base / "builds" / build / (name + "-archive-preparation.json")
+            if preparation.get("path") != report_path.name or report_path.is_symlink() or sha256(report_path) != preparation.get("sha256"):
+                raise ValueError("canonical archive transformation proof is missing or substituted")
+            report = json.loads(report_path.read_text())
+            if (report.get("schema_version") != 1 or report.get("kind") != "outer-docker-tar-timestamps-v1"
+                    or report.get("source_epoch") != candidate["source"]["source_epoch"]
+                    or report.get("image_id") != image["id"] or report.get("emitted_sha256") != image["archive"]["sha256"]
+                    or not re.fullmatch(r"[a-f0-9]{64}", report.get("raw_sha256", ""))
+                    or report.get("member_bytes_and_non_time_metadata_preserved") is not True):
+                raise ValueError("canonical archive proof differs from declared emitted image")
+            expected = {path: {**entry, "mtime": report["source_epoch"]} for path, entry in report["members"].items()}
+            if inspect_image_archive(archive, image["id"]) != expected:
+                raise ValueError("emitted archive members differ from exact transformation proof")
+            preparations[build] = report
             # Re-derive the merged payload from the retained archive; a copied
             # manifest digest or edited payload report cannot establish equality.
             with tempfile.TemporaryDirectory(prefix="nex-payload-verify-") as temporary:
@@ -66,18 +83,23 @@ def compare(args):
         images[name] = {"runtime_payload_identical": left["payload"]["sha256"] == right["payload"]["sha256"],
                         "oci_configuration_identical": left["id"] == right["id"],
                         "oci_layers_identical": left["layers"] == right["layers"],
-                        "saved_image_archive_identical": left["archive"]["sha256"] == right["archive"]["sha256"]}
+                        "canonical_image_archive_identical": left["archive"]["sha256"] == right["archive"]["sha256"],
+                        "raw_docker_export_archive_identical": preparations["one"]["raw_sha256"] == preparations["two"]["raw_sha256"],
+                        "raw_docker_export_archive_sha256": {build: report["raw_sha256"] for build, report in preparations.items()},
+                        "archive_transformation_proofs": {"one": left["archive_preparation"], "two": right["archive_preparation"]}}
         if not images[name]["runtime_payload_identical"]:
             files = [json.loads((base / "builds" / build / (name + "-payload.json")).read_text())["files"] for build in ("one", "two")]
             changed = [path for path in sorted(files[0].keys() | files[1].keys()) if files[0].get(path) != files[1].get(path)]
             images[name]["changed_runtime_paths"] = changed
     payload_equal = all(image["runtime_payload_identical"] for image in images.values())
-    oci_equal = all(image["oci_configuration_identical"] and image["oci_layers_identical"] and image["saved_image_archive_identical"] for image in images.values())
+    oci_equal = all(image["oci_configuration_identical"] and image["oci_layers_identical"] and image["canonical_image_archive_identical"] for image in images.values())
     result = {"schema_version": 1, "source": candidate["source"], "measured_at": now(),
               "targets": {"native_binaries": "exact bytes", "runtime_payload": "merged path/type/mode/uid/gid/content/link/device/PAX-xattrs-ACL-flags; timestamps excluded",
-                          "oci": "configuration/layer/archive bytes, separately reported"},
+                          "oci": "configuration/layer bytes and actual emitted canonical archive bytes",
+                          "raw_docker_export": "raw archive SHA separately reported, with exact producer transformation proof"},
               "native_binaries_identical": binary_equal, "runtime_payloads_identical": payload_equal,
               "oci_bytes_identical": oci_equal, "images": images,
+              "raw_docker_export_archives_identical": all(image["raw_docker_export_archive_identical"] for image in images.values()),
               "status": "passed" if binary_equal and payload_equal and oci_equal else "failed",
               "metadata_differences_are_not_payload_normalization": True}
     path = base / "reproducibility.json"

@@ -110,6 +110,13 @@ identity, counts, timings and fixed failure codes. They exclude browser profiles
 Chromium logs, cookies, tokens, receipts and private fixture state. Preserve their
 exact bytes and check available hashes against the candidate and release manifest;
 they provide diagnostics when the full subject exceeds a download client's limit.
+Five additional explicit paths retain `evidence/browser-*/fixture-inputs.json`,
+`evidence/browser-*/fixture-trust-input.json`, and each of the `dom`, `operator`
+and `revocation` directories' `browser-engine.json`. These contain the immutable
+fixture identity and input hashes, public CA hash and source/projected file modes,
+and public engine inventories. Check that all three engine CA hashes match the
+projected public root record. The certificate bytes, private keys and browser
+profiles are excluded from this small metadata artifact.
 The artifact also retains exactly `startup-result.json`, `browser-engine.json`
 and `browser-image-id` under `evidence/browser-dependency-preflight/`.
 It runs after successful trusted-main admission even if a later step fails, and

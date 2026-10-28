@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[2] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
-from resource_admission import GIB, load_policy, second_admission, summarize_measurements
+from resource_admission import GIB, load_policy, second_admission, summarize_measurements, phase_settings, phase_record_digest, inherit_phase_settings
 spec = importlib.util.spec_from_file_location('second_admission_builder', SCRIPTS / 'canonical-build.py')
 compiler = importlib.util.module_from_spec(spec); spec.loader.exec_module(compiler)
 
@@ -43,7 +43,7 @@ class SecondBuildAdmissionTests(unittest.TestCase):
         self.first = {'source': self.candidate['source'], 'run_id': self.candidate['run_id'],
                       'build_id': 'one', 'build_mode': 'canonical-container', 'status': 'built',
                       'compilation_scratch_discarded': True, 'commands': self.commands,
-                      'resource_budget': {'docker': self.docker, 'second_admission_policy': self.bound,
+                      'resource_budget': {'docker': self.docker, 'second_admission_policy': self.bound, 'phase_settings': phase_settings({}),
                                           'measurements': summarize_measurements(self.initial, self.commands, self.final)}}
 
     def load(self):
@@ -51,6 +51,52 @@ class SecondBuildAdmissionTests(unittest.TestCase):
 
     def derive(self):
         return second_admission(self.candidate, self.first, 'b'*64, self.bound, self.docker)
+
+    def first_phase_plan(self):
+        plan = {'schema_version': 1, 'strategy': 'pinned-containers-bind-outputs',
+                'source_input_sha256': 'a'*64, 'docker_driver': 'vfs', 'lead_review': 'approved',
+                'docker_minimum_free': 12*GIB, 'temporary_minimum_free': 12*GIB,
+                'packaging_image_estimated_peak_additional': {'workspace': 4*GIB, 'postgres': 5*GIB},
+                'compiler_cache_evictions': [{'after': 'rust', 'requested': compiler.COMPILERS['rust'], 'image_id': 'sha256:'+'c'*64}]}
+        self.first['resource_budget']['reviewed_plan'] = {'sha256': hashlib.sha256(json.dumps(plan, indent=2).encode()).hexdigest(),
+                                                        'record_sha256': phase_record_digest(plan), 'record': plan}
+        self.first['resource_budget']['phase_settings'] = phase_settings(plan)
+        return plan
+
+    def test_phase_inheritance_binds_exact_plan_and_never_inherits_whole_build_floors(self):
+        self.first_phase_plan()
+        floors = self.derive()['minimum_free'].copy()
+        result = inherit_phase_settings(self.candidate, self.first, 'b'*64, self.docker)
+        self.assertEqual(result['settings'], self.first['resource_budget']['phase_settings'])
+        self.assertEqual(result['original_plan_sha256'], self.first['resource_budget']['reviewed_plan']['sha256'])
+        self.assertEqual(result['first_build_manifest_sha256'], 'b'*64)
+        self.assertFalse(result['whole_build_floors_inherited'])
+        self.assertNotIn('docker_minimum_free', result['settings'])
+        self.assertEqual(self.derive()['minimum_free'], floors)
+
+    def test_source_defaults_have_no_external_inheritance(self):
+        self.first['resource_budget']['phase_settings'] = phase_settings({})
+        self.assertIsNone(inherit_phase_settings(self.candidate, self.first, 'b'*64, self.docker))
+
+    def test_missing_or_substituted_phase_plan_fails_closed(self):
+        self.first_phase_plan()
+        original = copy.deepcopy(self.first)
+        for change in ('missing-plan', 'changed-record', 'missing-record-hash', 'changed-settings', 'changed-source', 'wrong-first-hash'):
+            self.first = copy.deepcopy(original)
+            budget = self.first['resource_budget']
+            digest = 'b'*64
+            if change == 'missing-plan': del budget['reviewed_plan']
+            elif change == 'changed-record': budget['reviewed_plan']['record']['packaging_image_estimated_peak_additional']['workspace'] += GIB
+            elif change == 'missing-record-hash': del budget['reviewed_plan']['record_sha256']
+            elif change == 'changed-settings': budget['phase_settings']['compiler_cache_evictions'] = []
+            elif change == 'changed-source': self.first['source'] = {'inputs': {'sha256': 'f'*64}}
+            else: digest = 'f'*64
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                inherit_phase_settings(self.candidate, self.first, digest, self.docker)
+
+    def test_unreviewed_phase_budget_below_floor_rejected(self):
+        with self.assertRaises(ValueError):
+            phase_settings({'packaging_image_estimated_peak_additional': {'workspace': 4*GIB-1}})
 
     def test_exact_predeclared_policy_is_hashed_from_same_bytes(self):
         self.assertEqual(self.bound['record'], self.policy)

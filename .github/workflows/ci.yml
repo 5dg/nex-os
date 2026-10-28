@@ -221,6 +221,11 @@ jobs:
             /tmp/nex-ci-candidate/evidence/browser-*/dom/browser-results.json
             /tmp/nex-ci-candidate/evidence/browser-*/operator/browser-results.json
             /tmp/nex-ci-candidate/evidence/browser-*/revocation/browser-results.json
+            /tmp/nex-ci-candidate/evidence/browser-*/fixture-inputs.json
+            /tmp/nex-ci-candidate/evidence/browser-*/fixture-trust-input.json
+            /tmp/nex-ci-candidate/evidence/browser-*/dom/browser-engine.json
+            /tmp/nex-ci-candidate/evidence/browser-*/operator/browser-engine.json
+            /tmp/nex-ci-candidate/evidence/browser-*/revocation/browser-engine.json
             /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/startup-result.json
             /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/browser-engine.json
             /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/browser-image-id

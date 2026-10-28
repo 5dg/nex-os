@@ -3,6 +3,8 @@ FROM postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944
 LABEL org.nex.qualification.gosu.revision="6456aaa0f3c854d199d0f037f068eb97515b7513" \
       org.nex.qualification.gosu.compiler="go1.27.3" \
       org.nex.qualification.gosu.dependency-profile="nex-downstream-overlay-1"
+# Remove only ldconfig's build-specific auxiliary scan cache, not the active
+# loader cache, installed libraries, or dpkg's security inventory.
 RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
     set -eu; mkdir -p /tmp/nex-debian-sources; \
     cp /etc/apt/sources.list.d/debian.sources /tmp/nex-debian-sources/debian.sources; \
@@ -14,5 +16,6 @@ RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
     test "$(dpkg-query -W -f='${Version}' openssl)" = '3.0.22-1~deb12u2'; \
     test "$(dpkg-query -W -f='${Version}' tzdata)" = '2026e-0+deb12u1'; \
     rm -rf /var/lib/apt/lists/* /tmp/nex-debian-sources; \
-    rm -f /var/log/apt/history.log /var/log/apt/term.log /var/log/dpkg.log
+    rm -f /var/log/apt/history.log /var/log/apt/term.log /var/log/dpkg.log /var/cache/ldconfig/aux-cache; \
+    test -s /etc/ld.so.cache
 COPY postgres/ /

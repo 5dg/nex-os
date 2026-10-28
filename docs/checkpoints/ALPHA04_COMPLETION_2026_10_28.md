@@ -408,8 +408,16 @@ exception for this hosted synthetic runner. Native mode remains the default;
 disabled fixture mode requires the exact reviewed run reference and matching
 engine/image/output checks, with no automatic fallback. Read-only/capability
 restrictions, private temporary storage, certificate validation and the full DOM
-gate remain required. Thirteen workflow and ten preflight tests passed; actual
-hosted execution of the explicit exception remains pending.
+gate remain required. Thirteen workflow and ten preflight tests passed. Published
+checkpoint `0297f7d676d75d56887307f98288c980fb01d031`, hosted run `40787853494`,
+passed the actual early startup check with that explicit exception. Its full
+candidate run subsequently failed: the DOM fixture reported
+`BROWSER_FIXTURE_UNAVAILABLE` after 1.517 seconds, before driver results. Operator,
+revocation, rotation and restore did not run. The startup preflight had passed
+in 3.357 seconds; these are separate measurements. Metadata and origin artifacts
+were independently retrieved and hash-checked, while full-subject retrieval and
+signature verification remain blocked as described below. Browser startup alone
+is not DOM qualification.
 
 The connector refused the approximately 810 MB full subjects at its 512 MiB
 limit. Smaller metadata and origin artifacts were retrieved and hash-checked;
@@ -418,3 +426,59 @@ artifact manifest and captured source. Strict signature verification first hit
 an unwritable default cache; a supported writable cache exposed `Forbidden` from
 the default Sigstore TUF endpoint. Both failures remain retained. No custom trust
 root or successful origin/release-verification claim was substituted.
+
+An isolated official BuildKit v0.34.1 exporter canary subsequently produced
+identical raw archive, image configuration, compressed layer and uncompressed
+layer bytes for both scratch and pinned-APT build pairs. Independent review
+checked the actual archives, thirteen generated whiteouts and unchanged vendor
+uncompressed layer bytes/diffIDs. The four raw exports are retained under
+`buildkit-container-canary-1/execution/`; the APT pair SHA-256 is
+`d3ad84437842a9c6e18c2f86660b359bf426b25af06b78699ca0a6c239cef387`.
+
+The canary's later Docker-save check crossed its reviewed 4 GiB growth forecast
+and stopped with more than 10.4 GB free. Its failed resource record remains
+preserved. A separately approved bounded completion used the existing direct
+exports, loaded the second APT image, verified its full configuration and seven
+layer diffIDs, and prepared identical 84,012,544-byte archives with SHA-256
+`667d0be55a9114a6f8d2675beacc2c5d9fa815086189d71828b760c3a5c69711`.
+Completion used approximately 168 MB additional space, preserved the original
+evidence inventory exactly, and normally removed only the inspected owned
+builder container, remote profile and cache volume. Its acceptance, cleanup and
+resource records are under `buildkit-container-canary-1/completion-1/`.
+
+The producer uses the official export directly, verifies its loaded immutable
+image, and prepares only outer tar timestamps; it does not rewrite configuration,
+layer or filesystem payload bytes. Fresh per-image builder caches bound
+accumulation. Canonical integration passed independent review and all 203 offline
+release tests. Actual process regressions cover parent/child termination,
+descendant-held pipes, low-disk/report failure and exact ownership. The second
+build inherits only explicitly reviewed phase settings while retaining the fixed
+measured admission formula. Measured final admission and a new two-build candidate
+remain pending; canary success is not candidate qualification.
+
+The hosted fixture failure exposed a separate portability defect: top-level
+public CA creation requests mode0644 under umask077, while the fixture uses
+UID1000 and the hosted coordinator has another UID. The early preflight projects
+its public CA as readable; the full coordinator had mounted the original file.
+Source2 diagnostics used coordinator UID1000 and did not exercise this boundary.
+A controlled paired probe used the same immutable image, public CA bytes and
+dependency driver: a UID1001-owned mode0600 CA failed in 506 ms with the same
+fixture-unavailable code and no engine result; an equal-byte mode0444 copy passed
+the real entry, engine and dependency driver in 4,438 ms. Original CA bytes,
+owner and mode remained unchanged, and only exact owned probe containers were
+removed. Evidence is in `browser-public-ca-mode-probe-1/acceptance.json`.
+
+The browser coordinator now validates a single current public CA, projects only
+those exact bytes into a fresh attempt-private mode0444 file, mounts it read-only
+and records its hash against all three browser engines. Private keys and original
+PKI permissions remain intact. Four focused regression cases cover projection
+under umask077 and rejection of keys, mixed/multiple/non-CA certificates,
+oversized input, symlinks and existing outputs. Independent code/metadata review
+and the combined 207-test offline release suite passed. Cleanup review confirmed
+active consumers and no additional justified deletion; D removed three unused
+new-code assignments identified during that review. The combined test log is
+`release-tests-candidate-export-browser-final.log`, SHA-256
+`2730f40560e685a936bd8e249db24c4715162bc9706bde8200d3ba6acb33fe06`.
+New source publication, measured admission, fresh capture and full captured-image
+qualification remain required. No final-candidate or release-eligibility claim
+follows from these component results.

@@ -47,6 +47,34 @@ task_wrong_created=0
 mkdir "$task_output" "$task_private"
 mkdir "$task_output/dom" "$task_output/operator" "$task_output/revocation"
 printf '%s\n' "$task_attempt" > "$task_output/attempt-id"
+# Project only the public root for the fixed browser UID. The original PKI is
+# private to its coordinator and can be mode0600 after creation under umask077.
+# BEGIN PUBLIC CA PROJECTION
+node --input-type=module - "$task_state/current-pki/ca.crt" "$task_private/public-ca.crt" "$task_output/fixture-trust-input.json" <<'JS'
+import {constants,openSync,closeSync,fstatSync,readFileSync,writeFileSync,fchmodSync} from 'node:fs';
+import {createHash,X509Certificate} from 'node:crypto';
+const [source,target,metadata]=process.argv.slice(2);
+const input=openSync(source,constants.O_RDONLY|constants.O_NOFOLLOW);
+let bytes,info;
+try{
+ info=fstatSync(input);
+ if(!info.isFile()||info.size===0||info.size>128*1024)throw new Error('Bounded regular public CA required');
+ bytes=readFileSync(input);
+}finally{closeSync(input);}
+const pem=bytes.toString('utf8');
+if(pem.includes('PRIVATE KEY')||!/^\s*-----BEGIN CERTIFICATE-----\s+[A-Za-z0-9+/=\r\n]+-----END CERTIFICATE-----\s*$/.test(pem))throw new Error('Exactly one public certificate required');
+const certificate=new X509Certificate(bytes);
+if(!certificate.ca||Date.now()<Date.parse(certificate.validFrom)||Date.now()>=Date.parse(certificate.validTo))throw new Error('Current public root CA required');
+const projected=openSync(target,'wx',0o444);
+try{writeFileSync(projected,bytes);fchmodSync(projected,0o444);}finally{closeSync(projected);}
+const sha256=value=>createHash('sha256').update(value).digest('hex');
+const digest=sha256(bytes);
+if(sha256(readFileSync(target))!==digest)throw new Error('Public CA projection changed bytes');
+const record={schema_version:1,scope:'public browser root projection only',public_ca_sha256:digest,source_mode:(info.mode&0o777).toString(8),projected_mode:'444'};
+writeFileSync(metadata,JSON.stringify(record,null,2)+'\n',{flag:'wx',mode:0o600});
+console.log(JSON.stringify(record));
+JS
+# END PUBLIC CA PROJECTION
 docker_local() {
  env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
   docker --host=unix:///var/run/docker.sock "$@"
@@ -172,7 +200,7 @@ start_browser() {
   --cap-drop ALL --security-opt no-new-privileges:true --shm-size=256m \
   --tmpfs /home/node:rw,nosuid,nodev,size=256m,uid=1000,gid=1000,mode=0700 \
   --tmpfs /tmp:rw,nosuid,nodev,size=64m,mode=1777 \
-  --mount "type=bind,src=$task_state/current-pki/ca.crt,dst=/trust/ca.crt,readonly" \
+  --mount "type=bind,src=$task_private/public-ca.crt,dst=/trust/ca.crt,readonly" \
   --mount "type=bind,src=$PWD/tests/qualification/browser/$task_driver,dst=/driver/qualification-browser.mjs,readonly" \
   --mount "type=bind,src=$PWD/tests/qualification/browser/acceptance.mjs,dst=/driver/acceptance.mjs,readonly" \
   --mount "type=bind,src=$PWD/tests/qualification/browser/workflow-fixture.mjs,dst=/driver/workflow-fixture.mjs,readonly" \
@@ -300,8 +328,10 @@ cmp "$task_private/authority-before.sha256" "$task_private/authority-after.sha25
 python3 - "$task_output" "$task_diagnostic" <<'PY'
 import json,pathlib,sys
 root=pathlib.Path(sys.argv[1])
+trust=json.loads((root/'fixture-trust-input.json').read_text())
 for run in ('dom','operator','revocation'):
  if json.loads((root/run/'browser-results.json').read_text()).get('status')!='passed':raise SystemExit('Incomplete browser assertion result')
+ if json.loads((root/run/'browser-engine.json').read_text()).get('public_ca_sha256')!=trust['public_ca_sha256']:raise SystemExit('Browser trust differs from projected public root')
 report={'schema_version':1,'status':'passed','scope':'source-bound synthetic browser qualification only','bounded_polling_and_audit_growth':True,'stale_job_and_history_error_regressions':True,'large_signed_history_stable_traversal':True,'same_session_permission_and_delegation_revocation':True,'job_operation_and_receipt_snapshots_unchanged_after_each_denial':True,'exact_prior_authority_restored':True}
 if sys.argv[2]=='1':report['scope']='diagnostic host build only; not canonical candidate qualification'
 (root/'coordinator-results.json').write_text(json.dumps(report,indent=2)+'\n')

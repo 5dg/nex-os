@@ -7,6 +7,7 @@ import json
 import os
 import re
 import secrets
+import signal
 from pathlib import Path
 import shutil
 import stat
@@ -18,7 +19,7 @@ sys.dont_write_bytecode = True
 from candidate import load
 from image_record import payload
 from source_record import atomic_json, identity, sha256
-from resource_admission import load_policy, second_admission, summarize_measurements
+from resource_admission import load_policy, second_admission, summarize_measurements, phase_settings, phase_record_digest, inherit_phase_settings
 
 COMPILERS = {
  "go": "golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5",
@@ -29,6 +30,34 @@ GIB = 1024 ** 3
 FRONTEND = "docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e"
 PHASE_SCRATCH = {"gosu": ("go-cache", "gopath", "gosu", "gosu-go-cache", "gosu-gopath", "tmp"),
                  "rust": ("target", "cargo")}
+
+
+def supervise_packager(command, env, stream, timeout=1800, grace=150):
+ # The child owns its daemon. Never SIGKILL it at the work deadline without
+ # first allowing its TERM handler to stop the verified owned writer.
+ # 150s exceeds active-client cancellation(16) + stop checks(20+45+20)
+ # + one failed cleanup-client cancellation(16) + polling overhead(3).
+ process = subprocess.Popen(command, env=env, stdout=stream, stderr=subprocess.STDOUT)
+ try:
+  process.wait(timeout=timeout)
+  return process
+ except BaseException:
+  handlers = {sig:signal.signal(sig,signal.SIG_IGN) for sig in (signal.SIGTERM,signal.SIGINT)}
+  try:
+   if process.poll() is None:
+    process.terminate()
+    try: process.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+     process.kill()
+     process.wait(timeout=5)
+  finally:
+   for sig,handler in handlers.items(): signal.signal(sig,handler)
+  raise
+
+
+def interrupted(signum, _frame):
+ signal.signal(signum, signal.SIG_IGN)
+ raise InterruptedError("canonical build interrupted by signal "+str(signum))
 
 
 class Builder:
@@ -66,10 +95,12 @@ class Builder:
    first_path = self.base / "builds/one/manifest.json"
    if first_path.is_symlink() or not first_path.is_file(): raise ValueError("regular completed first-build manifest required")
    first_bytes = first_path.read_bytes()
-   second = second_admission(self.candidate, json.loads(first_bytes), hashlib.sha256(first_bytes).hexdigest(), policy, self.info)
+   first = json.loads(first_bytes)
+   second = second_admission(self.candidate, first, hashlib.sha256(first_bytes).hexdigest(), policy, self.info)
    self.record["resource_budget"]["second_admission"] = second
    self.record["resource_budget"].update({filesystem+"_minimum_free": minimum for filesystem, minimum in second["minimum_free"].items()})
   self.eviction_plan = {}
+  settings = phase_settings({})
   if args.resource_plan:
    plan = json.loads(args.resource_plan.read_text())
    if plan.get("schema_version") != 1 or plan.get("strategy") != "pinned-containers-bind-outputs" or plan.get("source_input_sha256") != self.candidate["source"]["inputs"]["sha256"] or plan.get("docker_driver") != self.info["driver"] or plan.get("lead_review") != "approved":
@@ -81,13 +112,29 @@ class Builder:
     if second and (peak < second["estimated_peak_additional"][filesystem] or minimum < second["minimum_free"][filesystem]):
      raise ValueError("explicit second plan cannot lower measured-policy admission floors")
    self.record["resource_budget"].update({key:plan[key] for key in ("docker_minimum_free","temporary_minimum_free")})
-   self.record["resource_budget"]["reviewed_plan"] = {"sha256":sha256(args.resource_plan),"record":plan}
+   self.record["resource_budget"]["reviewed_plan"] = {"sha256":sha256(args.resource_plan),"record_sha256":phase_record_digest(plan),"record":plan}
+   settings = phase_settings(plan)
    for eviction in plan.get("compiler_cache_evictions", []):
     role = eviction.get("after")
     expected = COMPILERS.get("go" if role == "gosu" else role)
     if role not in ("gosu", "rust") or role in self.eviction_plan or eviction.get("requested") != expected or not re.fullmatch(r"sha256:[0-9a-f]{64}", eviction.get("image_id", "")):
      raise ValueError("resource plan can whitelist only exact Go/gosu or Rust compiler image IDs")
     self.eviction_plan[role] = eviction
+  if second:
+   inherited = inherit_phase_settings(self.candidate,first,hashlib.sha256(first_bytes).hexdigest(),self.info)
+   if inherited:
+    if args.resource_plan and settings != phase_settings({}) and settings != inherited["settings"]:
+     raise ValueError("explicit second phase settings differ from predeclared inheritance")
+    settings = inherited["settings"]
+    self.record["resource_budget"]["inherited_phase_settings"] = inherited
+    for eviction in settings["compiler_cache_evictions"]:
+     role = eviction.get("after")
+     if role not in ("gosu","rust") or eviction.get("requested") != COMPILERS["go" if role == "gosu" else role] or not re.fullmatch(r"sha256:[0-9a-f]{64}",eviction.get("image_id","")):
+      raise ValueError("inherited compiler eviction is not the exact pinned whitelist")
+     self.eviction_plan[role] = eviction
+   elif args.resource_plan and settings != phase_settings({}):
+    raise ValueError("second phase settings were not predeclared in first build")
+  self.record["resource_budget"]["phase_settings"] = settings
   self.initial_free = self.measure_free()
   self.record["resource_budget"]["measurements"] = {"schema_version":1,"complete":False,"initial_free":self.initial_free}
   atomic_json(self.manifest, self.record)
@@ -122,7 +169,8 @@ class Builder:
   observer = threading.Thread(target=observe, daemon=True)
   observer.start()
   try:
-   with log.open("wb") as stream: result = subprocess.run(command, env=self.env, stdout=stream, stderr=subprocess.STDOUT, timeout=1800)
+   with log.open("wb") as stream:
+    result = supervise_packager(command,self.env,stream) if name.endswith("-package") else subprocess.run(command, env=self.env, stdout=stream, stderr=subprocess.STDOUT, timeout=1800)
    item["exit_code"] = result.returncode
   except subprocess.TimeoutExpired as error:
    item.update(exit_code=None, timed_out=True)
@@ -131,6 +179,7 @@ class Builder:
    raise ValueError(f"{name} timed out; retain partial output and reconcile owned runtime/build state") from error
   except BaseException:
    item.update(exit_code=None, interrupted=True)
+   if name.endswith("-package"): self.record["packaging_reconciliation_required"] = True
    raise
   finally:
    stop.set()
@@ -224,9 +273,17 @@ class Builder:
   archives = self.path/"images"
   archives.mkdir(exist_ok=True)
   archive = archives/(name+".tar")
-  self.run(name+"-save",self.docker("image","save","-o",str(archive),details["id"]))
+  raw_exports = self.work/"image-exports"
+  raw_exports.mkdir(mode=0o700,exist_ok=True)
+  raw_archive = raw_exports/(name+".tar")
+  self.run(name+"-save",self.docker("image","save","-o",str(raw_archive),details["id"]))
+  preparation = self.path/(name+"-archive-preparation.json")
+  self.run(name+"-prepare-archive",[sys.executable,str(self.source/"scripts/image_archive.py"),
+   "--source",str(raw_archive),"--output",str(archive),"--report",str(preparation),
+   "--epoch",str(self.candidate["source"]["source_epoch"]),"--image-id",details["id"]])
   details.update(extra)
   details.update(archive={"path":"images/"+archive.name,"sha256":sha256(archive)},
+   archive_preparation={"path":preparation.name,"sha256":sha256(preparation)},
    payload=payload(archive,self.path/(name+"-payload.json")))
   self.record["images"][name] = details
   atomic_json(self.manifest,self.record)
@@ -306,15 +363,25 @@ class Builder:
   finally: os.close(with_fd)
 
  def image(self, name, dockerfile):
-  tag = f"nex-alpha04-{self.candidate['run_id']}-{name}:{self.args.build}"
-  self.run(name+"-package",self.docker("build","--no-cache","--secret",f"id=proxy_ca,src={self.args.ca.resolve()}",
-   "--build-arg","BUILDKIT_SYNTAX="+FRONTEND,
-   "--label","org.nex.qualification.builder=canonical-container",
-   "--label","org.opencontainers.image.revision="+self.candidate["source"]["revision"],
-   "--label","org.nex.source.inputs="+self.candidate["source"]["inputs"]["sha256"],
-   "--build-arg","SOURCE_DATE_EPOCH="+str(self.candidate["source"]["source_epoch"]),
-   "-f",str(self.source/dockerfile),"-t",tag,str(self.package)))
-  self.save_image(name,tag,{"tag":tag,"dockerfile":dockerfile,"dockerfile_sha256":sha256(self.source/dockerfile)})
+  # The official exporter controls new layer/whiteout timestamps; an owned,
+  # fresh daemon/cache is removed before admission of the next image.
+  self.run(name+"-package",[sys.executable,str(self.source/"scripts/canonical_image.py"),
+   "--candidate",str(self.args.candidate.resolve()),"--build",self.args.build,
+   "--name",name,"--ca",str(self.args.ca.resolve())])
+  report_path = self.path/(name+"-packaging.json")
+  report = json.loads(report_path.read_text())
+  if report.get("status") != "packaged" or report.get("source") != self.candidate["source"] or report.get("run_id") != self.candidate["run_id"] or report.get("build_id") != self.args.build or report.get("image_role") != name or report.get("owner",{}).get("cleanup") != "stopped-and-removed-exact-container-remote-and-unused-cache":
+   raise ValueError("complete source-bound packaging and owned-cache cleanup required")
+  tool = report["tool_identity"]
+  if self.record.get("packaging_tool_identity",tool) != tool:
+   raise ValueError("packaging CLI identity changed within build")
+  self.record["packaging_tool_identity"] = tool
+  details = report["image"]
+  if details.get("dockerfile") != dockerfile or details.get("dockerfile_sha256") != sha256(self.source/dockerfile):
+   raise ValueError("packaging Dockerfile binding changed")
+  details["packaging"] = {"path":report_path.name,"sha256":sha256(report_path)}
+  self.record["images"][name] = details
+  atomic_json(self.manifest,self.record)
 
  def build(self):
   try:
@@ -355,6 +422,7 @@ class Builder:
 
 
 if __name__ == "__main__":
+ signal.signal(signal.SIGTERM,interrupted)
  parser = argparse.ArgumentParser(description=__doc__)
  parser.add_argument("--candidate",type=Path,required=True)
  parser.add_argument("--build",choices=("one","two"),required=True)

@@ -413,3 +413,67 @@ deletion justified. Only this ledger changed during static consumer review.
 Root approval, F/E test reports and G's independent review remain separate;
 this entry claims no new test run, hosted startup or candidate qualification.
 Ledger frozen and released for the bounded diagnostic checkpoint.
+
+### Dedicated image backend and archive consumer audit — 2026-10-28
+
+Reviewed D's frozen 13-path batch against published
+`0297f7d676d75d56887307f98288c980fb01d031` and independently matched all file
+hashes in the outside-repository `dedicated-packaging-source-freeze.json`.
+Scope covers both runtime Dockerfiles, canonical build/image/archive/evidence
+and resource-admission modules, and the six associated release test files.
+
+`Builder.image` invokes the new packaging CLI and consumes its source-bound
+image, tool identity and owned-cleanup report. Archive identity, proxy selection,
+container verification, monitoring, cancellation and cleanup helpers all have
+live execution consumers; interruption tests exercise the real process boundary.
+`phase_settings`, `phase_record_digest` and `inherit_phase_settings` feed reviewed
+per-image budgets and exact compiler eviction choices without replacing second
+build admission. `Builder.save_image` remains active for pinned OPA; retain it.
+The prior runtime-image build path was replaced by D, not left as a second path.
+
+The archive CLI's `canonicalize` and `inspect` feed retained transformation
+proofs, emitted archive bytes and comparison validation. Their tests inspect
+real fixture bytes and metadata. Raw-export hashes remain diagnostic evidence;
+they are not redundant with emitted-archive hashes. The Dockerfile removal is
+limited to ldconfig's auxiliary scan cache; active loader cache and package
+inventory remain. The gitless and early-failure fixtures include the new import.
+
+One concrete cleanup was handed to D: three assignments to `remote_created`
+had no read, reflective serialization or retained-report consumer. D confirmed
+no planned consumer and removed them before freeze. `volume_created` remains
+live in failure retention. No additional executable deletion justified.
+
+Only this ledger was edited by the cleanup owner. D/root reported 203 passing
+release tests (log SHA256
+`53a9a7ccbaaf007b3844eb3409548f6343e323059fbab4053f8a234d49620cd3`);
+their execution evidence and G's acceptance are separate from this static audit.
+No new test execution, live backend success or candidate qualification claimed.
+F's subsequent public-CA projection correction is outside this entry. Ledger
+frozen for this batch; final source binding follows publication.
+
+### Public browser trust projection and metadata audit — 2026-10-28
+
+Reviewed the frozen F two-path follow-up (`qualification-browser.sh` and its
+public-CA projection regression) and E three-path follow-up (workflow, candidate
+runbook and trigger regression), still against published
+`0297f7d676d75d56887307f98288c980fb01d031`. Rechecked D's 13 frozen file hashes;
+they remain unchanged.
+
+The coordinator's new projection block is executed before browser creation.
+Its validated same-byte public certificate is mounted by `start_browser` for
+DOM, operator and revocation runs; its digest is consumed by the final comparison
+with all three engine reports. Source/projected modes and public-root identity
+remain useful retained diagnostics. The focused test extracts and executes the
+actual projection block, including invalid input and existing-output failures.
+The old direct private-PKI mount was replaced, not retained as a fallback.
+
+The workflow's five exact additions consume existing fixture-input metadata,
+new public-trust metadata and the three engine inventories. The runbook explains
+their cross-check; trigger tests exercise the allowlist and exclusions. These
+are active diagnostic outputs, not unused helper fields or duplicate artifacts.
+No executable deletion justified in either follow-up batch.
+
+Only this ledger changed in the static audit. F/E's focused tests, I's paired
+cross-UID runtime evidence, and root/G's combined validation remain separately
+attributed; no new test execution or full browser qualification is claimed here.
+Ledger frozen and released for publication and subsequent exact-source binding.

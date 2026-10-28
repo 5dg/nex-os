@@ -87,3 +87,49 @@ def second_admission(candidate, first, first_digest, policy, current_docker):
             "first_build_measurements": actual, "reserve_bytes": 2 * GIB,
             "estimated_peak_additional": estimates,
             "minimum_free": {filesystem: estimate + 2 * GIB for filesystem, estimate in estimates.items()}}
+
+
+def phase_settings(plan):
+    roles = {'control', 'guard', 'fixtures', 'workspace', 'postgres'}
+    budgets = plan.get('packaging_image_estimated_peak_additional', {})
+    evictions = plan.get('compiler_cache_evictions', [])
+    if not isinstance(budgets, dict) or set(budgets) - roles or any(type(value) is not int or value < 4 * GIB for value in budgets.values()):
+        raise ValueError('reviewed per-image forecasts must be at least 4 GiB')
+    if not isinstance(evictions, list) or any(not isinstance(value, dict) or set(value) != {'after', 'requested', 'image_id'} for value in evictions):
+        raise ValueError('exact compiler eviction whitelist required')
+    return {'packaging_image_estimated_peak_additional': dict(budgets),
+            'compiler_cache_evictions': [dict(value) for value in evictions]}
+
+
+def phase_record_digest(record):
+    return hashlib.sha256(json.dumps(record, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def inherit_phase_settings(candidate, first, first_digest, docker):
+    if (candidate.get('builds', {}).get('one') != {'path': 'builds/one/manifest.json', 'sha256': first_digest}
+            or first.get('source') != candidate['source'] or first.get('run_id') != candidate['run_id']
+            or first.get('build_id') != 'one' or first.get('status') != 'built'):
+        raise ValueError('completed source-bound first build required for phase inheritance')
+    budget = first.get('resource_budget', {})
+    if budget.get('docker', {}).get('driver') != docker['driver'] or budget.get('docker', {}).get('data_root') != docker['data_root']:
+        raise ValueError('phase inheritance Docker identity differs')
+    original = budget.get('reviewed_plan')
+    if original is None:
+        if budget.get('phase_settings') != phase_settings({}) or budget.get('inherited_phase_settings'):
+            raise ValueError('missing first plan cannot supply inherited phase settings')
+        return None
+    plan = original.get('record', {})
+    raw_digest = original.get('sha256')
+    if (not isinstance(raw_digest, str) or len(raw_digest) != 64 or any(value not in '0123456789abcdef' for value in raw_digest)
+            or original.get('record_sha256') != phase_record_digest(plan)
+            or plan.get('schema_version') != 1 or plan.get('strategy') != 'pinned-containers-bind-outputs'
+            or plan.get('lead_review') != 'approved' or plan.get('source_input_sha256') != candidate['source']['inputs']['sha256']
+            or plan.get('docker_driver') != docker['driver']):
+        raise ValueError('first reviewed phase policy binding missing or substituted')
+    settings = phase_settings(plan)
+    if budget.get('phase_settings') != settings:
+        raise ValueError('first phase settings differ from reviewed policy')
+    return {'schema_version': 1, 'first_build_manifest_sha256': first_digest,
+            'source_input_sha256': candidate['source']['inputs']['sha256'], 'docker_driver': docker['driver'],
+            'original_plan_sha256': raw_digest, 'original_plan_record_sha256': original['record_sha256'],
+            'settings': settings, 'whole_build_floors_inherited': False}

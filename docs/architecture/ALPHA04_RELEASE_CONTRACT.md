@@ -84,6 +84,30 @@ ABI and output identities recorded. A diagnostic output cannot satisfy a canonic
 gate or silently replace a missing canonical artifact. Existing active development
 behavior and historical artifacts remain supported.
 
+Thin runtime images use the official BuildKit v0.34.1 Linux amd64 exporter,
+`moby/buildkit:v0.34.1@sha256:b651bf250c2805569f1db385ad1ea8fb73737dfc851de305f274ca02690fa93f`,
+with the existing pinned Dockerfile frontend. Each image has a fresh, exclusively
+owned builder container and cache volume. The trusted build daemon requires its
+standard privileged container; its only mount is that cache, its network and
+PID/IPC namespaces are private, and CPU/memory are bounded. All insecure
+entitlements and CDI are disabled. It has no application state, Docker socket,
+home or custody mounts. Public proxy trust is copied and hash-verified before
+startup, while normal proxy and TLS validation remain enabled.
+
+Buildx connects over the inspected local Docker container's stdio endpoint with
+an explicit default context; redirected endpoint/context/TLS selectors are
+cleared while registry configuration is preserved. Record the actual Buildx
+version/plugin hash, exact BuildKit image, daemon arguments, public configuration
+hash and ownership checks. The second build requires the same client identity.
+An automatic driver that adds host-network entitlements is outside this path.
+
+The exporter writes a fresh untagged Docker archive with explicit timestamp
+rewriting, gzip compression and Docker media types. Verify its configuration and
+layer identities, load it, and verify the resulting immutable image before
+preparing the retained archive. Diagnostic tags are applied separately. The
+unchanged pinned OPA image uses an exact-ID Docker save. Exporter provenance
+options do not replace the required hosted candidate-origin attestation.
+
 The PostgreSQL gosu executable retains upstream 1.19 source revision
 `6456aaa0f3c854d199d0f037f068eb97515b7513` and its verified archive. The reviewed
 `deploy/qualification/gosu/` dependency overlay updates only frozen Go module
@@ -163,11 +187,26 @@ Neither the policy nor its local review label is a cryptographic attestation or 
 new runtime authority. Changed formula constants, incomplete measurements or an
 insufficient actual reserve require a new reviewed decision rather than automatic
 approval by a source flag. This contract does not claim either build has run.
+Build two may inherit only the first plan's exact reviewed per-image packaging
+forecasts and compiler-eviction whitelist. Verify and record the completed first
+manifest hash, original plan hash, source and driver binding. This inheritance
+does not copy whole-build admission floors: the measured second-build formula
+remains mandatory, and an explicit second plan may only raise those floors.
 Compiler container names, CIDs and ownership labels include run/build/role and a
 fresh nonce. Timeout/interruption stops only the exactly inspected owned compiler
 and verifies it stopped before further admission or scratch disposal. Unknown
 BuildKit cancellation state remains a reconciliation blocker after packaging
 failure; killing the Docker client alone is not proof that daemon work ended.
+
+Packaging also has a declared per-image peak addition and an admission floor
+equal to that peak plus the unchanged 2 GiB reserve. Samples cover the builder,
+cache, export, loaded image and retained archive. Stop on a forecast or reserve
+violation. Before advancing, successful packaging normally removes only the
+exact inspected owned builder, unused cache volume and remote client profile;
+retained image/archive/proof/log bytes remain. Failure stops the owned daemon
+independently of resource admission and preserves its cache for reconciliation.
+Whole-build first/second admission still includes retained outputs, both archive
+sets and bundle growth; a per-image floor does not replace those bounds.
 
 ### Post-build resource admission
 
@@ -255,6 +294,23 @@ away. A binary/rootfs mismatch fails the reproducibility gate even when function
 tests pass. Unexpected OCI differences remain failed or unresolved; a report must
 state which target passed, rather than calling the whole image reproducible.
 
+The archive producer may set only outer regular/directory tar-header mtimes to
+the source epoch and recompute their dependent header checksums. It preserves
+every payload byte, member order, padding and non-time metadata, including all
+inner image configuration/layer bytes and opaque PAX security fields. Unsupported
+outer types, sparse entries or time overrides fail closed. Retain raw and emitted
+archive hashes, exact changed header offsets/times, member hashes and immutable
+image binding. Comparison independently verifies the emitted archive against that
+proof and rederives its full merged payload. Report raw-export equality separately
+from exact emitted-archive equality. No comparison-time byte normalization or
+executable/library/security-metadata exclusion is permitted.
+
+Runtime package installation may omit glibc's inode/ctime auxiliary
+`/var/cache/ldconfig/aux-cache` after installation while requiring a nonempty
+active `/etc/ld.so.cache`. Preserve libraries, active loader data and package
+inventory. This producer choice remains subject to full payload comparison,
+runtime acceptance and image scans.
+
 ## Qualification, retention and release decision
 
 Qualify the captured images from fresh run state using the complete ordered
@@ -263,6 +319,13 @@ receiver proofs, coordinated PKI rotation and quiescent restore. Shared mutation
 and lifecycle transitions are serial. F/G independently check manifest/image/test
 binding and supplies negative tests for stale tools, changed inputs and mismatched
 images. A combined wrapper is passed only after that wrapper actually executes.
+
+The fixed-UID browser fixture receives a validated, bounded single current public
+CA through a fresh attempt-private mode0444 projection. The original PKI and all
+private-key permissions remain unchanged. Bind-mount only that public copy
+read-only, retain its exact hash and require each browser engine's trust hash to
+match it. Cross-UID readability is required even when the coordinator creates
+private state under umask077. This input projection does not relax TLS validation.
 
 The required `packaged-shutdown` gate is distinct from native `shutdown` checks.
 It exercises actual candidate containers under admitted model/export work before
