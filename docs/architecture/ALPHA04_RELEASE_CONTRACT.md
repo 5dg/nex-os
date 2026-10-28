@@ -1,0 +1,175 @@
+# Alpha 0.4 candidate build and evidence contract
+
+Status: interface 1, lead-approved direction; E must approve measured resource
+admission and concrete non-overlapping IPAM before execution. This contract does not claim that its builds,
+comparisons or qualification checks have run. Preserve the Alpha 0.3 evidence.
+
+## Candidate boundary
+
+E captures a reviewed, coherent commit after the applicable F cleanup. Capture
+records the full revision, commit timestamp, an archive digest and a sorted
+relative-path-to-SHA256 input map. The input map includes authored application,
+test, policy, migration, contract, lock, deployment, tool and CI inputs; it excludes
+Git internals and generated dependencies, binaries, state, PKI and evidence.
+Symlinks that escape the captured tree and unlisted build inputs are rejected.
+
+The extracted tree has an explicit `.nex-source.json` metadata companion with the revision, source epoch and
+input-map digest. All build and inventory tools accept that explicit metadata and
+verify actual bytes; they do not require `.git`. Revision text alone is not a
+source-integrity check. The companion itself is excluded from its own input map;
+the outside capture record hashes the complete archive including the companion.
+Missing or mismatched metadata prevents a canonical build.
+The physical compilation tree must contain exactly the admitted files and their
+ancestor directories, plus the noncompiled metadata companion. Capture rejects
+excluded tracked archive files; verification also rejects later ignored-looking
+injections. Generated-location exclusions are exact paths, not nested names such
+as Cargo's authored `src/bin`.
+A diagnostic tree may report an unknown revision, but cannot become a canonical
+candidate. Capture/edit ownership stays with E; source editors resume immediately
+after capture. Every later authored change requires a new candidate.
+
+## Canonical and diagnostic build paths
+
+Canonical builds use the existing digest-pinned Linux amd64 Go, Rust and Node
+compiler images and digest-pinned runtime bases. A pinned compiler container may
+mount the immutable source read-only and write into fresh, run-specific `/tmp`
+target/cache/output directories. This is an actual container compilation, not a
+claim that an older multistage Dockerfile ran. This approach avoids copying Cargo
+targets into VFS image layers. A fresh staging copy is permitted for Node's
+writable dependency/build directory; its authored input bytes must match the
+immutable source before compilation. No pre-existing host `bin`, `.next`,
+`node_modules`, target directory or compiler cache is an input.
+
+Go uses the pinned compiler, `GOTOOLCHAIN=local`, `CGO_ENABLED=0`, `-mod=readonly`
+and `-trimpath`. Rust uses the pinned installed toolchain, `--locked --release`,
+nonincremental compilation and a constant in-container source/output path. Record
+the actual compiler/version/digest, target, flags, libc and linked-library
+requirements. The Rust compiler ABI must be compatible with the selected runtime;
+verify the resulting executable in that runtime. Node uses the pinned compiler
+image and frozen lock, with normal TLS/package verification. Canonical frontend
+builds provide the verified input-map digest as build-only
+`NEX_SOURCE_INPUT_SHA256`, which A's deterministic Next build-ID hook consumes.
+Normal developer builds may omit it. A owns the small
+workspace configuration hook. No build identifier grants runtime authority.
+Framework-generated private randomness must be measured and reported; never use a
+public source hash as an encryption/signing key to force byte equality.
+
+Build outputs are freshly exported, hashed and mapped to source paths. Runtime
+packaging receives only those verified outputs and the declared runtime files.
+The coordinator PKI and evidence CLIs are part of this closure: canonical `init`
+executes the exported, manifest-bound static tools. It must not fall back to a
+stale host `bin/evidence` or require a host Go/Rust compiler to create those tools.
+Generate short-lived fixture PKI after compilation, not before a long build.
+
+The host development path remains explicitly diagnostic, with its host compiler,
+ABI and output identities recorded. A diagnostic output cannot satisfy a canonical
+gate or silently replace a missing canonical artifact. Existing active development
+behavior and historical artifacts remain supported.
+
+## Resource admission and execution ownership
+
+E alone starts Docker/Compose processes, builds images, allocates ports, changes
+shared database/PKI state and publishes Git. C supplies reviewed commands and
+tools; it does not run competing stacks or builds.
+
+Default admission budgets are one image build at a time, at most two Cargo jobs,
+at least 8 GiB free on the Docker-data filesystem and 6 GiB on the temporary-output
+filesystem before a cold canonical build, and 2 GiB reserved headroom during
+execution. E records the actual driver, capacity/free bytes, available memory,
+estimated peak for the selected strategy and observed peak. A documented measured
+strategy can replace the conservative cold-build estimates only after lead
+review; it cannot waive the reserve or reuse stale outputs. The pinned-container
+bind-output strategy is preferred for this VFS environment. Stop further build
+admission if the reserve cannot be maintained. Do not reset volumes, delete
+receipts/keys, manually edit Docker storage, or claim success after ENOSPC.
+
+Only checksum-verified download caches may be shared between reproducibility
+builds. Compilation targets, Go build caches and Node output trees are distinct
+and initially empty. No automatic image/data pruning is part of qualification;
+E inventories and explicitly reviews any removal of reproducible unused cache.
+Proxy/CA material remains ephemeral and credentials are never recorded in the
+manifest. Retain normal TLS, checksum, module and package-signature validation.
+
+## Isolated run identity and lifecycle
+
+A new run ID is twelve lowercase hexadecimal characters generated by E. Primary
+project names are `nex-alpha04-<run-id>` and restore names append `-restore`. Every candidate
+has separate private source/output/evidence/state directories and separate primary
+and restore project/volume names derived from that run ID. Scripts validate the
+fixed qualification namespace and inspected ownership labels. They do not accept
+arbitrary forwarding destinations or overwrite existing run state. Existing
+`nex-local`, `nex-qualification` and `nex-qualification-restore` data remains intact.
+
+The same fixed loopback test ports can be reused only after E stops the previous
+qualification ingress/writer set and its owned relays. New relays preserve native
+TLS and map only the inspected service/project endpoints. There is one active
+writer set for a copied custody domain. Restore creates a new empty volume and
+state directory, preserving the original stopped set. Existing-run refusal is not
+resolved by deleting prior state. Compose stop grace periods will use the
+A/B-approved admission/drain/cleanup deadlines; C will not retain a conflicting
+hard-coded five-second stop budget. The approved shared HTTP drain is 70 seconds
+and Compose stop grace is 75 seconds; shutdown tests remain D's responsibility.
+
+If default Docker address pools cannot hold both new networks, E selects and
+records an inspected non-overlapping private IPAM block. Generated primary and
+restore overrides allocate distinct subnets within it; existing backend networks
+are not shared. No CIDR is selected silently and no live network is removed to
+make room.
+
+## Manifest and reproducibility claims
+
+The versioned candidate manifest records:
+
+- Candidate/run ID; revision, source epoch, archive and input-map digests.
+- Canonical/diagnostic mode; pinned compiler/runtime image identities, actual
+  compiler and target/ABI data, allowed build flags and exact commands.
+- Exported binary/tool hashes; image configuration IDs, available registry
+  digests, rootfs layer identities and normalized filesystem payload digests.
+- Every qualification command and its start/end/status/exit code, tested image
+  identities, result-file hashes and lifecycle checkpoint references.
+- Source and complete OS-inclusive SBOM hashes; scanner/tool/database identities,
+  raw report hashes, failed/blocked checks and the explicit release decision.
+
+The build record is unsigned engineering evidence unless a separately verified
+attestation mechanism signs it. Local tags are convenient selectors, not immutable
+promotion identities. Retained output excludes runtime secrets, PKI private keys,
+session handles, receipt contents and private database dumps; public checkpoint
+hashes and verification results may reference private local backup evidence.
+
+Run two independent builds of the same captured source. Targets are declared
+before comparison: exported native binaries and frontend/runtime filesystem
+payloads must be byte-identical, including permissions and symlink targets.
+The filesystem record includes opaque PAX security metadata (xattrs, capabilities,
+ACLs and flags), excluding only explicitly declared timestamp fields. Hardlinks
+are currently unsupported and fail closed: a target pathname alone cannot bind
+the inode bytes retained after a later layer replaces that pathname. An affected
+image cannot pass payload comparison until faithful hardlink semantics exist.
+Compare OCI configuration/layer/manifest bytes separately. BuildKit creation times,
+history timestamps and compression may differ; record those exact differences as
+OCI-metadata nonreproducibility, never as a matching OCI digest. Do not normalize
+changed executable, library, package metadata, frontend payload or source bytes
+away. A binary/rootfs mismatch fails the reproducibility gate even when functional
+tests pass. Unexpected OCI differences remain failed or unresolved; a report must
+state which target passed, rather than calling the whole image reproducible.
+
+## Qualification, retention and release decision
+
+Qualify the captured images from fresh run state using the complete ordered
+verifier: browser/API, PostgreSQL trust/roles, current-authority mutations,
+receiver proofs, coordinated PKI rotation and quiescent restore. Shared mutations
+and lifecycle transitions are serial. D independently checks manifest/image/test
+binding and supplies negative tests for stale tools, changed inputs and mismatched
+images. A combined wrapper is passed only after that wrapper actually executes.
+
+Persist non-secret candidate records, raw findings, SBOMs and test outputs together
+with checksums and source/image identities; retain failed attempts separately.
+Hosted CI/artifact publication is claimed only after a recorded run succeeds and
+the retained artifact can be retrieved and verified. Local `/tmp` logs alone do
+not satisfy durable release evidence. E publishes reviewed source checkpoints to
+`main` throughout; source publication does not waive release eligibility gates.
+
+Scans retain every configured severity and warning. Missing advisory feeds,
+unavailable CI, unsupported reproducibility, unresolved findings and unsigned
+records remain distinguishable blockers. No automatic suppression or risk waiver
+is introduced. Live AWS, customer IdP, CUI, approved production cryptography and
+formal assessment remain deferred.
