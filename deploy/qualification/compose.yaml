@@ -2,7 +2,7 @@
   "name": "nex-qualification",
   "services": {
     "postgres": {
-      "image": "nex-postgres:qualification",
+      "image": "${NEX_POSTGRES_IMAGE:-nex-postgres:qualification}",
       "environment": {
         "POSTGRES_DB": "nex",
         "POSTGRES_USER": "nex",
@@ -43,7 +43,7 @@
       "stop_grace_period": "75s"
     },
     "migrate": {
-      "image": "nex-control:qualification",
+      "image": "${NEX_CONTROL_IMAGE:-nex-control:qualification}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -82,7 +82,7 @@
       "stop_grace_period": "75s"
     },
     "seed": {
-      "image": "nex-control:qualification",
+      "image": "${NEX_CONTROL_IMAGE:-nex-control:qualification}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -124,7 +124,7 @@
       "stop_grace_period": "75s"
     },
     "issuer": {
-      "image": "nex-qualification-fixtures:local",
+      "image": "${NEX_FIXTURES_IMAGE:-nex-qualification-fixtures:local}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -165,12 +165,17 @@
           "aliases": [
             "issuer.nex.test"
           ]
+        },
+        "browser-issuer": {
+          "aliases": [
+            "issuer.nex.test"
+          ]
         }
       },
       "stop_grace_period": "75s"
     },
     "opa-edge": {
-      "image": "nex-qualification-fixtures:local",
+      "image": "${NEX_FIXTURES_IMAGE:-nex-qualification-fixtures:local}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -210,7 +215,7 @@
       "stop_grace_period": "75s"
     },
     "opa": {
-      "image": "openpolicyagent/opa@sha256:02d31f4e34dcae04d87b542796aa0d089e42039fe6bbc5601587be44fb218963",
+      "image": "${NEX_OPA_IMAGE:-openpolicyagent/opa@sha256:02d31f4e34dcae04d87b542796aa0d089e42039fe6bbc5601587be44fb218963}",
       "command": [
         "run",
         "--server",
@@ -236,7 +241,7 @@
       "stop_grace_period": "75s"
     },
     "guard": {
-      "image": "nex-guard:qualification",
+      "image": "${NEX_GUARD_IMAGE:-nex-guard:qualification}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -287,7 +292,7 @@
       "stop_grace_period": "75s"
     },
     "control": {
-      "image": "nex-control:qualification",
+      "image": "${NEX_CONTROL_IMAGE:-nex-control:qualification}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -355,7 +360,7 @@
       "stop_grace_period": "75s"
     },
     "model": {
-      "image": "nex-control:qualification",
+      "image": "${NEX_CONTROL_IMAGE:-nex-control:qualification}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -395,7 +400,7 @@
       "stop_grace_period": "75s"
     },
     "executor": {
-      "image": "nex-control:qualification",
+      "image": "${NEX_CONTROL_IMAGE:-nex-control:qualification}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -435,7 +440,7 @@
       "stop_grace_period": "75s"
     },
     "evidence": {
-      "image": "nex-control:qualification",
+      "image": "${NEX_CONTROL_IMAGE:-nex-control:qualification}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -477,7 +482,7 @@
       "stop_grace_period": "75s"
     },
     "worker": {
-      "image": "nex-control:qualification",
+      "image": "${NEX_CONTROL_IMAGE:-nex-control:qualification}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -515,7 +520,7 @@
       "stop_grace_period": "75s"
     },
     "workspace": {
-      "image": "nex-workspace:qualification",
+      "image": "${NEX_WORKSPACE_IMAGE:-nex-workspace:qualification}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -555,7 +560,12 @@
       ],
       "networks": {
         "user-link": {},
-        "oidc-link": {}
+        "oidc-link": {},
+        "browser-front": {
+          "aliases": [
+            "workspace.nex.test"
+          ]
+        }
       },
       "depends_on": [
         "control",
@@ -567,7 +577,7 @@
       "stop_grace_period": "75s"
     },
     "workspace-edge": {
-      "image": "nex-qualification-fixtures:local",
+      "image": "${NEX_FIXTURES_IMAGE:-nex-qualification-fixtures:local}",
       "user": "${NEX_UID:-1000}:${NEX_GID:-1000}",
       "read_only": true,
       "cap_drop": [
@@ -634,6 +644,12 @@
       "internal": true
     },
     "oidc-link": {
+      "internal": true
+    },
+    "browser-front": {
+      "internal": true
+    },
+    "browser-issuer": {
       "internal": true
     }
   },

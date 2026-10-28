@@ -1,31 +1,33 @@
 # Nex.os development goal and implementation path
 
-## Current goal: Alpha 0.5 synthetic release qualification
+## Current goal: finish Alpha 0.4 synthetic release qualification
 
 Finish the remaining Alpha 0.4 engineering and qualify one exact-source synthetic
 release candidate before expanding the product. Bind clean pinned builds,
 immutable images, actual browser/service tests, reproducibility measurements and
 retained security evidence to the same captured revision.
 
-The executable goal, dependency waves, gate criteria and seven-seat ownership map
-are in [NEXT_GOAL_ALPHA_0_5.md](NEXT_GOAL_ALPHA_0_5.md). The
-[Alpha 0.4 plan](NEXT_GOAL_ALPHA_0_4.md) remains historical context; Alpha 0.4 is not
-being declared complete by naming the next goal.
+The active goal is [Alpha 0.4](NEXT_GOAL_ALPHA_0_4.md). Continue its remaining
+implementation and execution gates. The [Alpha 0.5 proposal](NEXT_GOAL_ALPHA_0_5.md)
+is a future plan and has not started; writing it did not replace the active work.
 
 ## Starting evidence and open work
 
-Published `main` through `56adf29` includes exact signed-event verification
+Published checkpoints include exact signed-event verification
 (`ada368e`), original HTTP caller authority checks (`1819277`) and three separately
 reviewed cleanup checkpoints. Diagnostic shutdown/restart/load and post-dispatch
 tests have local evidence, but the corresponding lifecycle batch and new delivery
 machinery are not a qualified canonical image set.
 
-Current source integrity tooling can exclude authored nested `src/bin` files;
-rootfs identity omits security xattrs/capabilities. Close those gaps before making
-complete input/rootfs binding claims. Eleven passing offline tooling tests cover
-specific negatives, not those missing guarantees. Canonical builds, two-build
-comparison, the combined verifier, actual DOM/revocation/polling and hosted
-CI/attestation/artifact retrieval remain unfinished or unverified.
+Independent regression tests now cover authored nested `src/bin` inputs,
+canonical physical-tree closure and security xattrs/capabilities. The narrow
+integrity checkpoint initially failed closed on hardlinks; a bounded inode/layer
+model is now implemented with independent synthetic regressions. Actual vendor
+layer compatibility and canonical runtime payload qualification remain execution
+gates. Broader delivery tooling and additional negative tests are in progress. Passing
+offline tests do not establish canonical builds, two-build reproducibility,
+the combined verifier, actual DOM/revocation/polling, hosted CI, attestation or
+durable artifact retrieval; those execution gates remain unfinished or unverified.
 
 [Alpha 0.3](ALPHA_0_3.md) and [VALIDATION.md](VALIDATION.md) retain earlier executed
 results and their exact tested identities. GitHub publication works; hosted CI

@@ -1,5 +1,13 @@
 name: Alpha integrity checks
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      canonical_candidate:
+        description: Run two fresh canonical builds and retain blocked or qualified evidence
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -30,6 +38,7 @@ jobs:
         run: ./scripts/check-contracts.sh --install-tools
       - name: Static checks
         run: |
+          python3 -m unittest discover -s tests/release -p 'test_*.py'
           go vet ./...
           go test -mod=readonly -race ./...
           cd apps/workspace
@@ -42,6 +51,7 @@ jobs:
       - name: Isolated current-source synthetic qualification
         run: |
           make down
+
           ./scripts/qualification.sh build-host
           ./scripts/qualification.sh up
           ./scripts/verify-qualification.sh
@@ -80,3 +90,93 @@ jobs:
           if test -f .local/qualification-restore/synthetic-qualification.state; then NEX_QUAL_PROJECT=nex-qualification-restore NEX_QUAL_STATE_DIR="$PWD/.local/qualification-restore" ./scripts/qualification.sh down; fi
           if test -f .local/qualification/synthetic-qualification.state; then ./scripts/qualification.sh down; fi
           make down
+
+  canonical-candidate:
+    if: github.event_name == 'workflow_dispatch' && inputs.canonical_candidate && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      NEX_TOOLS_DIR: /tmp/nex-ci-tools
+      PYTHONDONTWRITEBYTECODE: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+    outputs:
+      subject_sha256: ${{ steps.subject.outputs.sha256 }}
+      artifact_id: ${{ steps.retain.outputs.artifact-id }}
+      artifact_digest: ${{ steps.retain.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.19.0
+      - name: Capture the exact trusted main source
+        run: python3 -B scripts/candidate.py capture --output /tmp/nex-ci-candidate
+      - name: Prepare pinned verification tools outside the captured source
+        run: |
+          ./scripts/bootstrap.sh
+          ./scripts/bootstrap-rust.sh
+          ./scripts/release-tools.sh
+          echo "$NEX_TOOLS_DIR/go/bin" >> "$GITHUB_PATH"
+          echo "$NEX_TOOLS_DIR/bin" >> "$GITHUB_PATH"
+          echo "$NEX_TOOLS_DIR/cargo/bin" >> "$GITHUB_PATH"
+          echo "CARGO_HOME=$NEX_TOOLS_DIR/cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$NEX_TOOLS_DIR/rustup" >> "$GITHUB_ENV"
+      - name: Execute canonical candidate with capacity and overlap admission
+        run: bash /tmp/nex-ci-candidate/source/scripts/candidate-pipeline.sh /tmp/nex-ci-candidate/candidate.json 10.231.0.0/20
+      - name: Prepare evidence even when setup or the canonical build is blocked
+        if: always()
+        run: |
+          if test ! -f /tmp/nex-ci-candidate/candidate-bundle.tar.gz; then
+            python3 -B /tmp/nex-ci-candidate/source/scripts/candidate-evidence.py seal --candidate /tmp/nex-ci-candidate/candidate.json || true
+            python3 -B /tmp/nex-ci-candidate/source/scripts/candidate-evidence.py bundle --candidate /tmp/nex-ci-candidate/candidate.json --output /tmp/nex-ci-candidate/candidate-bundle.tar.gz
+          fi
+      - name: Record the immutable attestation subject
+        id: subject
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import hashlib,os,pathlib
+          bundle=pathlib.Path('/tmp/nex-ci-candidate/candidate-bundle.tar.gz')
+          if bundle.is_file():
+              with bundle.open('rb') as stream: digest=hashlib.file_digest(stream,'sha256').hexdigest()
+              with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('sha256='+digest+'\n')
+          PY
+      - name: Retain the non-secret candidate subject
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: alpha04-candidate-subject
+          path: /tmp/nex-ci-candidate/candidate-bundle.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  candidate-origin:
+    needs: canonical-candidate
+    if: always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.canonical-candidate.outputs.subject_sha256 != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: alpha04-candidate-subject
+          path: /tmp/retained-candidate
+      - name: Bind the downloaded subject to the producer output
+        env:
+          EXPECTED_SUBJECT_SHA256: ${{ needs.canonical-candidate.outputs.subject_sha256 }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,os,pathlib
+          with pathlib.Path('/tmp/retained-candidate/candidate-bundle.tar.gz').open('rb') as stream:
+              actual=hashlib.file_digest(stream,'sha256').hexdigest()
+          if actual != os.environ['EXPECTED_SUBJECT_SHA256']: raise SystemExit('Downloaded candidate subject differs from producer')
+          PY
+      - name: Attest build and evidence origin; this is not release approval
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: /tmp/retained-candidate/candidate-bundle.tar.gz

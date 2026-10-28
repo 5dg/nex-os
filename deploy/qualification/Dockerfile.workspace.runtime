@@ -1,0 +1,18 @@
+# syntax=docker/dockerfile:1
+FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df
+RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
+    sed -i 's|URIs: http://deb.debian.org|URIs: https://deb.debian.org|' /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca update \
+    && apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca install -y --no-install-recommends --only-upgrade \
+       perl-base=5.36.0-7+deb12u4 libpcre2-8-0=10.42-1+deb12u2 \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb \
+       /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+       /opt/yarn-v1.22.22 /usr/local/bin/npm /usr/local/bin/npx \
+       /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+    && rm -f /var/log/apt/history.log /var/log/apt/term.log /var/log/dpkg.log
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
+COPY --chown=node:node workspace/standalone ./
+COPY --chown=node:node workspace/static ./.next/static
+USER node
+CMD ["node", "server.js"]

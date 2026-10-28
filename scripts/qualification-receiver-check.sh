@@ -3,15 +3,27 @@
 set -euo pipefail
 umask 077
 cd "$(dirname "$0")/.."
-task_project="${NEX_QUAL_PROJECT:-nex-qualification}"
-case "$task_project" in nex-qualification) task_default_state="$PWD/.local/qualification" ;; nex-qualification-restore) task_default_state="$PWD/.local/qualification-restore" ;; *) exit 2;; esac
-task_state="${NEX_QUAL_STATE_DIR:-$task_default_state}"
+source scripts/qualification-context.sh
+task_project="$NEX_QUAL_PROJECT"
+task_state="$NEX_QUAL_STATE_DIR"
 task_tools="${NEX_TOOLS_DIR:-/workspace/.tools}"
 task_output="${NEX_QUAL_EVIDENCE_DIR:-$PWD/.local/qualification-release-evidence}"
 [[ "$task_state" == /* && "$task_output" == /* ]] || { echo 'Absolute state/evidence paths required.' >&2;exit 2; }
-mkdir -p bin "$task_output"
-GOPATH="${GOPATH:-$task_tools/gopath}" GOCACHE="${GOCACHE:-/tmp/nex-go-cache}" CGO_ENABLED=0 \
+mkdir -p "$task_output"
+if [[ -n "${NEX_QUAL_CANDIDATE_MANIFEST:-}" ]]; then
+ task_probe="$NEX_QUAL_TOOL_DIR/qualification-receiver-readiness"
+ python3 - "$NEX_QUAL_TOOL_DIR/build-inputs.json" "$PWD" <<'PY'
+import pathlib,sys
+sys.path.insert(0,'scripts')
+from source_record import verify_artifacts
+verify_artifacts(pathlib.Path(sys.argv[1]),pathlib.Path(sys.argv[2]),('qualification-receiver-readiness',))
+PY
+else
+ mkdir -p bin
+ GOPATH="${GOPATH:-$task_tools/gopath}" GOCACHE="${GOCACHE:-/tmp/nex-go-cache}" CGO_ENABLED=0 \
  "$task_tools/go/bin/go" build -mod=readonly -trimpath -o bin/qualification-receiver-readiness ./tests/qualification/cmd/receiver-readiness
+ task_probe="$PWD/bin/qualification-receiver-readiness"
+fi
 docker_local() {
  env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH docker --host=unix:///var/run/docker.sock "$@"
 }
@@ -30,7 +42,7 @@ PY
 snapshot > "$task_output/receiver-before.txt"
 docker_local run --rm --network "container:$task_project-control-1" --read-only --cap-drop ALL \
  --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" --entrypoint /readiness-probe \
- --mount "type=bind,src=$PWD/bin/qualification-receiver-readiness,dst=/readiness-probe,readonly" \
+ --mount "type=bind,src=$task_probe,dst=/readiness-probe,readonly" \
  --mount "type=bind,src=$task_state/current-pki/ca.crt,dst=/ca.crt,readonly" \
  --mount "type=bind,src=$task_state/current-pki/control/tls.crt,dst=/tls.crt,readonly" \
  --mount "type=bind,src=$task_state/current-pki/control/tls.key,dst=/tls.key,readonly" \
@@ -40,7 +52,7 @@ docker_local run --rm --network "container:$task_project-control-1" --read-only 
  -e NEX_TLS_CA_FILE=/ca.crt -e NEX_TLS_CERT_FILE=/tls.crt -e NEX_TLS_KEY_FILE=/tls.key \
  -e MODEL_URL=https://model:8082 -e EXPORT_URL=https://executor:8083 \
  -e MODEL_KEY_FILE=/model-key -e EXPORT_KEY_FILE=/export-key -e NO_PROXY='*' \
- nex-control:qualification > "$task_output/receiver-readiness.json"
+ "${NEX_CONTROL_IMAGE:-nex-control:qualification}" > "$task_output/receiver-readiness.json"
 snapshot > "$task_output/receiver-after.txt"
 cmp "$task_output/receiver-before.txt" "$task_output/receiver-after.txt"
 printf '%s\n' 'Actual receiver readiness proofs passed; execution rows, receipt files and signed journal bytes unchanged.'

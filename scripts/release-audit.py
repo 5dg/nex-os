@@ -12,6 +12,8 @@ import pathlib
 import shutil
 import subprocess
 import sys
+sys.dont_write_bytecode = True
+from source_record import resolve_image
 
 root = pathlib.Path(__file__).resolve().parent.parent
 output = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else root / '.local/release-evidence')
@@ -82,7 +84,9 @@ if profile == 'synthetic-qualification':
     images['qualification-fixtures'] = 'nex-qualification-fixtures:local'
     compose = json.loads((root / 'deploy/qualification/compose.yaml').read_text())
     for service in ('postgres', 'opa'):
-        images[service] = compose['services'][service]['image']
+        images[service] = resolve_image(compose['services'][service]['image'])
+    for name, variable in (('control','NEX_CONTROL_IMAGE'),('guard','NEX_GUARD_IMAGE'),('workspace','NEX_WORKSPACE_IMAGE'),('qualification-fixtures','NEX_FIXTURES_IMAGE')):
+        images[name] = resolve_image(os.environ.get(variable, images[name]))
     environment = {key: value for key, value in os.environ.items() if key not in ('DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH')}
     identity = subprocess.run(['docker', '--host=unix:///var/run/docker.sock', 'image', 'inspect', *images.values()], env=environment, capture_output=True, text=True)
     checks.append({'name': 'image-identities', 'status': 'passed' if identity.returncode == 0 else 'failed', 'exit_code': identity.returncode, 'reason': 'Actual local image metadata; no rebuild or registry digest attestation inferred.'})

@@ -2,6 +2,14 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  async generateBuildId() {
+    // Canonical builders provide the verified compiler-input identity. This is
+    // build metadata only; it never conveys user or workload authority.
+    const source = process.env.NEX_SOURCE_INPUT_SHA256;
+    if (source === undefined) return null;
+    if (!/^[a-f0-9]{64}$/.test(source)) throw new Error("Invalid build source input identity");
+    return source;
+  },
   async headers() {
     return [{ source: "/:path*", headers: [
       { key: "X-Content-Type-Options", value: "nosniff" },

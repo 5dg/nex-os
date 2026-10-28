@@ -1,0 +1,5 @@
+FROM scratch
+COPY --chmod=0444 trust/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --chmod=0555 bin/qualification-edge bin/qualification-policy-edge bin/qualification-issuer /
+USER 65532:65532
+ENTRYPOINT ["/qualification-edge"]

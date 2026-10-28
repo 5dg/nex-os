@@ -4,18 +4,25 @@
 set -euo pipefail
 umask 077
 cd "$(dirname "$0")/.."
-task_source="${NEX_QUAL_STATE_DIR:-$PWD/.local/qualification}"
-task_restore="${NEX_QUAL_RESTORE_STATE_DIR:-$PWD/.local/qualification-restore}"
-task_backup="$PWD/.local/qualification-backups/$(date -u +%Y%m%dT%H%M%SZ)-$$"
+source scripts/qualification-context.sh
+[[ "$NEX_QUAL_PROJECT" == "$NEX_QUAL_PRIMARY_PROJECT" ]] || { echo 'Restore must start on the primary project.' >&2;exit 2; }
+task_source="$NEX_QUAL_STATE_DIR"
+task_restore="$NEX_QUAL_RESTORE_STATE_DIR"
+task_source_project="$NEX_QUAL_PRIMARY_PROJECT"
+task_restore_project="$NEX_QUAL_RESTORE_PROJECT"
+task_source_network_args=("${task_network_args[@]}")
+task_restore_network_args=()
+if [[ -n "${NEX_QUAL_RESTORE_NETWORK_FILE:-}" ]]; then task_restore_network_args=(-f "$NEX_QUAL_RESTORE_NETWORK_FILE");fi
+task_backup="${NEX_QUAL_BACKUP_ROOT:-$PWD/.local/qualification-backups}/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 export NEX_UID="$(id -u)" NEX_GID="$(id -g)"
 docker_local() {
  env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH docker --host=unix:///var/run/docker.sock "$@"
 }
 compose_source() {
- NEX_QUAL_STATE_DIR="$task_source" docker_local compose --project-name nex-qualification -f deploy/qualification/compose.yaml "$@"
+ NEX_QUAL_STATE_DIR="$task_source" docker_local compose --project-name "$task_source_project" -f deploy/qualification/compose.yaml "${task_source_network_args[@]}" "$@"
 }
 compose_restore() {
- NEX_QUAL_STATE_DIR="$task_restore" docker_local compose --project-name nex-qualification-restore -f deploy/qualification/compose.yaml "$@"
+ NEX_QUAL_STATE_DIR="$task_restore" docker_local compose --project-name "$task_restore_project" -f deploy/qualification/compose.yaml "${task_restore_network_args[@]}" "$@"
 }
 python3 - "$task_source" "$task_restore" <<'PY'
 import pathlib,sys
@@ -28,25 +35,25 @@ if (source/'synthetic-qualification.state').read_text()!='synthetic-qualificatio
  raise SystemExit('An existing synthetic source state is required')
 if restore.exists():raise SystemExit('Restore state must be new; preserve any prior restore')
 PY
-if docker_local volume inspect nex-qualification-restore_postgres-data >/dev/null 2>&1; then
+if docker_local volume inspect "${task_restore_project}_postgres-data" >/dev/null 2>&1; then
  echo 'Restore volume already exists; refusing to overwrite it.' >&2;exit 1
 fi
-if [[ -n "$(docker_local ps -aq --filter label=com.docker.compose.project=nex-qualification-restore)" ]]; then
+if [[ -n "$(docker_local ps -aq --filter "label=com.docker.compose.project=$task_restore_project")" ]]; then
  echo 'Restore containers already exist; refusing ambiguous custody.' >&2;exit 1
 fi
 mkdir -p "$task_backup"
-NEX_QUAL_PROJECT=nex-qualification python3 scripts/qualification-relay.py stop --state "$task_source"
+NEX_QUAL_PROJECT="$task_source_project" python3 scripts/qualification-relay.py stop --state "$task_source"
 # Stop every application/evidence writer before taking either snapshot. PostgreSQL
 # remains up only to produce the consistent dump; no source writer is restarted.
 compose_source stop worker control workspace-edge workspace model executor guard evidence
-task_running="$(docker_local ps --filter label=com.docker.compose.project=nex-qualification --format '{{.Label "com.docker.compose.service"}}')"
+task_running="$(docker_local ps --filter "label=com.docker.compose.project=$task_source_project" --format '{{.Label "com.docker.compose.service"}}')"
 while IFS= read -r task_service; do
  case "$task_service" in postgres|issuer|opa|opa-edge|'') ;; *) echo 'Source application writer still running; refusing snapshot.' >&2;exit 1;; esac
 done <<< "$task_running"
 compose_source exec -T postgres pg_dump -U nex -d nex -Fc > "$task_backup/database.dump"
-python3 - "$task_source" "$task_restore" "$task_backup" <<'PY'
+python3 - "$task_source" "$task_restore" "$task_backup" "$task_source_project" "$task_restore_project" <<'PY'
 import pathlib,shutil,json,hashlib,sys
-source,restore,backup=map(pathlib.Path,sys.argv[1:])
+source,restore,backup=map(pathlib.Path,sys.argv[1:4])
 restore.mkdir(mode=0o700,parents=True)
 names=('secrets','pki','current-pki','model-receipts','export-receipts','evidence','evidence-public','synthetic-qualification.state')
 for name in names:
@@ -58,7 +65,7 @@ digests={}
 for directory in ('model-receipts','export-receipts','evidence'):
  for path in sorted((source/directory).rglob('*')):
   if path.is_file():digests[str(path.relative_to(source))]=hashlib.sha256(path.read_bytes()).hexdigest()
-record={'source_project':'nex-qualification','restore_project':'nex-qualification-restore','quiescent':True,
+record={'source_project':sys.argv[4],'restore_project':sys.argv[5],'quiescent':True,
  'database_dump_sha256':hashlib.sha256((backup/'database.dump').read_bytes()).hexdigest(),
  'custody_sha256':digests,'source_state_retained':True,'production_backup_claim':False}
 (backup/'checkpoint.json').write_text(json.dumps(record,indent=2)+'\n')
@@ -71,6 +78,6 @@ task_tables="$(compose_restore exec -T postgres psql -U nex -d nex -X -At -v ON_
 [[ "$task_tables" == 0 ]] || { echo 'Restore database is not empty.' >&2;exit 1; }
 compose_restore exec -T postgres pg_restore -U nex -d nex --exit-on-error --no-owner --no-privileges < "$task_backup/database.dump"
 # Seed reapplies the minimal current runtime grants/passwords, not dump ownership.
-NEX_QUAL_PROJECT=nex-qualification-restore NEX_QUAL_STATE_DIR="$task_restore" ./scripts/qualification.sh up
+NEX_QUAL_PROJECT="$task_restore_project" NEX_QUAL_STATE_DIR="$task_restore" ./scripts/qualification.sh up
 printf '%s\n' 'Isolated synthetic restore ready. Original project/state/volume retained with all source writers stopped.'
 printf 'Private backup evidence: %s\n' "$task_backup"

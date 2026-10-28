@@ -5,9 +5,8 @@ umask 077
 cd "$(dirname "$0")/.."
 task_tools="${NEX_TOOLS_DIR:-/workspace/.tools}"
 export GOPATH="${GOPATH:-$task_tools/gopath}" GOCACHE="${GOCACHE:-/tmp/nex-go-cache}"
-export NEX_QUAL_PROJECT=nex-qualification
-export NEX_QUAL_STATE_DIR="${NEX_QUAL_STATE_DIR:-$PWD/.local/qualification}"
-export NEX_QUAL_RESTORE_STATE_DIR="${NEX_QUAL_RESTORE_STATE_DIR:-$PWD/.local/qualification-restore}"
+source scripts/qualification-context.sh
+[[ "$NEX_QUAL_PROJECT" == "$NEX_QUAL_PRIMARY_PROJECT" ]] || { echo 'Start ordered verification on its primary project.' >&2;exit 2; }
 task_go="$task_tools/go/bin/go"
 task_output="${NEX_QUAL_EVIDENCE_DIR:-$PWD/.local/qualification-release-evidence}"
 [[ "$task_output" == /* && "$NEX_QUAL_STATE_DIR" == /* && "$NEX_QUAL_RESTORE_STATE_DIR" == /* ]] || exit 2
@@ -23,6 +22,12 @@ trap finish_harness EXIT
 "$task_go" test -race -tags=integration -count=1 ./tests/qualification -run '^TestQualificationSystemPostgresTLSAndRoles$' > "$task_output/postgres.log" 2>&1
 "$task_go" test -race -tags=integration -count=1 -timeout=5m ./tests/qualification -run '^TestQualificationSystemKernel' > "$task_output/kernel-mutations.log" 2>&1
 ./scripts/qualification-receiver-check.sh > "$task_output/receivers.log" 2>&1
+# DOM identity, revocation and bounded polling belong to the original live
+# source stack. Rotation/restore invalidate its sessions and run only afterward.
+if [[ -n "${NEX_QUAL_CANDIDATE_MANIFEST:-}" ]]; then
+ python3 scripts/candidate-evidence.py run --candidate "$NEX_QUAL_CANDIDATE_MANIFEST" \
+  --build "${NEX_QUAL_BUILD:-one}" --name dom-browser --timeout 600 -- ./scripts/qualification-browser.sh
+fi
 for task_mode in rotation restore; do
  task_signals="$(mktemp -d "$NEX_QUAL_STATE_DIR/acceptance-$task_mode.XXXXXX")"
  NEX_QUAL_TRANSITION="$task_mode" NEX_QUAL_TRANSITION_SIGNAL_DIR="$task_signals" \

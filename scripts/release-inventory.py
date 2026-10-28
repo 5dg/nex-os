@@ -16,6 +16,8 @@ import sys
 import tomllib
 import urllib.parse
 import uuid
+sys.dont_write_bytecode = True
+from source_record import identity as source_identity, resolve_image
 
 root = pathlib.Path(__file__).resolve().parent.parent
 output = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else root / '.local/release-evidence')
@@ -77,7 +79,7 @@ bom = {
     'bomFormat': 'CycloneDX', 'specVersion': '1.6', 'version': 1,
     'serialNumber': 'urn:uuid:' + str(uuid.uuid5(uuid.NAMESPACE_URL, 'nex.os/source-inventory/' + identity)),
     'metadata': {
-        'component': {'type': 'application', 'name': 'Nex.os', 'version': 'alpha-0.3'},
+        'component': {'type': 'application', 'name': 'Nex.os', 'version': 'alpha-0.4'},
         'properties': [{'name': 'nex:inventory-scope', 'value': 'Source dependencies including development and optional packages; no image OS-package inventory.'}, {'name': 'nex:runtime-profile', 'value': profile}],
     },
     'components': [components[key] for key in sorted(components)],
@@ -85,14 +87,14 @@ bom = {
 (output / 'source-sbom.cdx.json').write_text(json.dumps(bom, indent=2) + '\n')
 if profile == 'synthetic-qualification':
     compose = json.loads((root / 'deploy/qualification/compose.yaml').read_text())
-    images = sorted({service['image'] for service in compose['services'].values()})
+    images = sorted({resolve_image(service['image']) for service in compose['services'].values()})
 else:
     images = sorted(set(re.findall(r'^\s+image:\s*([^\s#]+)', (root / 'deploy/local/compose.yaml').read_text(), re.MULTILINE)))
 (output / 'inventory-inputs.json').write_text(json.dumps({'schema_version': 1, 'profile': profile, 'sha256': input_hashes, 'compose_images': images}, indent=2) + '\n')
 # Source identity remains useful before a first commit, without including ignored
 # local secrets, receipts, build outputs, .git internals or node_modules.
-files = subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=root, capture_output=True, check=True).stdout.split(b'\0')
-files = [os.fsdecode(name) for name in files if name and '__pycache__' not in pathlib.Path(os.fsdecode(name)).parts and not os.fsdecode(name).endswith('.pyc')]
-source_hashes = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in sorted(set(files)) if (root / name).is_file()}
+source = source_identity(root)
+source_hashes = source['inputs']['files']
 (output / 'source-sha256.json').write_text(json.dumps(source_hashes, indent=2) + '\n')
+(output / 'source-identity.json').write_text(json.dumps(source, indent=2) + '\n')
 print(f'Wrote source SBOM with {len(components)} resolved components to {output}.')

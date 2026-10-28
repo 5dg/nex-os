@@ -14,6 +14,7 @@ root = pathlib.Path(__file__).resolve().parent.parent
 parser = argparse.ArgumentParser()
 parser.add_argument('--state', type=pathlib.Path, default=root / '.local/qualification')
 parser.add_argument('--rotate-pki', action='store_true', help='new generation; preserve prior keys/data, then recreate every client/server')
+parser.add_argument('--pki-tool', type=pathlib.Path, default=root / 'bin/qualification-pki')
 args = parser.parse_args()
 state = args.state.absolute()
 if state in (root, root / '.local'):
@@ -60,7 +61,7 @@ spec=root/'deploy/qualification/pki.json'
 spec_hash=hashlib.sha256(spec.read_bytes()).hexdigest()
 active=state/'current-pki'
 if args.rotate_pki or not active.exists():
-    binary=root/'bin/qualification-pki'
+    binary=args.pki_tool
     if not binary.exists():raise SystemExit('Build qualification fixtures before initializing PKI.')
     generation=state/'pki'/('generation-'+datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+secrets.token_hex(4))
     subprocess.run([str(binary),'--config',str(spec),'--directory',str(generation)],check=True)

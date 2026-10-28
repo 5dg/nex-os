@@ -111,7 +111,16 @@ def ipam(args: argparse.Namespace) -> None:
             raise ValueError("IPAM declaration already exists; do not overwrite it")
         atomic_json(path, value)
         records[mode] = {"path": path.name, "sha256": sha256(path)}
-    data["ipam"] = {"block": str(block), "scheduler_overlap_check_required": True, "overrides": records}
+    native = {"schema_version": 1, "run_id": data["run_id"], "source_input_sha256": data["source"]["inputs"]["sha256"],
+              "network_name": "nex-alpha04-" + data["run_id"] + "-native-fixtures", "internal": True,
+              "subnet": str(subnets[64]), "postgres_ip": str(subnets[64].network_address + 2),
+              "opa_ip": str(subnets[64].network_address + 3), "maximum_service_endpoints": 2}
+    native_path = base / "native-fixture-ipam.json"
+    if native_path.exists():
+        raise ValueError("native fixture IPAM exists; preserve the prior declaration")
+    atomic_json(native_path, native)
+    data["ipam"] = {"block": str(block), "scheduler_overlap_check_required": True, "overrides": records,
+                    "native_fixture": {"path": native_path.name, "sha256": sha256(native_path)}}
     atomic_json(args.candidate, data)
     print("Declared isolated IPAM; E must verify no Docker/host-route overlap before allocation")
 
@@ -143,6 +152,11 @@ def environment(args: argparse.Namespace) -> None:
         if record.get("path") != path.name or sha256(path) != record.get("sha256"):
             raise ValueError("manifest-bound IPAM declaration required")
         values["NEX_QUAL_" + mode.upper() + "_NETWORK_FILE"] = str(path)
+    native = data.get("ipam", {}).get("native_fixture", {})
+    native_path = base / "native-fixture-ipam.json"
+    if native.get("path") != native_path.name or sha256(native_path) != native.get("sha256"):
+        raise ValueError("manifest-bound native fixture network declaration required")
+    values["NEX_QUAL_NATIVE_NETWORK_FILE"] = str(native_path)
     for key, value in values.items():
         if any(c in value for c in "\r\n\0"):
             raise ValueError("invalid candidate environment value")

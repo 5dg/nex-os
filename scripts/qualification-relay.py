@@ -11,6 +11,7 @@ import fcntl
 import json
 import os
 import pathlib
+import re
 import signal
 import socket
 import subprocess
@@ -19,7 +20,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PROJECT = os.environ.get('NEX_QUAL_PROJECT', 'nex-qualification')
 if PROJECT not in ('nex-qualification', 'nex-qualification-restore'):
-    raise SystemExit('Only the primary and isolated restore qualification projects are allowed')
+    match = re.fullmatch(r'nex-alpha04-([0-9a-f]{12})(-restore)?', PROJECT)
+    if match is None or match.group(1) != os.environ.get('NEX_QUAL_RUN_ID'):
+        raise SystemExit('Only validated qualification project namespaces are allowed')
 ENDPOINTS = {
     'postgres': (55432, 5432), 'guard': (55051, 50051),
     'control': (18080, 8080), 'opa-edge': (18181, 8181),

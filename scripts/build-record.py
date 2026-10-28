@@ -13,6 +13,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+sys.dont_write_bytecode = True
+from source_record import identity, verify_artifacts
 
 root = pathlib.Path(__file__).resolve().parent.parent
 
@@ -21,14 +23,7 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 def inputs():
-    listed = subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd=root, capture_output=True, check=True).stdout.split(b'\0')
-    prefixes = ('services/', 'packages/', 'policies/', 'scripts/qualification-', 'tests/qualification/fixtures/', 'tests/qualification/cmd/', 'apps/workspace/')
-    paths = [root / os.fsdecode(p) for p in listed if p and os.fsdecode(p).startswith(prefixes) and not os.fsdecode(p).endswith('_test.go')]
-    paths = [p for p in paths if p.is_file()]
-    paths.extend(root / p for p in ('go.mod', 'go.sum', '.tool-versions', 'rust-toolchain.toml'))
-    files = {str(p.relative_to(root)): digest(p) for p in sorted(set(paths))}
-    encoded = json.dumps(files, sort_keys=True, separators=(',', ':')).encode()
-    return {'algorithm': 'sha256 of sorted compact JSON path-to-sha256 map', 'sha256': hashlib.sha256(encoded).hexdigest(), 'files': files}
+    return identity(root)['inputs']
 
 def command(*arguments):
     return subprocess.run(arguments, cwd=root, capture_output=True, text=True, check=True).stdout.strip()
@@ -56,17 +51,20 @@ def write(path, value):
         if os.path.exists(temporary):
             os.unlink(temporary)
 
-if len(sys.argv) != 3 or sys.argv[1] not in ('begin', 'finish'):
-    raise SystemExit('Usage: scripts/build-record.py begin SNAPSHOT | finish SNAPSHOT')
+if len(sys.argv) != 3 or sys.argv[1] not in ('begin', 'finish', 'verify-tools'):
+    raise SystemExit('Usage: scripts/build-record.py begin SNAPSHOT | finish SNAPSHOT | verify-tools RECORD')
 path = pathlib.Path(sys.argv[2])
-if sys.argv[1] == 'begin':
-    revision = subprocess.run(['git', 'rev-parse', '--verify', 'HEAD'], cwd=root, capture_output=True, text=True)
+if sys.argv[1] == 'verify-tools':
+    verify_artifacts(path, root, ('evidence', 'qualification-pki'))
+    print('Fresh source-bound qualification tools verified')
+elif sys.argv[1] == 'begin':
+    source_identity = identity(root)
     os_release = {}
     for line in pathlib.Path('/etc/os-release').read_text().splitlines():
         key, separator, value = line.partition('=')
         if separator and key in ('ID', 'VERSION_ID', 'PRETTY_NAME'):
             os_release[key] = value.strip('"')
-    record = {'schema_version': 1, 'build_mode': 'local-host-development', 'production_attestation': False, 'source_revision': revision.stdout.strip() if revision.returncode == 0 else None, 'inputs': inputs(), 'builder': {'os': os_release, 'machine': platform.machine(), 'go': executable('go'), 'rustc': executable('rustc'), 'cargo': executable('cargo'), 'go_target': command('go', 'env', 'GOOS', 'GOARCH', 'CGO_ENABLED'), 'libc': subprocess.run(['ldd', '--version'], capture_output=True, text=True).stdout.splitlines()[0]}}
+    record = {'schema_version': 2, 'build_mode': 'local-host-development', 'production_attestation': False, 'source_revision': source_identity['revision'], 'inputs': source_identity['inputs'], 'builder': {'os': os_release, 'machine': platform.machine(), 'go': executable('go'), 'rustc': executable('rustc'), 'cargo': executable('cargo'), 'go_target': command('go', 'env', 'GOOS', 'GOARCH', 'CGO_ENABLED'), 'libc': subprocess.run(['ldd', '--version'], capture_output=True, text=True).stdout.splitlines()[0]}}
     (root / 'bin/build-inputs.json').unlink(missing_ok=True)
     write(path, record)
 else:

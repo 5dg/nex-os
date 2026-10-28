@@ -6,21 +6,16 @@ task_tools="${NEX_TOOLS_DIR:-/workspace/.tools}"
 export CARGO_HOME="${CARGO_HOME:-$task_tools/cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$task_tools/rustup}"
 export PATH="$task_tools/go/bin:$task_tools/bin:$CARGO_HOME/bin:$PATH"
 export GOPATH="${GOPATH:-$task_tools/gopath}" GOCACHE="${GOCACHE:-/tmp/nex-go-cache}" GOTOOLCHAIN=local
-export NEX_QUAL_PROJECT="${NEX_QUAL_PROJECT:-nex-qualification}"
-case "$NEX_QUAL_PROJECT" in
- nex-qualification) task_default_state="$PWD/.local/qualification" ;;
- nex-qualification-restore) task_default_state="$PWD/.local/qualification-restore" ;;
- *) echo 'Only the primary and isolated restore qualification projects are allowed.' >&2;exit 2 ;;
-esac
-export NEX_QUAL_STATE_DIR="${NEX_QUAL_STATE_DIR:-$task_default_state}"
+source scripts/qualification-context.sh
 export NEX_UID="$(id -u)" NEX_GID="$(id -g)"
 compose() {
  env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
-  docker --host=unix:///var/run/docker.sock compose --project-name "$NEX_QUAL_PROJECT" -f deploy/qualification/compose.yaml "$@"
+  docker --host=unix:///var/run/docker.sock compose --project-name "$NEX_QUAL_PROJECT" -f deploy/qualification/compose.yaml "${task_network_args[@]}" "$@"
 }
 initialize() {
- python3 scripts/qualification-init.py --state "$NEX_QUAL_STATE_DIR"
- bin/evidence public-key "$NEX_QUAL_STATE_DIR/secrets/signing-seed" "$NEX_QUAL_STATE_DIR/evidence-public"
+ python3 scripts/source_record.py verify-tools --source "$PWD" --record "$NEX_QUAL_TOOL_DIR/build-inputs.json"
+ python3 scripts/qualification-init.py --state "$NEX_QUAL_STATE_DIR" --pki-tool "$NEX_QUAL_TOOL_DIR/qualification-pki"
+ "$NEX_QUAL_TOOL_DIR/evidence" public-key "$NEX_QUAL_STATE_DIR/secrets/signing-seed" "$NEX_QUAL_STATE_DIR/evidence-public"
 }
 ready() {
  task_pki="$NEX_QUAL_STATE_DIR/current-pki"
@@ -34,6 +29,9 @@ case "${1:-}" in
  build-host) ./scripts/qualification-build.sh host ;;
  init) initialize ;;
  up|start)
+  if [[ -n "${NEX_QUAL_CANDIDATE_MANIFEST:-}" ]]; then
+   python3 scripts/candidate.py verify-images --candidate "$NEX_QUAL_CANDIDATE_MANIFEST" --build "${NEX_QUAL_BUILD:-one}"
+  fi
   initialize
   task_recreate=()
   if [[ "${NEX_QUAL_RECREATE:-0}" == 1 ]]; then task_recreate=(--force-recreate); fi
@@ -57,9 +55,10 @@ case "${1:-}" in
   # All data is retained. Generate an additional trust generation, then restart
   # every peer so immutable trust snapshots change together. Existing sessions
   # are intentionally invalidated by process restart.
+  python3 scripts/source_record.py verify-tools --source "$PWD" --record "$NEX_QUAL_TOOL_DIR/build-inputs.json"
   python3 scripts/qualification-relay.py stop --state "$NEX_QUAL_STATE_DIR"
   compose stop worker control workspace-edge workspace model executor guard evidence opa opa-edge issuer postgres
-  python3 scripts/qualification-init.py --state "$NEX_QUAL_STATE_DIR" --rotate-pki
+  python3 scripts/qualification-init.py --state "$NEX_QUAL_STATE_DIR" --rotate-pki --pki-tool "$NEX_QUAL_TOOL_DIR/qualification-pki"
   export NEX_QUAL_RECREATE=1
   exec "$0" up
   ;;

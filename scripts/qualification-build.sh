@@ -2,16 +2,24 @@
 # Build an explicit host diagnostic candidate or the immutable-builder candidate.
 # Neither mode overrides the unresolved source/CI/advisory/assessment release gates.
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 cd "$(dirname "$0")/.."
 task_mode="${1:-container}"
 case "$task_mode" in container|host) ;; *) echo 'Usage: qualification-build.sh [container|host]' >&2; exit 2;; esac
+if [[ "$task_mode" == container ]]; then
+ task_candidate="${2:-${NEX_QUAL_CANDIDATE_MANIFEST:-}}"
+ [[ "$task_candidate" == /* && -f "$task_candidate" ]] || { echo 'Canonical build requires an absolute captured candidate.json path.' >&2;exit 2; }
+ python3 scripts/candidate.py verify --candidate "$task_candidate"
+ task_snapshot="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve().parent / "source")' "$task_candidate")"
+ exec python3 "$task_snapshot/scripts/canonical-build.py" --candidate "$task_candidate" --build "${3:-one}"
+fi
 task_tools="${NEX_TOOLS_DIR:-/workspace/.tools}"
 export CARGO_HOME="${CARGO_HOME:-$task_tools/cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$task_tools/rustup}"
 export PATH="$task_tools/go/bin:$task_tools/bin:$CARGO_HOME/bin:$PATH"
 export GOPATH="${GOPATH:-$task_tools/gopath}" GOCACHE="${GOCACHE:-/tmp/nex-go-cache}" GOTOOLCHAIN=local
 export BUILDX_CONFIG="${BUILDX_CONFIG:-/tmp/nex-buildx}"
 mkdir -p "$BUILDX_CONFIG" bin .local/qualification-build-evidence
-# PKI is generated on the coordinator, never inside a runtime container image.
+# Host diagnostics remain explicit; canonical tools are exported by pinned compilers.
 go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/qualification-pki ./tests/qualification/cmd/pki
 build_image() {
  env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
