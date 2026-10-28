@@ -13,7 +13,7 @@ private tmpfs mounted there, a suitable shared-memory budget, a writable private
 `/results` directory, the public qualification root certificate read-only at
 `/trust/ca.crt`, and the captured D-owned driver read-only at
 `/driver/qualification-browser.mjs`, plus its captured `acceptance.mjs` and
-`workflow-fixture.mjs` helpers in the same read-only driver directory. No application service keys, host NSS
+`workflow-fixture.mjs`/`tls-diagnostics.mjs` helpers in the same read-only driver directory. No application service keys, host NSS
 directories, host home directory or persistent browser profiles are mounted.
 
 Set `APP_ENV=development` and `NEX_PROFILE=synthetic-qualification`. Attach only to

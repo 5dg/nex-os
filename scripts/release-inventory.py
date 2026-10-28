@@ -43,17 +43,35 @@ def component(ecosystem, name, version, properties=None, hashes=None):
                 value[field] = [merged[key] for key in sorted(merged)]
     components[purl] = value
 
-result = subprocess.run(['go', 'list', '-mod=readonly', '-m', '-json', 'all'], cwd=root, capture_output=True, text=True, check=True)
-decoder = json.JSONDecoder()
-remaining = result.stdout
-while remaining.strip():
-    module, end = decoder.raw_decode(remaining.lstrip())
-    remaining = remaining.lstrip()[end:]
-    if module.get('Main'):
-        continue
-    if module.get('Replace'):
-        raise SystemExit('Release inventory requires explicit handling of replaced Go modules.')
-    component('golang', module['Path'], module['Version'], {'nex:go:module-sum': module.get('Sum', '')})
+go_scopes = ((root, 'go.mod', 'application'),
+             (root / 'deploy/qualification/gosu', 'deploy/qualification/gosu/go.mod', 'gosu-downstream-overlay'))
+gosu_inputs = ['deploy/qualification/gosu/go.mod', 'deploy/qualification/gosu/go.sum', 'deploy/qualification/gosu/upstream-inputs.json']
+for name in gosu_inputs:
+    if not (root / name).is_file() or (root / name).is_symlink():
+        raise SystemExit('Complete regular gosu overlay inputs are required for the source inventory.')
+for directory, module_file, scope in go_scopes:
+    # Never resolve an ambient workspace or fall back to the parent application
+    # graph when the independent vendor overlay is missing or incomplete.
+    result = subprocess.run(['go', 'list', '-mod=readonly', '-m', '-json', 'all'], cwd=directory,
+                            capture_output=True, text=True, check=True, env={**os.environ, 'GOWORK': 'off'})
+    decoder = json.JSONDecoder()
+    remaining = result.stdout
+    main_seen = False
+    while remaining.strip():
+        module, end = decoder.raw_decode(remaining.lstrip())
+        remaining = remaining.lstrip()[end:]
+        if module.get('Replace') or module.get('Error'):
+            raise SystemExit('Release inventory requires complete, unreplaced Go module graphs.')
+        if module.get('Main'):
+            if main_seen or pathlib.Path(module.get('Dir', '')).resolve() != directory.resolve():
+                raise SystemExit('Resolved Go module root differs from the declared inventory scope.')
+            main_seen = True
+            continue
+        component('golang', module['Path'], module['Version'], {
+            'nex:go:module-sum': module.get('Sum', ''),
+            'nex:dependency-source': module_file, 'nex:dependency-scope': scope})
+    if not main_seen:
+        raise SystemExit('Resolved Go module graph omitted its declared root.')
 
 npm_locks = ('apps/workspace/package-lock.json', 'apps/workspace/tests/browser/package-lock.json')
 for lock_name in npm_locks:
@@ -79,6 +97,7 @@ for package in lock['package']:
 
 inputs = ['go.mod', 'go.sum', 'apps/workspace/package.json', 'apps/workspace/package-lock.json', 'services/guard-kernel/Cargo.toml', 'services/guard-kernel/Cargo.lock', 'deploy/local/compose.yaml']
 inputs += ['apps/workspace/tests/browser/package.json', 'apps/workspace/tests/browser/package-lock.json', 'apps/workspace/tests/browser/Dockerfile']
+inputs += gosu_inputs
 if profile == 'synthetic-qualification':
     inputs += ['deploy/qualification/compose.yaml', 'deploy/qualification/pki.json']
 inputs += [str(path.relative_to(root)) for path in sorted((root / 'deploy').rglob('Dockerfile*'))]
@@ -89,7 +108,7 @@ bom = {
     'serialNumber': 'urn:uuid:' + str(uuid.uuid5(uuid.NAMESPACE_URL, 'nex.os/source-inventory/' + identity)),
     'metadata': {
         'component': {'type': 'application', 'name': 'Nex.os', 'version': 'alpha-0.4'},
-        'properties': [{'name': 'nex:inventory-scope', 'value': 'Source dependencies including development, optional and isolated browser-tool packages; no image OS-package inventory.'}, {'name': 'nex:runtime-profile', 'value': profile}],
+        'properties': [{'name': 'nex:inventory-scope', 'value': 'Source dependencies including application, downstream gosu overlay, development, optional and isolated browser-tool packages; no image OS-package inventory.'}, {'name': 'nex:runtime-profile', 'value': profile}],
     },
     'components': [components[key] for key in sorted(components)],
 }

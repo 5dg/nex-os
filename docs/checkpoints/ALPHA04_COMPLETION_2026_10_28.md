@@ -137,3 +137,52 @@ restriction. The lead approved sandbox-disabled execution only for this isolated
 synthetic cloud fixture, retaining read-only/capability restrictions, private
 storage, frontend/issuer-only links and normal certificate validation. The
 effective mode is recorded; no production browser or TLS bypass is implied.
+
+## Candidate tooling and supported security remediation checkpoint
+
+Published Go dependency changes in
+`abbe8188885b9140ac0185ae19d9ee4f8d8737e1` target the image scanner's JOSE and
+network-library findings: `go-jose/v4` 4.1.6 and `x/net` 0.62.0, plus only their
+required indirect updates. Targeted auth/trust/contract checks, the full uncached
+Go race suite under umask `022`, and module verification passed. A rebuilt-image
+scan is still required before calling those image findings resolved.
+
+Current tooling adds measured, externally predeclared second-build admission,
+the required native history-pagination gate, trusted-main hosted opt-in, and
+separate gosu-overlay inventory. The gosu overlay preserves verified upstream
+code while updating frozen dependencies. Signed-repository probes confirmed the
+exact available Debian package revisions before image pins were updated. These
+source changes are not substitutes for image behavior or fresh scan results.
+All 95 offline release tests passed before this checkpoint, covering those
+contracts, CI event/admission behavior, inventories and packaging negatives.
+
+Connected hosted status now distinguishes two actual attempts. The custody
+fixture correction allowed static checks to pass on `e08ad9f`; its subsequent
+development build failed because newer Compose delegated to Bake, which required
+an additional filesystem entitlement for the public CA secret. The scoped
+compatibility fix disables only that optional delegation for the owned Compose
+build call; BuildKit, the secret mount and certificate/signature verification
+remain. An actual-script regression passed; a later hosted run is still required.
+
+Browser TLS diagnosis measured an inherited-proxy problem, not a certificate
+validation success: both trusted and untrusted test hosts initially returned
+`ERR_PROXY_CONNECTION_FAILED`. An exact browser-only internal hostname bypass
+restored strict `ERR_CERT_AUTHORITY_INVALID` for the wrong root and HTTPS 200 for
+the trusted workspace. A normal source2 diagnostic then passed wrong-CA, trusted
+render and OIDC login assertions, but document-scope acceptance still failed.
+Safe follow-up probes confirmed the documents API returned 200, the permitted
+option was selected and the other tenant's option was absent. The exact label
+locator matched no control while the unique Document-prefix combobox matched
+one; the drivers now use that observed accessible name and preserve the scope
+checks. Full workflow execution remains pending; no full browser pass is claimed
+here. Failed attempts, isolated probe results and separately hashed
+diagnostic drivers remain retained. Canonical source verification is unchanged.
+
+Six complete diagnostic-source1 image reports contain 807 finding rows, including
+cross-binary/package repeats. Raw reports, all severities, vendor statuses and
+SBOMs are retained. Supported fixes are being applied; remaining vendor findings
+without published fixes are not suppressed or waived. The latest official OPA
+release still contains the affected network dependency, so no verified fixed
+vendor image was substituted. Final candidate image scans, complete ordered
+qualification, two-build measurements and hosted artifact verification remain
+required. Release eligibility remains blocked.

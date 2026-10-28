@@ -1,12 +1,12 @@
 # Alpha 0.4 candidate build and evidence contract
 
-Status: interface 1, lead-approved direction; E must approve measured resource
+Status: interface 1, lead-approved direction; I and the lead must approve measured resource
 admission and concrete non-overlapping IPAM before execution. This contract does not claim that its builds,
 comparisons or qualification checks have run. Preserve the Alpha 0.3 evidence.
 
 ## Candidate boundary
 
-E captures a reviewed, coherent commit after the applicable F cleanup. Capture
+I captures a reviewed, coherent commit published by H after the applicable J cleanup. Capture
 records the full revision, commit timestamp, an archive digest and a sorted
 relative-path-to-SHA256 input map. The input map includes authored application,
 test, policy, migration, contract, lock, deployment, tool and CI inputs; it excludes
@@ -25,7 +25,7 @@ excluded tracked archive files; verification also rejects later ignored-looking
 injections. Generated-location exclusions are exact paths, not nested names such
 as Cargo's authored `src/bin`.
 A diagnostic tree may report an unknown revision, but cannot become a canonical
-candidate. Capture/edit ownership stays with E; source editors resume immediately
+candidate. Capture metadata ownership stays with I; source editors resume immediately
 after capture. Every later authored change requires a new candidate.
 
 ## Canonical and diagnostic build paths
@@ -84,16 +84,28 @@ ABI and output identities recorded. A diagnostic output cannot satisfy a canonic
 gate or silently replace a missing canonical artifact. Existing active development
 behavior and historical artifacts remain supported.
 
+The PostgreSQL gosu executable retains upstream 1.19 source revision
+`6456aaa0f3c854d199d0f037f068eb97515b7513` and its verified archive. The reviewed
+`deploy/qualification/gosu/` dependency overlay updates only frozen Go module
+inputs. The build verifies original upstream module hashes, overlay hashes and
+checksum-database results before compiling read-only module inputs. Both build
+paths identify this as a Nex.os downstream dependency overlay, retain upstream
+revision/archive identity and package overlay metadata with the executable.
+Source inventories include its separate dependency graph and all overlay input
+hashes. No unchanged-upstream-release or clean-scan claim follows from the
+overlay; actual uid/gid/group/exec behavior, PostgreSQL operation and image scans
+remain required.
+
 ## Resource admission and execution ownership
 
-E alone starts Docker/Compose processes, builds images, allocates ports, changes
-shared database/PKI state and publishes Git. C supplies reviewed commands and
-tools; it does not run competing stacks or builds.
+I alone starts Docker/Compose processes, builds images, allocates ports and changes
+shared database/PKI state. H alone publishes Git. D, E, F and G supply reviewed
+build/security/verification commands; they do not run competing stacks or builds.
 
 Default admission budgets are one image build at a time, at most two Cargo jobs,
 at least 8 GiB free on the Docker-data filesystem and 6 GiB on the temporary-output
 filesystem before a cold canonical build, and 2 GiB reserved headroom during
-execution. E records the actual driver, capacity/free bytes, available memory,
+execution. I records the actual driver, capacity/free bytes, available memory,
 estimated peak for the selected strategy and observed peak. A documented measured
 strategy can replace the conservative cold-build estimates only after lead
 review; it cannot waive the reserve or reuse stale outputs. The pinned-container
@@ -104,7 +116,7 @@ receipts/keys, manually edit Docker storage, or claim success after ENOSPC.
 Only checksum-verified download caches may be shared between reproducibility
 builds. Compilation targets, Go build caches and Node output trees are distinct
 and initially empty. No automatic image/data pruning is part of qualification;
-E inventories and explicitly reviews any removal of reproducible unused cache.
+I inventories and the lead explicitly reviews any removal of reproducible unused cache.
 The resource-plan interface may whitelist exact pinned Go/Rust compiler image
 IDs for phase-boundary removal, bound to the captured source and Docker driver.
 Go and gosu compile consecutively; exported public trust avoids repulling Go for
@@ -112,10 +124,38 @@ scratch runtime packaging. Each boundary verifies fresh exported bytes/metadata
 before deleting only that build's compile scratch. A whitelisted image is removed
 normally only after checking no container references it; no force or broad prune
 is allowed. Rust's Cargo home, unpacked sources and target are fresh per build.
-The Node base shared with browser/runtime remains retained. E/root must approve
+The Node base shared with browser/runtime remains retained. I/root must approve
 separate first/second-build peak forecasts; a source flag cannot approve itself.
 Proxy/CA material remains ephemeral and credentials are never recorded in the
 manifest. Retain normal TLS, checksum, module and package-signature validation.
+
+### Measured second-build admission
+
+The lead approved the following fixed policy on 2026-10-28, before either final
+build. It permits unattended execution without an unreviewed resource waiver.
+An absolute, regular, outside-capture policy record binds the source-input hash,
+Docker driver, versioned formula and explicit lead review reference. Build one
+records its exact policy bytes/hash before executing. Build two verifies that
+binding against the completed candidate-bound first manifest and requires complete
+initial, sampled minimum and final free-space measurements for both filesystems.
+
+For each filesystem, observed first-build peak addition is initial free space
+minus its minimum observed free space. The approved second-build estimated peak
+addition is `max(8 GiB, observed first peak addition + 2 GiB safety margin)`.
+Minimum free space is that estimate plus the unchanged **2 GiB reserve**. Samples
+include command start/end and one-second observations. Missing, inconsistent or
+substituted measurements/policy fail admission. Record the first-manifest and
+policy hashes and exact derivation. Existing explicit resource plans may raise
+these floors or carry separately reviewed exact compiler evictions; they cannot
+lower them. Fresh second output/cache trees and all source-integrity checks remain
+mandatory.
+
+The local coordinator supplies the reviewed source-bound external policy. The
+trusted-main CI job may emit the same reviewed fixed policy after source capture.
+Neither the policy nor its local review label is a cryptographic attestation or a
+new runtime authority. Changed formula constants, incomplete measurements or an
+insufficient actual reserve require a new reviewed decision rather than automatic
+approval by a source flag. This contract does not claim either build has run.
 Compiler container names, CIDs and ownership labels include run/build/role and a
 fresh nonce. Timeout/interruption stops only the exactly inspected owned compiler
 and verifies it stopped before further admission or scratch disposal. Unknown
@@ -124,7 +164,7 @@ failure; killing the Docker client alone is not proof that daemon work ended.
 
 ## Isolated run identity and lifecycle
 
-A new run ID is twelve lowercase hexadecimal characters generated by E. Primary
+A new run ID is twelve lowercase hexadecimal characters generated by I. Primary
 project names are `nex-alpha04-<run-id>` and restore names append `-restore`. Every candidate
 has separate private source/output/evidence/state directories and separate primary
 and restore project/volume names derived from that run ID. Scripts validate the
@@ -132,17 +172,17 @@ fixed qualification namespace and inspected ownership labels. They do not accept
 arbitrary forwarding destinations or overwrite existing run state. Existing
 `nex-local`, `nex-qualification` and `nex-qualification-restore` data remains intact.
 
-The same fixed loopback test ports can be reused only after E stops the previous
+The same fixed loopback test ports can be reused only after I stops the previous
 qualification ingress/writer set and its owned relays. New relays preserve native
 TLS and map only the inspected service/project endpoints. There is one active
 writer set for a copied custody domain. Restore creates a new empty volume and
 state directory, preserving the original stopped set. Existing-run refusal is not
 resolved by deleting prior state. Compose stop grace periods will use the
-A/B-approved admission/drain/cleanup deadlines; C will not retain a conflicting
+B/C-approved admission/drain/cleanup deadlines; D will not retain a conflicting
 hard-coded five-second stop budget. The approved shared HTTP drain is 70 seconds
-and Compose stop grace is 75 seconds; shutdown tests remain D's responsibility.
+and Compose stop grace is 75 seconds; shutdown tests remain G's responsibility.
 
-If default Docker address pools cannot hold both new networks, E selects and
+If default Docker address pools cannot hold both new networks, I selects and
 records an inspected non-overlapping private IPAM block. Generated primary and
 restore overrides allocate distinct subnets within it; existing backend networks
 are not shared. No CIDR is selected silently and no live network is removed to
@@ -192,7 +232,7 @@ state which target passed, rather than calling the whole image reproducible.
 Qualify the captured images from fresh run state using the complete ordered
 verifier: browser/API, PostgreSQL trust/roles, current-authority mutations,
 receiver proofs, coordinated PKI rotation and quiescent restore. Shared mutations
-and lifecycle transitions are serial. D independently checks manifest/image/test
+and lifecycle transitions are serial. F/G independently check manifest/image/test
 binding and supplies negative tests for stale tools, changed inputs and mismatched
 images. A combined wrapper is passed only after that wrapper actually executes.
 
@@ -205,12 +245,27 @@ execution, sealing and independent retained-artifact verification all require
 this gate. A compiled harness or diagnostic host-image run cannot qualify the
 canonical images.
 
+The required `history-pagination` native gate runs the captured-source Go handler
+against the isolated private PostgreSQL/OPA fixtures with race detection. It
+checks real signed oversized histories, stable visibility, cursor scope/current
+revocation and append ordering. This is source/native evidence; actual packaged
+history and workspace behavior are independently exercised by the DOM gate.
+The suite, seal and retained-artifact consumer all require its recorded result.
+
 Persist non-secret candidate records, raw findings, SBOMs and test outputs together
 with checksums and source/image identities; retain failed attempts separately.
 Hosted CI/artifact publication is claimed only after a recorded run succeeds and
 the retained artifact can be retrieved and verified. Local `/tmp` logs alone do
-not satisfy durable release evidence. E publishes reviewed source checkpoints to
+not satisfy durable release evidence. H publishes reviewed source checkpoints to
 `main` throughout; source publication does not waive release eligibility gates.
+
+Canonical hosted execution may be selected by manual dispatch or an explicit
+`[qualify-candidate]` marker in the pushed head commit. Both canonical and origin
+jobs first require exact repository/ref literals in an inline shell guard before
+checkout or artifact download. This supplements GitHub's case-insensitive
+expression selection; case-variant refs must fail admission. Routine checkpoint
+pushes remain unmarked. Marker selection never changes qualification, scan,
+provenance or retention requirements.
 
 Scans retain every configured severity and warning. Missing advisory feeds,
 unavailable CI, unsupported reproducibility, unresolved findings and unsigned

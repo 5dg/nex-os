@@ -121,6 +121,18 @@ class ReleaseEvidenceBindingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.compare()
 
+    def test_seal_records_missing_candidate_history_gate_as_unrun(self):
+        names = ('qualification', 'proof-parity', 'shutdown', 'packaged-shutdown',
+                 'dom-browser', 'vulnerability-scans', 'hosted-ci',
+                 'durable-retention', 'provenance-attestation')
+        self.record['results'] = [{'name': name, 'status': 'passed'} for name in names]
+        source_record.atomic_json(self.manifest, self.record)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(evidence.seal(argparse.Namespace(candidate=self.manifest)), 1)
+        release = json.loads((self.base / 'release-manifest.json').read_text())
+        self.assertEqual(release['checks']['history-pagination'], 'unrun')
+        self.assertEqual(release['release_gate'], 'blocked')
+
 
 if __name__ == '__main__':
     unittest.main()

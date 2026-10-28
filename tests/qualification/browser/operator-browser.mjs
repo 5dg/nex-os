@@ -25,7 +25,12 @@ try {
   page.setDefaultTimeout(15000);
   await page.goto(base + '/workflow');
   await login(page, 'alice');
-  await page.getByLabel('Document', {exact: true}).locator('option[value="review-alice"]').waitFor();
+  const documents = page.getByRole('combobox', {name: /^Document\b/});
+  assert.equal(await documents.count(), 1);
+  await documents.locator('option[value="review-alice"]').waitFor({state: 'attached'});
+  assert.equal(await documents.locator('option[value="review-alice"]').count(), 1);
+  assert.equal(await documents.inputValue(), 'review-alice');
+  assert.equal(await documents.locator('option[value="review-bob"]').count(), 0);
   const jobInput = page.getByPlaceholder('Job reference');
   const load = page.getByRole('button', {name: 'Load job and evidence', exact: true});
   const displayedJob = page.getByTestId('current-job-id');
@@ -201,7 +206,7 @@ try {
       await page.waitForTimeout(250);
       assert.equal(await page.getByTestId('current-job-id').count(), 0);
       assert.equal(await page.locator('#evidence code').count(), 0);
-      assert.equal(await page.getByRole('alert').count(), 0);
+      assert.equal(await page.locator('main p[role="alert"]').count(), 0);
     } finally {release(); await page.unroute(routePattern, delayHistory);}
   });
   result.status = 'passed';

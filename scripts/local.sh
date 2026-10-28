@@ -13,7 +13,13 @@ export NEX_UID="$(id -u)" NEX_GID="$(id -g)"
 case "${1:-}" in
   up|start)
     python3 scripts/local-secrets.py
-    if [[ "$1" == up ]]; then ./scripts/build-local.sh; bin/evidence public-key .local/signing-seed .local/evidence-public; compose build; fi
+    if [[ "$1" == up ]]; then
+      ./scripts/build-local.sh
+      bin/evidence public-key .local/signing-seed .local/evidence-public
+      # Keep the normal BuildKit secret API. New Compose versions may delegate
+      # to Bake, whose extra host-file entitlement rejects this public CA input.
+      COMPOSE_BAKE=false compose build
+    fi
     compose up -d --wait postgres
     compose run --rm migrate
     compose run --rm seed

@@ -92,7 +92,9 @@ jobs:
           make down
 
   canonical-candidate:
-    if: github.event_name == 'workflow_dispatch' && inputs.canonical_candidate && github.ref == 'refs/heads/main'
+    # Routine pushes run foundation only. The publisher opts in with this marker
+    # on the final reviewed main commit. The first step enforces exact case too.
+    if: github.repository == '5dg/nex-os' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.canonical_candidate) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[qualify-candidate]')))
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     env:
@@ -104,12 +106,47 @@ jobs:
       artifact_id: ${{ steps.retain.outputs.artifact-id }}
       artifact_digest: ${{ steps.retain.outputs.artifact-digest }}
     steps:
+      - name: Require exact trusted main
+        id: trusted_main
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == '5dg/nex-os' && "$GITHUB_REF" == 'refs/heads/main' ]]
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24.19.0
       - name: Capture the exact trusted main source
         run: python3 -B scripts/candidate.py capture --output /tmp/nex-ci-candidate
+      - name: Record reviewed measured second-build admission
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, pathlib, re, subprocess
+          candidate = json.loads(pathlib.Path('/tmp/nex-ci-candidate/candidate.json').read_text())
+          revision = os.environ['GITHUB_SHA']
+          source_digest = candidate['source']['inputs']['sha256']
+          if not re.fullmatch(r'[0-9a-f]{40}', revision) or candidate['source']['revision'] != revision:
+              raise SystemExit('Captured source differs from trusted main commit')
+          if not isinstance(source_digest, str) or not re.fullmatch(r'[0-9a-f]{64}', source_digest):
+              raise SystemExit('Captured source input digest is invalid')
+          docker_environment = {key: value for key, value in os.environ.items() if key not in ('DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_TLS', 'DOCKER_TLS_VERIFY', 'DOCKER_CERT_PATH')}
+          observed = subprocess.run(['docker', '--host=unix:///var/run/docker.sock', 'info', '--format', '{{json .Driver}}'], env=docker_environment, capture_output=True, text=True, check=True, timeout=30)
+          driver = json.loads(observed.stdout)
+          if not isinstance(driver, str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,64}', driver):
+              raise SystemExit('Actual Docker storage driver is unavailable')
+          policy = {'schema_version': 1, 'kind': 'measured-second-build-v1', 'source_input_sha256': source_digest, 'docker_driver': driver,
+              'minimum_estimated_peak_additional_bytes': 8589934592, 'safety_margin_bytes': 2147483648, 'reserve_bytes': 2147483648,
+              'approval': {'authority': 'root', 'decision': 'approved', 'record': 'docs/architecture/ALPHA04_RELEASE_CONTRACT.md#measured-second-build-admission; root review 2026-10-28; trusted main ' + revision}}
+          path = pathlib.Path('/tmp/nex-ci-second-build-policy.json')
+          descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(descriptor, 'w') as output:
+              os.fchmod(output.fileno(), 0o600)
+              json.dump(policy, output, indent=2)
+              output.write('\n')
+          with open(os.environ['GITHUB_ENV'], 'a') as environment:
+              environment.write('NEX_CANONICAL_SECOND_ADMISSION_POLICY=' + str(path) + '\n')
+          PYCODE
       - name: Prepare pinned verification tools outside the captured source
         run: |
           ./scripts/bootstrap.sh
@@ -123,7 +160,7 @@ jobs:
       - name: Execute canonical candidate with capacity and overlap admission
         run: bash /tmp/nex-ci-candidate/source/scripts/candidate-pipeline.sh /tmp/nex-ci-candidate/candidate.json 10.231.0.0/20
       - name: Prepare evidence even when setup or the canonical build is blocked
-        if: always()
+        if: always() && steps.trusted_main.outcome == 'success'
         run: |
           if test ! -f /tmp/nex-ci-candidate/candidate-bundle.tar.gz; then
             python3 -B /tmp/nex-ci-candidate/source/scripts/candidate-evidence.py seal --candidate /tmp/nex-ci-candidate/candidate.json || true
@@ -131,7 +168,7 @@ jobs:
           fi
       - name: Record the immutable attestation subject
         id: subject
-        if: always()
+        if: always() && steps.trusted_main.outcome == 'success'
         run: |
           python3 - <<'PY'
           import hashlib,os,pathlib
@@ -142,7 +179,7 @@ jobs:
           PY
       - name: Retain the non-secret candidate subject
         id: retain
-        if: always()
+        if: always() && steps.trusted_main.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: alpha04-candidate-subject
@@ -153,7 +190,7 @@ jobs:
 
   candidate-origin:
     needs: canonical-candidate
-    if: always() && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.canonical-candidate.outputs.subject_sha256 != ''
+    if: always() && github.repository == '5dg/nex-os' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.canonical_candidate) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[qualify-candidate]'))) && needs.canonical-candidate.outputs.subject_sha256 != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -162,6 +199,12 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - name: Require exact trusted main
+        id: trusted_main
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == '5dg/nex-os' && "$GITHUB_REF" == 'refs/heads/main' ]]
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: alpha04-candidate-subject

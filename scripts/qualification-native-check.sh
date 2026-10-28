@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Native tests of the exact exported candidate binary; not container-runtime proof.
+# Native tests of the exported candidate binary or captured Go source, as noted
+# by each case; none substitutes for packaged container-runtime qualification.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/qualification-context.sh
@@ -24,5 +25,11 @@ case "${1:-}" in
   # use disposable Go-source integration fixtures, not a container API claim.
   "$task_go" test -mod=readonly -tags=integration ./services/control/api -run '^TestQualified(OriginalWorkspaceExpiryBeforeJobCommit|OriginalWorkerExpiryBeforeLeaseCommit|WorkspaceCancellationBeforeJobCommit|WorkerCancellationBeforeLeaseCommit|OriginalWorkspaceExpiryAfterCommittedApprovalReturnsUnknown)$' -count=1 -race -v
   ;;
- *) echo 'Usage: qualification-native-check.sh proof-parity|shutdown' >&2; exit 2;;
+ history-pagination)
+  [[ -n "${NEX_TEST_OPA_URL:-}" ]] || { echo 'Private native policy endpoint required for history pagination.' >&2; exit 2; }
+  # Captured Go-source HTTP/DB/OPA/signer fixtures, not the packaged Control API.
+  # The candidate evidence runner rejects zero-test or skipped-test output.
+  "$task_go" test -mod=readonly -tags=integration -race -count=1 -timeout=3m ./services/control/api -run '^TestHistoryPaginationIntegration$' -v
+  ;;
+ *) echo 'Usage: qualification-native-check.sh proof-parity|shutdown|history-pagination' >&2; exit 2;;
 esac

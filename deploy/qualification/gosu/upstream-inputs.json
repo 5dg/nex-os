@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "scope": "Nex.os downstream dependency overlay; upstream gosu source code unchanged",
+  "upstream": {
+    "repository": "https://github.com/tianon/gosu",
+    "version": "1.19",
+    "revision": "6456aaa0f3c854d199d0f037f068eb97515b7513",
+    "archive_sha256": "33d7537d588ea49458b9509bcf4554bdf5ceacc66da71e5caa1058ea3b689c3b",
+    "module_inputs": {
+      "go.mod": "0475f1708db81d718b633faf2d9dd64695037eabdc8562125060607bcb01b2ba",
+      "go.sum": "2a8f3fb6adb84839bbb9999f12f1416fb86c184135aaa1c2e489b35203c08346"
+    }
+  },
+  "overlay_sha256": {
+    "go.mod": "9fbb62db2a67741040e7c132836c501d74625ae751ac6659abbc9505abf11f6d",
+    "go.sum": "5f3a4dcbabbf663822ed2f1cdad2f3fae988f27878c440c3e04dbc996e8608e6"
+  },
+  "compiler": "go1.27.3",
+  "dependencies": {
+    "github.com/moby/sys/user": "v0.4.1",
+    "golang.org/x/sys": "v0.44.0"
+  },
+  "advisories": [
+    "CVE-2026-61801",
+    "CVE-2026-39824"
+  ],
+  "approval": "Root reviewed bounded downstream dependency overlay on 2026-10-28; no upstream release or vulnerability waiver claimed"
+}

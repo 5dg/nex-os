@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 import {budget, exactHistoryPrefix, historyPage, pollingAcceptance, signedReadGrowthBound} from './acceptance.mjs';
 import {requestInput, responseFor, snapshot} from './workflow-fixture.mjs';
+import {listenerProbe, navigationProbe} from './tls-diagnostics.mjs';
 const {chromium} = await import(process.env.NEX_PLAYWRIGHT_MODULE || '/fixture/node_modules/playwright-core/index.mjs');
 const args = Object.fromEntries(process.argv.slice(2).map(value => {const [key,...rest]=value.replace(/^--/,'').split('=');return [key,rest.join('=')];}));
 const base=args['base-url'] || 'https://workspace.nex.test:9443';
@@ -22,12 +23,46 @@ try {
  // There is intentionally no ignoreHTTPSErrors or certificate exception.
  const context=await browser.newContext();
  const page=await context.newPage();
+ page.on('response',response=>{if(requestInput(response.request())?.operation==='documents')result.documentsResponseStatus=response.status();});
  page.setDefaultTimeout(15000);
- await named('untrusted CA fails browser TLS validation',async()=>{const bad=await context.newPage();let rejected=false;try{await bad.goto(args['wrong-ca-url'],{timeout:8000});}catch(error){rejected=String(error).includes('ERR_CERT_AUTHORITY_INVALID');}await bad.close();assert(rejected);});
+ await named('untrusted CA fails browser TLS validation',async()=>{
+  const bad=await context.newPage();
+  result.wrongRoot={listener:await listenerProbe(args['wrong-ca-url']),navigation:await navigationProbe(bad,args['wrong-ca-url'])};
+  await bad.close();
+  assert.equal(result.wrongRoot.listener.tcp,'connected');
+  assert.equal(result.wrongRoot.navigation.code,'ERR_CERT_AUTHORITY_INVALID');
+ });
  await named('trusted TLS and rendered React workspace',async()=>{const r=await page.goto(base+'/workflow');assert.equal(r.status(),200);await page.getByRole('heading',{name:'One workflow. Accountable actions.'}).waitFor();await page.getByRole('link',{name:'Sign in →'}).waitFor();});
  async function login(subject){await page.getByRole('link',{name:'Sign in →'}).click();await page.getByLabel('Username',{exact:true}).fill(subject);await page.getByLabel('Password',{exact:true}).fill('fixture-'+subject+'-password');await page.getByRole('button',{name:'Sign in',exact:true}).click();await page.getByText('Signed in as',{exact:false}).waitFor();assert.equal(await page.locator('strong').filter({hasText:subject}).count(),1);}
  await named('OIDC login via rendered fixture and callback',()=>login('alice'));
- await named('document scope and fixed question rendered',async()=>{const documents=page.getByLabel('Document',{exact:true});await documents.locator('option[value="review-alice"]').waitFor();assert.equal(await documents.locator('option[value="review-bob"]').count(),0);assert.equal(await page.locator('textarea').count(),0);await page.getByText('What access review and export controls apply?',{exact:false}).first().waitFor();});
+ await named('document scope and fixed question rendered',async()=>{
+  const documents=page.getByRole('combobox',{name:/^Document\b/});
+  try {
+   // Options in a collapsed native select are attached but not individually
+   // visible. Verify admitted data and selection without opening the popup.
+   assert.equal(await documents.count(),1);
+   await documents.locator('option[value="review-alice"]').waitFor({state:'attached'});
+   assert.equal(await documents.locator('option[value="review-alice"]').count(),1);
+   assert.equal(await documents.inputValue(),'review-alice');
+   assert.equal(await documents.locator('option[value="review-bob"]').count(),0);
+   assert.equal(await page.locator('textarea').count(),0);
+   await page.getByText('What access review and export controls apply?',{exact:false}).first().waitFor();
+  } finally {
+   // A missing accessible-name match must not make the diagnostics themselves
+   // wait or throw. Counts/evaluateAll return immediately for absent elements.
+   const scope=result.documentScope={};
+   scope.exactDocumentLabels=await page.getByLabel('Document',{exact:true}).count();
+   scope.partialDocumentLabels=await page.getByLabel('Document',{exact:false}).count();
+   scope.documentPrefixComboboxes=await documents.count();
+   scope.selectCount=await page.locator('select').count();
+   scope.allowedOptionAttached=(await page.locator('select option[value="review-alice"]').count())===1;
+   scope.selectedAllowed=await page.locator('select').evaluateAll(selects=>selects.some(select=>select.value==='review-alice'));
+   scope.deniedOptionAbsent=(await page.locator('select option[value="review-bob"]').count())===0;
+   scope.noArbitraryQuestion=(await page.locator('textarea').count())===0;
+   scope.fixedQuestionVisible=await page.getByText('What access review and export controls apply?',{exact:false}).first().isVisible();
+   scope.alertPresent=(await page.locator('main p[role="alert"]').count())>0;
+  }
+ });
  let job;
  await named('DOM review submit and durable completion',async()=>{await page.getByRole('button',{name:'Start governed review →'}).click();await page.locator('.effect').filter({hasText:/^completed$/}).waitFor({timeout:45000});job=await page.getByPlaceholder('Job reference').inputValue();assert(job);});
  await named('DOM exact export approval request',async()=>{await page.getByRole('button',{name:'Request export approval',exact:true}).click();await page.locator('.effect').filter({hasText:/^approval_required$/}).waitFor();});

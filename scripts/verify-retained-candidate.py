@@ -121,7 +121,7 @@ def verify(args):
         release = json.load(candidate_bundle.extractfile(member))
     if not isinstance(release, dict) or release.get("source", {}).get("revision") != args.source_revision:
         raise ValueError("retained release manifest/source mismatch")
-    required_local = ("qualification", "proof-parity", "shutdown", "packaged-shutdown", "dom-browser", "vulnerability-scans", "reproducibility")
+    required_local = ("qualification", "proof-parity", "shutdown", "packaged-shutdown", "history-pagination", "dom-browser", "vulnerability-scans", "reproducibility")
     local_passed = all(release.get("checks", {}).get(name) == "passed" for name in required_local)
     receipt = {"schema_version": 1, "repository": REPOSITORY, "workflow_run_id": args.run_id,
         "source_revision": args.source_revision, "artifact_id": args.artifact_id,

@@ -33,8 +33,9 @@ PY
 fi
 task_project="$NEX_QUAL_PROJECT"
 task_state="$NEX_QUAL_STATE_DIR"
-task_output="$NEX_QUAL_EVIDENCE_DIR/browser"
-task_private="$task_state/browser-private"
+task_attempt="$(python3 -c 'import secrets;print(secrets.token_hex(6))')"
+task_output="$NEX_QUAL_EVIDENCE_DIR/browser-$task_attempt"
+task_private="$task_state/browser-private-$task_attempt"
 task_front="$task_project"_browser-front
 task_issuer="$task_project"_browser-issuer
 task_wrong="$task_project-browser-wrong-ca"
@@ -45,6 +46,7 @@ task_wrong_created=0
 [[ -f "$task_state/synthetic-qualification.state" && "$(cat "$task_state/synthetic-qualification.state")" == synthetic-qualification ]]
 mkdir "$task_output" "$task_private"
 mkdir "$task_output/dom" "$task_output/operator" "$task_output/revocation"
+printf '%s\n' "$task_attempt" > "$task_output/attempt-id"
 docker_local() {
  env -u DOCKER_HOST -u DOCKER_CONTEXT -u DOCKER_TLS -u DOCKER_TLS_VERIFY -u DOCKER_CERT_PATH \
   docker --host=unix:///var/run/docker.sock "$@"
@@ -174,8 +176,11 @@ start_browser() {
   --mount "type=bind,src=$PWD/tests/qualification/browser/$task_driver,dst=/driver/qualification-browser.mjs,readonly" \
   --mount "type=bind,src=$PWD/tests/qualification/browser/acceptance.mjs,dst=/driver/acceptance.mjs,readonly" \
   --mount "type=bind,src=$PWD/tests/qualification/browser/workflow-fixture.mjs,dst=/driver/workflow-fixture.mjs,readonly" \
+  --mount "type=bind,src=$PWD/tests/qualification/browser/tls-diagnostics.mjs,dst=/driver/tls-diagnostics.mjs,readonly" \
   --mount "type=bind,src=$task_mounted_results,dst=/results" \
   -e APP_ENV=development -e NEX_PROFILE=synthetic-qualification \
+  -e NO_PROXY=workspace.nex.test,issuer.nex.test,untrusted.nex.test,localhost,127.0.0.1,::1 \
+  -e no_proxy=workspace.nex.test,issuer.nex.test,untrusted.nex.test,localhost,127.0.0.1,::1 \
   -e "NEX_BROWSER_FIXTURE_NO_SANDBOX=${NEX_BROWSER_FIXTURE_NO_SANDBOX:-0}" \
   "$NEX_BROWSER_FIXTURE_IMAGE" "$@" > /dev/null
  task_browser_created=1

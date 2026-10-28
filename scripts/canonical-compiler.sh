@@ -55,16 +55,23 @@ gosu)
  tar -xzf source.tar.gz --strip-components=1
  rm source.tar.gz
  grep -Fx 'const Version = "1.19"' version.go
+ sh /src/scripts/apply-gosu-overlay.sh /src/deploy/qualification/gosu
  export GOCACHE=/work/gosu-go-cache GOPATH=/work/gosu-gopath GOTMPDIR=/work/tmp
  mkdir -p "$GOCACHE" "$GOPATH" "$GOTMPDIR" /package/postgres/usr/local/bin /package/postgres/usr/local/share/nex
- go mod download
+ go mod download all
  go mod verify
+ cmp go.mod /src/deploy/qualification/gosu/go.mod
+ cmp go.sum /src/deploy/qualification/gosu/go.sum
  go build -mod=readonly -buildvcs=false -trimpath -ldflags='-w' -o /package/postgres/usr/local/bin/gosu .
  go version -m /package/postgres/usr/local/bin/gosu > /package/postgres/usr/local/share/nex/gosu-build.txt
  grep -F 'go1.27.3' /package/postgres/usr/local/share/nex/gosu-build.txt
  printf '%s\n' 'revision=6456aaa0f3c854d199d0f037f068eb97515b7513' 'archive-sha256=33d7537d588ea49458b9509bcf4554bdf5ceacc66da71e5caa1058ea3b689c3b' >> /package/postgres/usr/local/share/nex/gosu-build.txt
+ printf '%s\n' 'dependency-profile=Nex.os downstream overlay; upstream Go source unchanged' >> /package/postgres/usr/local/share/nex/gosu-build.txt
+ sha256sum go.mod go.sum >> /package/postgres/usr/local/share/nex/gosu-build.txt
+ cp /src/deploy/qualification/gosu/upstream-inputs.json /package/postgres/usr/local/share/nex/gosu-dependency-overlay.json
  chmod 0755 /package/postgres/usr/local/bin/gosu
  chmod 0444 /package/postgres/usr/local/share/nex/gosu-build.txt
+ chmod 0444 /package/postgres/usr/local/share/nex/gosu-dependency-overlay.json
  ;;
 *) echo 'Unknown compiler role' >&2;exit 2;;
 esac

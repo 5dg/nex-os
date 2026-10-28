@@ -204,3 +204,50 @@ deletion decision remains unchanged. This addendum records publication of the
 reviewed source, not a canonical build, runtime qualification or release pass.
 The upcoming Rust PEM maintenance change is outside this audit and requires its
 own follow-up consumer review.
+
+## PEM maintenance and delivery follow-up — 2026-10-28
+
+Reviewed published maintenance revision:
+`e08ad9f8c8b2bed333bd6690967fefaadb4e0341`. Resource-admission, CI-trigger and
+history-gate changes described below were inspected as uncommitted work based on
+that revision; their publication must be bound separately after lead review.
+
+| Reviewed scope | Consumer closure and retained behavior | Decision |
+|---|---|---|
+| Rust PEM parser replacement | `Trust::load` calls `read_certificates` and the new `read_private_key`; database client trust also calls `read_certificates`. The helpers use the already-present `rustls::pki_types::pem::PemObject` API. The old `rustls-pemfile` dependency and `Cursor` import are removed, and no executable or lock-file reference to that parser remains in the inspected tree. No new crate was introduced by the maintenance diff. | The producing implementation already removed its superseded parser dependency/import. Keep both live helpers and PEM regression fixtures; no further deletion justified. |
+| Existing trust enforcement | After envelope parsing, `Trust::load` still calls `check_own` and `server_config`; certificate-chain, role, TLS-version and certificate/private-key compatibility checks remain reachable. | Preserve enforcement. Envelope-parser cleanup does not retire DER or workload-identity validation. |
+| Four Go custody fixture files | Broker, evidence, model and executor positive fixtures now pass private child paths into existing custody/journal constructors. The added broker test checks that the shared parent retains its permissions while the child and lock are private. Existing public/replaced-lock rejection tests remain. | Keep positive and negative fixtures. This is test portability work, not removal of production custody checks. |
+| Uncommitted second-build resource admission | `canonical-build.py` imports and calls `load_policy`, `second_admission` and `summarize_measurements`; `free_values` validates measurement records consumed by the summary. `measure_free` feeds command start/end and periodic samples. The pipeline requires the external policy, and second-build/gitless tests consume the module. | Keep the helper module, measurement fields and rejection branches. They participate in admission or retained evidence; no orphan helper established. |
+| Uncommitted trusted CI trigger and history gate | The two workflow job conditions consume the explicit candidate marker/manual input and repository/ref restrictions. Trigger tests inspect those authored conditions. The native suite dispatches `history-pagination` to the HTTP/DB integration test, and candidate sealing plus retained verification both require the same gate name. | Keep the selected trigger and gate plumbing. Test selection and static linkage do not establish a hosted run or a passed candidate gate. |
+
+No additional executable deletion justified. Only this ledger was edited by the
+cleanup owner. This follow-up records static source/consumer inspection and does
+not claim new test execution, scanner clearance, shared-runtime checks or
+canonical qualification. Concurrent browser TLS diagnostic changes are outside
+this audit. Later changes and the uncommitted delivery batch still require their
+final publication binding before candidate capture.
+
+## Prepublication tooling consumer audit — 2026-10-28
+
+Published dependency baseline:
+`abbe8188885b9140ac0185ae19d9ee4f8d8737e1`. This commit patches five existing
+indirect Go dependency selections and adds their module checksums; it does not
+establish an unused package removal. The rows below inspect the ready, still-
+uncommitted tooling batch after the lead released the second diagnostic snapshot
+window. Bind the final publication separately; this is not a candidate result.
+
+| Reviewed scope | Active consumers and retained purpose | Decision |
+|---|---|---|
+| Second-build policy and exact CI selection | The workflow's policy-emission step binds captured source and observed Docker driver, exports its external policy path, and feeds the pipeline/builder's `resource_admission` calls. Both jobs retain the explicit exact-repository/ref guard. Native history dispatch, sealing and retained verification use the same required gate. Trigger, admission, evidence and gitless tests consume these paths. | Keep the guards, policy helper and gate plumbing. No dead helper or field established by this follow-up. |
+| Frozen downstream gosu overlay | Both the pinned compiler's gosu branch and qualification PostgreSQL Dockerfile invoke `apply-gosu-overlay.sh`. It checks the upstream module inputs and overlay metadata before copying the reviewed `go.mod`/`go.sum`; compilation verifies the resulting frozen inputs, and packaging retains the overlay/build records. `test_gosu_overlay.py` exercises substitution and symlink rejection. | Keep the helper, independent module files and metadata. They are active build inputs, not duplicate root-module files. |
+| Application/vendor source inventories | `release-inventory.py` resolves the root and gosu module graphs independently with `GOWORK=off`, binds all overlay files, and merges component source/scope properties. Inventory tests consume both graphs and missing-input failures. | Keep both resolution paths and their graph-root checks. No checksum pruning or dependency deletion justified by this consumer audit. |
+| Runtime OS pins and local Compose transport | The four changed workspace/PostgreSQL Dockerfiles are selected by supported local/qualification packaging. `local.sh up` invokes its scoped `COMPOSE_BAKE=false compose build`; other Compose operations retain their inherited setting. The transport regression exercises the actual launcher through offline command fixtures. | Keep both host/diagnostic and canonical packaging paths. The shared public-CA secret remains an input, not dead configuration. |
+| TLS outcome helpers and browser attempt state | The qualification workflow driver imports `listenerProbe` and `navigationProbe`; the latter consumes `navigationFailure`, also covered by redaction assertions. The harness mounts the helper, supplies the fixed private-fixture proxy bypass list, and uses the nonce in retained evidence/private-state paths and the attempt marker. Rendered drivers wait for their attached document option before starting work. | Keep typed diagnostics, readiness waits and per-attempt state. No browser helper or nonce field is orphaned. |
+| Standalone `tls-probe.mjs` | The browser README documents this separate runtime-coordinator entry point and requires immutable image/build identity plus hashed probe/helper inputs. The script directly consumes listener/navigation helpers and reports a no-login diagnostic scope. It is intentionally outside the full workflow runner. | Keep as a supported manual diagnostic. Absence from the automatic qualification chain is not proof of dead code; its success cannot satisfy the workflow gate. |
+
+No additional executable deletion justified. This cleanup pass edits only the
+ledger and makes no new test, scanner, browser workflow, Docker or canonical-run
+claim. Existing proof formats, v2/v3 behavior, development routes, diagnostic
+entry points and state-preserving fixtures remain supported. Publication and
+independent acceptance belong to the lead and publisher; subsequent changed
+source still requires a follow-up audit before final capture.

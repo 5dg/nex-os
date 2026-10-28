@@ -22,7 +22,7 @@ class GitlessCLITests(unittest.TestCase):
             root = base / 'source'
             (root / 'scripts').mkdir(parents=True)
             for name in ('candidate.py', 'source_record.py', 'image_record.py',
-                         'canonical-build.py', 'candidate-evidence.py', 'verify-provenance.py'):
+                         'canonical-build.py', 'resource_admission.py', 'candidate-evidence.py', 'verify-provenance.py'):
                 shutil.copy2(SCRIPTS / name, root / 'scripts' / name)
             (root / 'go.mod').write_text('module example.invalid/gitless\n')
             source_record.atomic_json(root / source_record.COMPANION, {

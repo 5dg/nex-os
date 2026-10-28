@@ -60,6 +60,9 @@ for name,args,required in [('go',['version'],'go1.27.3'),('rustc',['--version'],
 pathlib.Path(sys.argv[1]).write_text(json.dumps({'schema_version':1,'scope':'host verification tools, separate from canonical compiler identities','tools':tools},sort_keys=True,indent=2)+'\n')
 PY
 # Compiler output trees are fresh and distinct; failed builds are never resumed.
+[[ "${NEX_CANONICAL_SECOND_ADMISSION_POLICY:-}" == /* && -f "$NEX_CANONICAL_SECOND_ADMISSION_POLICY" ]] || {
+ echo 'A predeclared external root-approved second-build admission policy is required.' >&2; exit 2;
+}
 task_plan_one=(); task_plan_two=()
 for task_phase in ONE TWO; do
  task_plan_name="NEX_CANONICAL_RESOURCE_PLAN_$task_phase"

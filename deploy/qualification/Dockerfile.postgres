@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Qualification-only rebuild: retain PostgreSQL 17/data layout and the upstream
-# gosu 1.19 implementation/dependencies; update its compiler and two OS packages.
+# gosu 1.19 implementation, with an explicitly identified Nex.os dependency overlay.
 FROM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS gosu-build
 ENV GOTOOLCHAIN=local CGO_ENABLED=0 GOSUMDB=sum.golang.org
 WORKDIR /src/gosu
@@ -18,13 +18,20 @@ RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
     rm /tmp/gosu.tar.gz; \
     grep -Fx 'const Version = "1.19"' version.go
 
-# Go's checksum database and upstream go.sum remain enabled. Do not update module
-# versions, strip build metadata, or retain this session's proxy CA in a layer.
+# Verify the original upstream module inputs before applying the authored frozen
+# overlay. The Go source remains unchanged; this is not an upstream release.
+COPY deploy/qualification/gosu/ /nex/gosu-overlay/
+COPY scripts/apply-gosu-overlay.sh /nex/apply-gosu-overlay.sh
+# Go's checksum database remains enabled. Never resolve floating module versions,
+# strip build metadata, or retain this session's proxy CA in a layer.
 RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
     set -eu; \
     export SSL_CERT_FILE=/run/secrets/proxy_ca; \
-    go mod download; \
+    sh /nex/apply-gosu-overlay.sh /nex/gosu-overlay; \
+    go mod download all; \
     go mod verify; \
+    cmp go.mod /nex/gosu-overlay/go.mod; \
+    cmp go.sum /nex/gosu-overlay/go.sum; \
     mkdir -p /out; \
     go build -mod=readonly -buildvcs=false -trimpath -ldflags='-w' -o /out/gosu .; \
     go version -m /out/gosu > /out/gosu-build.txt; \
@@ -36,13 +43,17 @@ RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
       'version=1.19' \
       'revision=6456aaa0f3c854d199d0f037f068eb97515b7513' \
       'archive-sha256=33d7537d588ea49458b9509bcf4554bdf5ceacc66da71e5caa1058ea3b689c3b' \
-      >> /out/gosu-build.txt
+      'dependency-profile=Nex.os downstream overlay; upstream Go source unchanged' \
+      >> /out/gosu-build.txt; \
+    sha256sum go.mod go.sum >> /out/gosu-build.txt; \
+    cp /nex/gosu-overlay/upstream-inputs.json /out/gosu-dependency-overlay.json
 
 FROM postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27
 LABEL org.nex.qualification.postgres.base="postgres:17-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27" \
       org.nex.qualification.gosu.revision="6456aaa0f3c854d199d0f037f068eb97515b7513" \
       org.nex.qualification.gosu.source-sha256="33d7537d588ea49458b9509bcf4554bdf5ceacc66da71e5caa1058ea3b689c3b" \
       org.nex.qualification.gosu.compiler="go1.27.3" \
+      org.nex.qualification.gosu.dependency-profile="nex-downstream-overlay-1" \
       org.nex.qualification.openssl.version="3.0.22-1~deb12u2"
 
 # Keep the distribution's signed Debian sources/keyring. Limit this transaction
@@ -57,17 +68,19 @@ RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
     apt-get -o Dir::Etc::sourcelist=/dev/null \
       -o Dir::Etc::sourceparts=/tmp/nex-debian-sources \
       -o Acquire::https::CaInfo=/run/secrets/proxy_ca update; \
-    apt-get -o Dir::Etc::sourcelist=/dev/null \
+    DEBIAN_FRONTEND=noninteractive apt-get -o Dir::Etc::sourcelist=/dev/null \
       -o Dir::Etc::sourceparts=/tmp/nex-debian-sources \
       -o Acquire::https::CaInfo=/run/secrets/proxy_ca \
       install --yes --only-upgrade --no-remove --no-install-recommends \
-      libssl3=3.0.22-1~deb12u2 openssl=3.0.22-1~deb12u2; \
+      libssl3=3.0.22-1~deb12u2 openssl=3.0.22-1~deb12u2 tzdata=2026e-0+deb12u1; \
     test "$(dpkg-query -W -f='${Version}' libssl3)" = '3.0.22-1~deb12u2'; \
     test "$(dpkg-query -W -f='${Version}' openssl)" = '3.0.22-1~deb12u2'; \
+    test "$(dpkg-query -W -f='${Version}' tzdata)" = '2026e-0+deb12u1'; \
     rm -rf /var/lib/apt/lists/* /tmp/nex-debian-sources
 
 COPY --from=gosu-build --chmod=0755 /out/gosu /usr/local/bin/gosu
 COPY --from=gosu-build --chmod=0444 /out/gosu-build.txt /usr/local/share/nex/gosu-build.txt
+COPY --from=gosu-build --chmod=0444 /out/gosu-dependency-overlay.json /usr/local/share/nex/gosu-dependency-overlay.json
 RUN set -eu; \
     test "$PG_MAJOR" = 17; \
     test "$PGDATA" = /var/lib/postgresql/data; \

@@ -14,8 +14,43 @@ on the Docker filesystem, 6 GiB free on the output filesystem and a 2 GiB reserv
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -B scripts/candidate.py capture --output /tmp/nex-alpha04-candidate-NEW
+# Prepare the reviewed external policy described below before this invocation.
+export NEX_CANONICAL_SECOND_ADMISSION_POLICY=/tmp/nex-alpha04-admission-NEW.json
 bash /tmp/nex-alpha04-candidate-NEW/source/scripts/candidate-pipeline.sh /tmp/nex-alpha04-candidate-NEW/candidate.json 10.231.0.0/20
 ```
+
+Before the first build, create that new regular policy file outside the captured
+source with mode `0600`. Bind `source_input_sha256` to
+`candidate.json` → `source.inputs.sha256`, and `docker_driver` to the actual local
+Docker driver's reported value. The reviewed policy has exactly these fields;
+replace the two identity placeholders and the source revision in the approval
+record with the observed candidate values:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "measured-second-build-v1",
+  "source_input_sha256": "CAPTURED_SOURCE_INPUT_SHA256",
+  "docker_driver": "OBSERVED_LOCAL_DOCKER_DRIVER",
+  "minimum_estimated_peak_additional_bytes": 8589934592,
+  "safety_margin_bytes": 2147483648,
+  "reserve_bytes": 2147483648,
+  "approval": {
+    "authority": "root",
+    "decision": "approved",
+    "record": "docs/architecture/ALPHA04_RELEASE_CONTRACT.md#measured-second-build-admission; root review 2026-10-28; trusted main FULL_SOURCE_REVISION"
+  }
+}
+```
+
+The root-reviewed [resource contract](../architecture/ALPHA04_RELEASE_CONTRACT.md#measured-second-build-admission)
+fixes these budgets. The first build retains the policy hash and measurements;
+the second requires the larger of 8 GiB or the first measured peak addition plus
+2 GiB, then adds the unchanged 2 GiB reserve. Missing, mismatched or changed
+policies block admission. The trusted-main workflow creates this file after
+capture, checks the captured revision against `GITHUB_SHA`, observes the local
+Docker driver and exports its path through `GITHUB_ENV`. It never invents a lower
+budget after a failed build or overwrites an existing policy file.
 
 The `/20` is an explicit proposal, not a standing allocation. The runner must
 recheck Docker subnets and host routes immediately before creating its distinct
@@ -44,8 +79,25 @@ candidate output paths.
 
 ## Hosted origin and durable retrieval
 
-The trusted-main `Alpha integrity checks` workflow has an explicit
-`canonical_candidate` dispatch input. Its producer retains the non-secret bundle
+The trusted-main `Alpha integrity checks` workflow has two explicit entry points:
+manual dispatch on `main` with `canonical_candidate: true`, or a normal push to
+`5dg/nex-os` `main` whose head commit message contains `[qualify-candidate]`.
+The dedicated publisher selects that marker only for the final reviewed,
+candidate-ready checkpoint (for example, `[qualify-candidate] Qualify synthetic
+release candidate`). Keep routine checkpoint commits unmarked. The marker is
+examined as event data, never executed as shell text. PR events, different fork
+repositories, other branches/tags, unmarked pushes and dispatches with the input
+disabled are excluded by the job selection condition. GitHub string comparisons
+are case-insensitive, so a case-variant ref such as `refs/heads/Main` can select a
+job. Both jobs therefore begin with an inline, case-sensitive Bash guard requiring
+exactly `5dg/nex-os` and `refs/heads/main`, before checkout or artifact download.
+A rejected guard also disables the producer's always-on artifact steps. A marked commit message does not
+authorize a PR run, and an earlier marked commit in a push does not opt in an
+unmarked head commit.
+
+This opt-in push path provides the same captured-source pipeline when an Actions
+dispatch client is unavailable. It does not change network policy, token
+permissions, source checks or release gates. Its producer retains the non-secret bundle
 for 30 days even when the release gate is blocked. A separate scoped job downloads
 the retained subject, compares its SHA256 to the producer output, and uses the
 commit-pinned official provenance action. An attestation proves origin, not

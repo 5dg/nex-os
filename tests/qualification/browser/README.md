@@ -26,6 +26,15 @@ execution: at most one automatic job read in flight, zero unexpected errors for
 healthy delayed responses, and a five-second drain. The driver compares the exact
 ordered prior signed-event contents, including proofs, rather than only event-ID
 membership. This is a browser response-latency test, not database throughput.
+The wrong-root negative also requires a successful same-container TCP connection
+and records only DNS/TCP outcome categories and a typed Chromium `ERR_*` code.
+Only `ERR_CERT_AUTHORITY_INVALID` satisfies the certificate-negative assertion;
+DNS errors, refused connections, timeouts and proxy failures remain failures.
+The browser container sets both `NO_PROXY` and `no_proxy` to exactly
+`workspace.nex.test,issuer.nex.test,untrusted.nex.test,localhost,127.0.0.1,::1`.
+Those fixtures are reachable only on their inspected private networks. External
+proxy settings remain inherited. This avoids sending private fixture navigation
+to an unavailable external proxy without disabling TLS or certificate validation.
 
 The signed-read-growth bound is declared before execution:
 
@@ -102,3 +111,14 @@ container image IDs and Compose ownership. This mutable diagnostic receipt is
 engineering evidence only: its output is explicitly labeled diagnostic, it never
 writes a canonical candidate result, and final qualification still requires a new
 captured source and exact canonical images. Both modes retain native TLS checks.
+
+Every coordinator attempt uses fresh `browser-<nonce>` evidence and
+`browser-private-<nonce>` private state directories. Prior failed attempt data is
+preserved. Container/network ownership checks still reject a concurrent active
+fixture; a new directory does not authorize competing runtime operations.
+
+`tls-probe.mjs` is a separate no-login diagnostic for the runtime coordinator. It
+records only typed listener/navigation outcomes for the wrong-root fixture,
+workspace and issuer. A direct diagnostic invocation must record the immutable
+browser image, application build identity and separately hashed probe/helper
+inputs. Its success is never a browser workflow or canonical candidate pass.

@@ -2,6 +2,7 @@
 """E-owned pinned compilation and thin packaging from one verified snapshot."""
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -16,6 +17,7 @@ sys.dont_write_bytecode = True
 from candidate import load
 from image_record import payload
 from source_record import atomic_json, identity, sha256
+from resource_admission import load_policy, second_admission, summarize_measurements
 
 COMPILERS = {
  "go": "golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5",
@@ -52,6 +54,16 @@ class Builder:
     "reserve": self.reserve, "cargo_jobs": 2, "concurrent_builds": 1},
    "coordinator_python": sys.version, "dockerfile_frontend": FRONTEND,
    "started_at": self.now()}
+  policy = load_policy(args.second_admission_policy, self.source, self.candidate["source"]["inputs"]["sha256"], self.info["driver"])
+  self.record["resource_budget"]["second_admission_policy"] = policy
+  second = None
+  if args.build == "two":
+   first_path = self.base / "builds/one/manifest.json"
+   if first_path.is_symlink() or not first_path.is_file(): raise ValueError("regular completed first-build manifest required")
+   first_bytes = first_path.read_bytes()
+   second = second_admission(self.candidate, json.loads(first_bytes), hashlib.sha256(first_bytes).hexdigest(), policy, self.info)
+   self.record["resource_budget"]["second_admission"] = second
+   self.record["resource_budget"].update({filesystem+"_minimum_free": minimum for filesystem, minimum in second["minimum_free"].items()})
   self.eviction_plan = {}
   if args.resource_plan:
    plan = json.loads(args.resource_plan.read_text())
@@ -59,8 +71,10 @@ class Builder:
     raise ValueError("an explicitly reviewed source/driver-bound resource plan is required")
    for filesystem in ("docker", "temporary"):
     minimum, peak = plan.get(filesystem+"_minimum_free"), plan.get(filesystem+"_estimated_peak_additional")
-    if not isinstance(minimum,int) or not isinstance(peak,int) or peak <= 0 or minimum < peak+self.reserve:
+    if type(minimum) is not int or type(peak) is not int or peak <= 0 or minimum < peak+self.reserve:
      raise ValueError("resource estimate must preserve the unchanged 2 GiB reserve")
+    if second and (peak < second["estimated_peak_additional"][filesystem] or minimum < second["minimum_free"][filesystem]):
+     raise ValueError("explicit second plan cannot lower measured-policy admission floors")
    self.record["resource_budget"].update({key:plan[key] for key in ("docker_minimum_free","temporary_minimum_free")})
    self.record["resource_budget"]["reviewed_plan"] = {"sha256":sha256(args.resource_plan),"record":plan}
    for eviction in plan.get("compiler_cache_evictions", []):
@@ -69,8 +83,10 @@ class Builder:
     if role not in ("gosu", "rust") or role in self.eviction_plan or eviction.get("requested") != expected or not re.fullmatch(r"sha256:[0-9a-f]{64}", eviction.get("image_id", "")):
      raise ValueError("resource plan can whitelist only exact Go/gosu or Rust compiler image IDs")
     self.eviction_plan[role] = eviction
+  self.initial_free = self.measure_free()
+  self.record["resource_budget"]["measurements"] = {"schema_version":1,"complete":False,"initial_free":self.initial_free}
   atomic_json(self.manifest, self.record)
-  if shutil.disk_usage(self.docker_fs).free < self.record["resource_budget"]["docker_minimum_free"] or shutil.disk_usage(self.path).free < self.record["resource_budget"]["temporary_minimum_free"]:
+  if self.initial_free["docker_free"] < self.record["resource_budget"]["docker_minimum_free"] or self.initial_free["temporary_free"] < self.record["resource_budget"]["temporary_minimum_free"]:
    self.record.update(status="blocked",reason="resource admission failed")
    atomic_json(self.manifest,self.record)
    raise ValueError("canonical resource admission failed; E must review capacity")
@@ -80,18 +96,24 @@ class Builder:
 
  def docker(self, *args): return self.prefix + list(args)
 
+ def measure_free(self):
+  return {"docker_free":shutil.disk_usage(self.docker_fs).free,"temporary_free":shutil.disk_usage(self.path).free}
+
  def run(self, name, command, capture=False):
-  floors = {"docker_free": shutil.disk_usage(self.docker_fs).free, "temporary_free": shutil.disk_usage(self.path).free}
+  floors = self.measure_free()
   if min(floors.values()) < self.reserve: raise ValueError("resource reserve exhausted; further admission stopped")
   log = self.path / (name + ".log")
-  item = {"name": name, "command": command, "started_at": self.now()}
+  item = {"name": name, "command": command, "started_at": self.now(),"observed_initial_free":dict(floors)}
   self.record["commands"].append(item)
   atomic_json(self.manifest, self.record)
   stop = threading.Event()
+  sampling_errors = []
   def observe():
-   while not stop.wait(1):
-    floors["docker_free"] = min(floors["docker_free"], shutil.disk_usage(self.docker_fs).free)
-    floors["temporary_free"] = min(floors["temporary_free"], shutil.disk_usage(self.path).free)
+   try:
+    while not stop.wait(1):
+     for key,value in self.measure_free().items(): floors[key] = min(floors[key],value)
+   except OSError:
+    sampling_errors.append("filesystem sampling failed")
   observer = threading.Thread(target=observe, daemon=True)
   observer.start()
   try:
@@ -108,9 +130,13 @@ class Builder:
   finally:
    stop.set()
    observer.join()
-   item.update(ended_at=self.now(), observed_minimum_free=floors,
+   final_free = self.measure_free()
+   for key,value in final_free.items(): floors[key] = min(floors[key],value)
+   item.update(ended_at=self.now(), observed_minimum_free=floors,observed_final_free=final_free,
     log={"path": log.name, "sha256": sha256(log)} if log.exists() else None)
+   if sampling_errors: item["resource_sampling_failed"] = True
    atomic_json(self.manifest, self.record)
+  if sampling_errors: raise ValueError("resource sampling failed; no complete first-build measurement")
   if result.returncode:
    if name.endswith("-package"):
     self.record["packaging_reconciliation_required"] = True
@@ -204,7 +230,7 @@ class Builder:
   names = ("control","dev-issuer","model","executor","worker","evidence","qualification-edge","qualification-policy-edge","qualification-pki","qualification-issuer","qualification-receiver-readiness") if role == "gosu" else ("guard-kernel",)
   exported = {}
   paths = [self.bin/name for name in names]
-  if role == "gosu": paths += [self.package/"trust/ca-certificates.crt",self.package/"postgres/usr/local/bin/gosu",self.package/"postgres/usr/local/share/nex/gosu-build.txt"]
+  if role == "gosu": paths += [self.package/"trust/ca-certificates.crt",self.package/"postgres/usr/local/bin/gosu",self.package/"postgres/usr/local/share/nex/gosu-build.txt",self.package/"postgres/usr/local/share/nex/gosu-dependency-overlay.json"]
   for path in paths:
    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
     raise ValueError("missing or unsupported fresh compiler export: "+path.name)
@@ -279,6 +305,7 @@ class Builder:
    self.record.update(status="built",ended_at=self.now())
    shutil.rmtree(self.work)  # Only this newly created compilation scratch, not state.
    self.record["compilation_scratch_discarded"] = True
+   self.record["resource_budget"]["measurements"] = summarize_measurements(self.initial_free,self.record["commands"],self.measure_free())
    atomic_json(self.manifest,self.record)
    self.candidate["builds"][self.args.build] = {"path":str(self.manifest.relative_to(self.base)),"sha256":sha256(self.manifest)}
    atomic_json(self.args.candidate,self.candidate)
@@ -294,6 +321,7 @@ if __name__ == "__main__":
  parser.add_argument("--build",choices=("one","two"),required=True)
  parser.add_argument("--ca",type=Path,default=Path(os.environ.get("NEX_BUILD_CA","/etc/ssl/certs/ca-certificates.crt")))
  parser.add_argument("--resource-plan",type=Path)
+ parser.add_argument("--second-admission-policy",type=Path,default=Path(os.environ["NEX_CANONICAL_SECOND_ADMISSION_POLICY"]) if os.environ.get("NEX_CANONICAL_SECOND_ADMISSION_POLICY") else None)
  args = parser.parse_args()
  try:
   if not args.ca.is_file(): raise ValueError("verified build CA bundle required")

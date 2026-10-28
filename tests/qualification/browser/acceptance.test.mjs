@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {budget, exactHistoryPrefix, historyPage, pollingAcceptance, signedReadGrowthBound} from './acceptance.mjs';
+import {navigationFailure} from './tls-diagnostics.mjs';
 
 const event = id => ({event_id: id, integrity_verified: true, action: 'document.read', integrity_reference: {signature: 'signed-' + id}});
 
@@ -26,4 +27,10 @@ test('predeclared polling budget rejects overlap, healthy errors and excessive a
   for (const changes of [{attempts: 0}, {maxConcurrentJobResponses: 2}, {errors: 1}, {drainMs: 5001}, {signedReadGrowth: 7}, {signedReadGrowth: -1}]) {
     assert.throws(() => pollingAcceptance({...healthy, ...changes}));
   }
+});
+
+test('browser network diagnostics retain only typed outcomes', () => {
+  assert.deepEqual(navigationFailure(new Error('page.goto: net::ERR_CERT_AUTHORITY_INVALID at https://private.test/callback?code=private-token')), {outcome:'rejected',code:'ERR_CERT_AUTHORITY_INVALID'});
+  assert.deepEqual(navigationFailure({name:'TimeoutError',message:'private callback URL and cookies'}), {outcome:'rejected',code:'TIMEOUT'});
+  assert.deepEqual(navigationFailure(new Error('secret arbitrary browser error')), {outcome:'rejected',code:'UNCLASSIFIED_NAVIGATION_FAILURE'});
 });

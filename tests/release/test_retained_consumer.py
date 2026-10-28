@@ -32,7 +32,7 @@ class RetainedConsumerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.release = {'source': {'revision': 'a'*40}, 'checks': {name:'passed' for name in ('qualification','proof-parity','shutdown','packaged-shutdown','dom-browser','vulnerability-scans','reproducibility')}}
+        self.release = {'source': {'revision': 'a'*40}, 'checks': {name:'passed' for name in ('qualification','proof-parity','shutdown','packaged-shutdown','history-pagination','dom-browser','vulnerability-scans','reproducibility')}}
         self.set_subject(self.release)
         self.args = argparse.Namespace(run_id=17, artifact_id=29, source_revision='a'*40,
             subject_sha256=hashlib.sha256(self.subject).hexdigest(), output=self.root/'receipt', tool_root=self.root/'tools')
@@ -122,6 +122,13 @@ class RetainedConsumerTests(unittest.TestCase):
 
     def test_native_shutdown_cannot_substitute_missing_packaged_lifecycle(self):
         del self.release['checks']['packaged-shutdown']
+        self.set_subject(self.release)
+        self.assertEqual(self.verify_mock_origin(),1)
+        receipt=json.loads((self.args.output/'completed-run-receipt.json').read_text())
+        self.assertEqual(receipt['synthetic_qualification_gate'],'blocked')
+
+    def test_manual_history_evidence_cannot_substitute_missing_candidate_gate(self):
+        del self.release['checks']['history-pagination']
         self.set_subject(self.release)
         self.assertEqual(self.verify_mock_origin(),1)
         receipt=json.loads((self.args.output/'completed-run-receipt.json').read_text())
