@@ -42,9 +42,27 @@ trap retain_on_exit EXIT
 note() { python3 scripts/candidate-evidence.py note --candidate "$1" --name "$2" --status blocked --reason "$3" || true; }
 check() {
  local task_name="$1"; shift
- python3 scripts/candidate-evidence.py run --candidate "$NEX_QUAL_CANDIDATE_MANIFEST" --name "$task_name" --timeout 1800 -- "$@" || task_failed=1
+ python3 scripts/candidate-evidence.py run --candidate "$NEX_QUAL_CANDIDATE_MANIFEST" --build one --name "$task_name" --timeout 1800 -- "$@" || task_failed=1
 }
 mkdir -p "$task_base/evidence"
+# This pipeline qualifies the first build on its primary stack. Refuse stale
+# shell context before any compiler/container admission; candidate env supplies
+# exact image IDs and paths once builds and private IPAM have been recorded.
+task_pipeline_primary="$(python3 - "$NEX_QUAL_CANDIDATE_MANIFEST" <<'PY'
+import json,os,pathlib,sys
+path=pathlib.Path(sys.argv[1]).resolve()
+candidate=json.loads(path.read_text())
+expected={'NEX_QUAL_BUILD':'one','NEX_QUAL_RUN_ID':candidate['run_id'],'NEX_QUAL_PROJECT':candidate['primary_project'],
+          'NEX_QUAL_PRIMARY_PROJECT':candidate['primary_project'],'NEX_QUAL_RESTORE_PROJECT':candidate['restore_project'],
+          'NEX_QUAL_STATE_DIR':str(path.parent/'state'),'NEX_QUAL_PRIMARY_STATE_DIR':str(path.parent/'state'),
+          'NEX_QUAL_RESTORE_STATE_DIR':str(path.parent/'restore-state')}
+for key,value in expected.items():
+    if os.environ.get(key) not in (None,'',value):
+        raise SystemExit('Contradictory inherited candidate context: '+key)
+print(candidate['primary_project'])
+PY
+)"
+export NEX_QUAL_BUILD=one NEX_QUAL_PROJECT="$task_pipeline_primary"
 python3 - "$task_base/evidence/verification-tools.json" <<'PY'
 import hashlib,json,pathlib,shutil,subprocess,sys
 tools={}
@@ -78,6 +96,7 @@ if python3 scripts/canonical-build.py --candidate "$1" --build one "${task_plan_
  python3 scripts/ipam-preflight.py --block "$2" --output "$task_base/ipam-preflight.json"
  python3 scripts/candidate.py ipam --candidate "$1" --block "$2"
  source scripts/qualification-context.sh
+ python3 scripts/candidate-evidence.py admit-qualification --candidate "$1"
  if [[ -z "${NEX_BROWSER_FIXTURE_IMAGE:-}" ]]; then
   # Supplemental test tooling is separate from the six runtime images. Normal
   # signed APT/TLS and the exact frontend are retained; no browser TLS bypass.
@@ -88,6 +107,9 @@ if python3 scripts/canonical-build.py --candidate "$1" --build one "${task_plan_
    --iidfile "$task_base/browser-image-id" -f apps/workspace/tests/browser/Dockerfile .
   export NEX_BROWSER_FIXTURE_IMAGE="$(cat "$task_base/browser-image-id")"
  fi
+ # Supplemental browser tooling can consume capacity; admit runtime growth
+ # again against the actual remaining space immediately before stack startup.
+ python3 scripts/candidate-evidence.py admit-qualification --candidate "$1"
  if ./scripts/qualification.sh up; then
   # A fresh private fixture exports its temporary endpoints only into the child.
   check native-fixtures bash scripts/qualification-native-fixtures.sh --candidate "$1" -- bash scripts/candidate-native-suite.sh

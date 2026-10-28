@@ -4,8 +4,9 @@ These drivers execute rendered React interactions in Chromium through Playwright
 CDP at `http://127.0.0.1:9222`. They require the isolated browser fixture under
 `apps/workspace/tests/browser`, its pinned Playwright module, a fresh NSS store
 containing only the public qualification root CA, and the real synthetic stack.
-They do not disable certificate validation or install host trust. E alone builds
-and runs the container, creates shared PKI and coordinates DB mutations.
+They do not disable certificate validation or install host trust. Agent I, the
+runtime coordinator, alone builds and runs the container, creates shared PKI and
+coordinates DB mutations.
 
 The Node drivers accept `NEX_PLAYWRIGHT_MODULE` (default
 `/fixture/node_modules/playwright-core/index.mjs`). Example arguments:
@@ -35,6 +36,13 @@ The browser container sets both `NO_PROXY` and `no_proxy` to exactly
 Those fixtures are reachable only on their inspected private networks. External
 proxy settings remain inherited. This avoids sending private fixture navigation
 to an unavailable external proxy without disabling TLS or certificate validation.
+Chromium's NSS store and Playwright's Node request client both need the same
+public fixture root. The browser container sets
+`NODE_EXTRA_CA_CERTS=/trust/ca.crt` before the entry and driver processes start;
+the file is the same read-only public CA whose digest the engine record retains.
+The driver requires the Node request client to accept the intended root and reject
+the separate wrong-root server before authenticated actions. Certificate, hostname
+and expiry checks remain enabled for both clients.
 
 The signed-read-growth bound is declared before execution:
 
@@ -74,7 +82,7 @@ node tests/qualification/browser/acceptance.test.mjs
 ```
 
 `revocation-browser.mjs` uses one fresh Alice session throughout a positive review
-and two denials. E must coordinate the following protocol in a new, owned
+and two denials. The runtime coordinator must coordinate the following protocol in a new, owned
 synthetic qualification state; never mutate public/customer data:
 
 1. Wait for `permission-ready.json`. Capture job/provider/artifact counters and
@@ -92,7 +100,7 @@ synthetic qualification state; never mutate public/customer data:
 
 Each acknowledgement must arrive within 20 seconds. The driver requires more
 than 30 seconds remaining in the same session before each stage, preventing an
-expired credential or fresh login from masquerading as DB revocation. The E-side
+expired credential or fresh login from masquerading as DB revocation. The coordinator's
 counter comparisons are required additional evidence: browser status alone cannot
 prove no provider/artifact effect. These fixtures make no production, MFA, CUI,
 FedRAMP or CMMC claim.
@@ -122,3 +130,28 @@ records only typed listener/navigation outcomes for the wrong-root fixture,
 workspace and issuer. A direct diagnostic invocation must record the immutable
 browser image, application build identity and separately hashed probe/helper
 inputs. Its success is never a browser workflow or canonical candidate pass.
+
+The following standalone helpers are retained coordinator entry points. They use
+the same native browser fixture and public CA trust; each invocation must retain
+its application/image identity and separate helper input hashes. None contributes
+a candidate qualification pass:
+
+- `document-scope-probe.mjs` signs in as synthetic Alice, records document response
+  status and bounded control/option counts and booleans, then signs out. It does
+  not create jobs or request approval or export.
+- `history-probe.mjs` checks Node and Playwright public-status TLS and traverses
+  an existing synthetic job's signed history as Alice. Its job reference comes
+  from the private `/input/job-reference` file, optionally selected with
+  `--job-file`. These authorized reads append ordinary signed read-audit events;
+  no job, approval or export is created. Results omit the job reference and bodies.
+- `complete-existing-job.mjs` is an explicitly authorized settlement action, not
+  a read-only probe. For one coordinator-selected existing synthetic request from
+  that private job-reference file, Carol inspects the exact pending destination,
+  requester, document, synthetic preview and digest, then approves through the
+  rendered UI. Alice observes the existing export and verified paginated history.
+  The helper never resets SQL state, invents completion, or creates a replacement
+  job/export. It must run only with authorization for those real actor actions.
+
+All three accept `--base-url` and `--output`, and sign out after their work.
+Diagnostic completion and existing-request settlement remain separate from full
+DOM, operator and revocation acceptance results.

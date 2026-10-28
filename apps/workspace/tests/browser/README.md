@@ -29,6 +29,11 @@ are fixed. The native OS sandbox is enabled by default. Only after E records an
 actual kernel/user-namespace failure and the lead approves the exception may E
 set `NEX_BROWSER_FIXTURE_NO_SANDBOX=1` for this isolated test container. That
 exception is recorded in evidence and never disables certificate verification.
+The coordinator also sets `NODE_EXTRA_CA_CERTS=/trust/ca.crt` at container creation
+so the Node/Playwright request client uses that same public root for intercepted
+requests. Installing Chrome NSS trust alone does not establish Node TLS trust.
+The browser driver checks a trusted positive and a foreign-root negative in both
+paths, without `ignoreHTTPSErrors` or disabling certificate verification.
 
 Build and runtime evidence record browser/package versions and actual executable
 hashes. Chrome logs, session cookies and NSS/profile contents stay on container

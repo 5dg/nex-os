@@ -82,7 +82,10 @@ def selected(job, *, event='push', repository='5dg/nex-os', ref='refs/heads/main
         'inputs.canonical_candidate': manual,
         'needs.canonical-candidate.outputs.subject_sha256': subject,
     }
-    expression = condition(job)
+    return evaluate_condition(condition(job), values)
+
+
+def evaluate_condition(expression, values, *, preceding_steps_succeeded=True):
     # Evaluate the actual YAML expression. Only the authored boolean subset is
     # accepted; new operators/functions require an explicit test-model change.
     for index, (path, value) in enumerate(values.items()):
@@ -97,6 +100,7 @@ def selected(job, *, event='push', repository='5dg/nex-os', ref='refs/heads/main
     environment = {'value_' + str(index): value for index, value in enumerate(values.values())}
     # GitHub contains is case-insensitive and treats a missing string as empty.
     environment.update(contains=lambda text, needle: needle.casefold() in (text or '').casefold(), always=lambda: True,
+                       success=lambda: preceding_steps_succeeded,
                        github_equal=github_equal, github_not_equal=lambda left, right: not github_equal(left, right))
     return bool(eval(compile(tree, '<authored workflow condition>', 'eval'), {'__builtins__': {}}, environment))
 
@@ -158,6 +162,79 @@ class CandidateTriggerTests(unittest.TestCase):
         for field, value in (('event', 'pull_request'), ('head_branch', 'feature'), ('head_sha', 'c' * 40)):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 consumer.validate_metadata({**run, field: value}, artifact, args)
+
+
+class ExecutionMetadataRetentionTests(unittest.TestCase):
+    def retention(self):
+        return job_block('canonical-candidate').split('      - name: Retain non-secret candidate execution metadata\n', 1)[1]
+
+    def test_failure_metadata_requires_exact_trusted_admission_but_not_subject_success(self):
+        expression = re.search(r'^        if: (.+)$', self.retention(), re.MULTILINE).group(1)
+        for outcome in ('success', 'failure', 'skipped', 'cancelled', None):
+            for succeeded in (False, True):
+                with self.subTest(outcome=outcome, succeeded=succeeded):
+                    self.assertEqual(evaluate_condition(expression, {'steps.trusted_main.outcome': outcome},
+                        preceding_steps_succeeded=succeeded), outcome == 'success')
+        self.assertFalse(selected('canonical-candidate', event='pull_request'))
+        self.assertFalse(selected('canonical-candidate', message='Routine checkpoint'))
+        self.assertFalse(selected('canonical-candidate', ref='refs/heads/feature'))
+
+    def test_exact_metadata_allowlist_excludes_private_and_large_payloads(self):
+        retained = self.retention()
+        paths = retained.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
+        actual = [line.strip() for line in paths.splitlines() if line.strip()]
+        relative = ['candidate.json', 'release-manifest.json', 'pipeline.log', '*admission*.json',
+                    'evidence/*admission*.json', 'builds/*/manifest.json']
+        self.assertEqual(actual, ['/tmp/nex-ci-candidate/' + path for path in relative])
+        self.assertIn('          name: alpha04-candidate-execution-metadata\n', retained)
+        self.assertIn('          if-no-files-found: error\n', retained)
+        self.assertNotIn('**', paths)
+        self.assertNotIn('include-hidden-files:', retained)
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            expected = {'candidate.json', 'release-manifest.json', 'pipeline.log', 'bundle-admission-1.json',
+                        'evidence/qualification-admission-1.json', 'builds/one/manifest.json', 'builds/two/manifest.json'}
+            excluded = {'private/tls.key', 'backups/database.sql', 'source/go.mod', 'builds/one/bin/control',
+                        'evidence/private/secret-admission.json', 'candidate-bundle.tar.gz'}
+            for name in expected | excluded:
+                path = base / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('fixture')
+            matched = {str(path.relative_to(base)) for pattern in relative for path in base.glob(pattern)}
+            self.assertEqual(matched, expected)
+
+
+class OriginBundleRetentionTests(unittest.TestCase):
+    def retention(self):
+        return job_block('candidate-origin').split('      - name: Retain the separate signed origin bundle\n', 1)[1]
+
+    def test_only_successful_attestation_with_a_bundle_can_be_retained(self):
+        expression = re.search(r'^        if: (.+)$', self.retention(), re.MULTILINE).group(1)
+        for succeeded in (False, True):
+            for outcome in ('success', 'failure', 'cancelled', 'skipped', None):
+                for bundle in ('/tmp/generated-attestation.json', '', None):
+                    with self.subTest(succeeded=succeeded, outcome=outcome, bundle=bundle):
+                        actual = evaluate_condition(expression, {'steps.attest.outcome': outcome,
+                            'steps.attest.outputs.bundle-path': bundle}, preceding_steps_succeeded=succeeded)
+                        self.assertEqual(actual, succeeded and outcome == 'success' and bool(bundle))
+
+    def test_origin_retains_exact_action_output_separately_from_unchanged_subject(self):
+        block = job_block('candidate-origin')
+        attest = block.split('      - name: Attest build and evidence origin; this is not release approval\n', 1)[1].split('\n      - ', 1)[0]
+        self.assertIn('        id: attest\n', attest)
+        self.assertIn('actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f', attest)
+        self.assertIn('          subject-path: /tmp/retained-candidate/candidate-bundle.tar.gz', attest)
+        retained = self.retention()
+        self.assertIn('actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02', retained)
+        self.assertIn('          name: alpha04-candidate-origin\n', retained)
+        self.assertIn('          path: ${{ steps.attest.outputs.bundle-path }}\n', retained)
+        self.assertIn('          if-no-files-found: error\n', retained)
+        self.assertIn('          retention-days: 30\n', retained)
+        self.assertNotIn('run:', retained, 'retaining origin must not mutate the attested subject')
+        self.assertNotIn('overwrite:', retained)
+        self.assertIn('          name: alpha04-candidate-subject\n', job_block('canonical-candidate'))
+        self.assertLess(block.index('Bind the downloaded subject'), block.index('        id: attest\n'))
+        self.assertLess(block.index('        id: attest\n'), block.index('Retain the separate signed origin bundle'))
 
 
 class WorkflowAdmissionPolicyTests(unittest.TestCase):

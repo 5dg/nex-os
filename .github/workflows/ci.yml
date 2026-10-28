@@ -187,6 +187,20 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+      - name: Retain non-secret candidate execution metadata
+        if: always() && steps.trusted_main.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: alpha04-candidate-execution-metadata
+          path: |
+            /tmp/nex-ci-candidate/candidate.json
+            /tmp/nex-ci-candidate/release-manifest.json
+            /tmp/nex-ci-candidate/pipeline.log
+            /tmp/nex-ci-candidate/*admission*.json
+            /tmp/nex-ci-candidate/evidence/*admission*.json
+            /tmp/nex-ci-candidate/builds/*/manifest.json
+          if-no-files-found: error
+          retention-days: 30
 
   candidate-origin:
     needs: canonical-candidate
@@ -220,6 +234,15 @@ jobs:
           if actual != os.environ['EXPECTED_SUBJECT_SHA256']: raise SystemExit('Downloaded candidate subject differs from producer')
           PY
       - name: Attest build and evidence origin; this is not release approval
+        id: attest
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-path: /tmp/retained-candidate/candidate-bundle.tar.gz
+      - name: Retain the separate signed origin bundle
+        if: success() && steps.attest.outcome == 'success' && steps.attest.outputs.bundle-path != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: alpha04-candidate-origin
+          path: ${{ steps.attest.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 30

@@ -2,6 +2,7 @@
 """Execute checks and retain a non-secret, source/image-bound release record."""
 import argparse
 import datetime
+import io
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ sys.dont_write_bytecode = True
 from candidate import load
 from image_record import payload
 from source_record import atomic_json, sha256
+from phase_admission import admit, gzip_bound, QUALIFICATION_FORECAST, RESERVE
 
 
 def now():
@@ -95,11 +97,15 @@ def result(args):
         raise ValueError("bounded check name required")
     if args.action == "run" and args.name in ("hosted-ci", "durable-retention"):
         raise ValueError("remote CI/retention cannot be inferred from a local command's exit code")
-    records = candidate.setdefault("results", [])
+    records = candidate.get("results", [])
+    if not isinstance(records, list):
+        raise ValueError("candidate results must be an append-only list")
+    binding = {key: value for key, value in candidate.items() if key != "results"}
     stamp = str(time.time_ns())
     path = base / "evidence" / (args.name + "-" + stamp + ".log")
     path.parent.mkdir(mode=0o700, exist_ok=True)
-    check = {"name": args.name, "build": args.build, "source_revision": candidate["source"]["revision"],
+    check = {"name": args.name, "build": args.build, "run_id": candidate["run_id"],
+             "build_manifest": candidate.get("builds", {}).get(args.build), "source_revision": candidate["source"]["revision"],
              "source_input_sha256": candidate["source"]["inputs"]["sha256"],
              "tested_image_ids": {name: image["id"] for name, image in build["images"].items()} if build else {}, "started_at": now()}
     if args.action == "note":
@@ -123,8 +129,32 @@ def result(args):
         except subprocess.TimeoutExpired:
             check.update(status="failed", reason="check timeout", exit_code=None, ended_at=now(),
                          output={"path": str(path.relative_to(base)), "sha256": sha256(path)})
-    records.append(check)
-    atomic_json(args.candidate, candidate)
+        except OSError as error:
+            check.update(status="failed", reason="check could not execute: " + str(error), exit_code=None, ended_at=now())
+            if path.exists():
+                check["output"] = {"path": str(path.relative_to(base)), "sha256": sha256(path)}
+    # Nested gate CLIs append their own results while this command runs. Never
+    # replace their records with the snapshot loaded before subprocess.run().
+    # Only appends are permitted; source/build/run and prior checks stay bound.
+    try:
+        latest, latest_base, _ = load(args.candidate)
+        if latest_base != base or {key: value for key, value in latest.items() if key != "results"} != binding:
+            raise ValueError("immutable candidate binding changed during check")
+        latest_records = latest.get("results", [])
+        if not isinstance(latest_records, list) or latest_records[:len(records)] != records:
+            raise ValueError("prior candidate results changed during check")
+        if build is not None and build_record(latest, latest_base, args.build) != build:
+            raise ValueError("tested build changed during check")
+    except (ValueError, OSError, json.JSONDecodeError) as error:
+        check.update(status="failed", reason="post-check candidate validation failed: " + str(error), ended_at=now())
+        # Preserve attempted work even when the candidate can no longer safely
+        # receive a result. Do not repair or overwrite the substituted manifest.
+        atomic_json(path.with_suffix(".json"), check)
+        print(json.dumps(check, sort_keys=True))
+        return 1
+    atomic_json(path.with_suffix(".json"), check)
+    latest.setdefault("results", []).append(check)
+    atomic_json(args.candidate, latest)
     print(json.dumps(check, sort_keys=True))
     return 0 if check["status"] == "passed" else 1
 
@@ -171,25 +201,89 @@ def seal(args):
 
 
 def bundle(args):
-    _, base, _ = load(args.candidate)
-    record = json.loads((base / "release-manifest.json").read_text())
-    if args.output.exists():
+    candidate, base, source = load(args.candidate)
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate sealed field or artifact")
+            value[key] = item
+        return value
+    record = json.loads((base / "release-manifest.json").read_text(), object_pairs_hook=unique_object)
+    if record.get("source") != candidate["source"] or record.get("run_id") != candidate["run_id"]:
+        raise ValueError("sealed candidate identity mismatch")
+    if args.output.exists() or args.output.is_symlink():
         raise ValueError("retained bundle already exists")
-    with tarfile.open(args.output, "w:gz") as archive:
-        archive.add(base / "release-manifest.json", arcname="release-manifest.json", recursive=False)
-        for relative, digest in sorted(record["artifacts"].items()):
+    if args.output.resolve().is_relative_to(source):
+        raise ValueError("bundle output must be outside captured source")
+    # Construct exactly the members we will write, including PAX headers and
+    # logical sizes of sparse files. No bundle is opened until capacity passes.
+    members = []
+    names = set()
+    with tarfile.TarFile(fileobj=io.BytesIO(), mode="w", format=tarfile.PAX_FORMAT) as metadata:
+        for relative, digest in [("release-manifest.json", sha256(base / "release-manifest.json")), *sorted(record["artifacts"].items())]:
+            if relative in names or Path(relative).is_absolute() or any(part in (".", "..") for part in relative.split("/")) or Path(relative).as_posix() != relative:
+                raise ValueError("duplicate or noncanonical sealed artifact path")
+            names.add(relative)
             path = base / relative
-            if path.is_symlink() or not path.resolve().is_relative_to(base) or sha256(path) != digest:
+            if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(base) or sha256(path) != digest:
                 raise ValueError("retention artifact is substituted or outside candidate")
-            archive.add(path, arcname=relative, recursive=False)
+            member = metadata.gettarinfo(str(path), arcname=relative)
+            if not member.isfile():
+                raise ValueError("retention requires regular logical file members")
+            members.append((path, member, digest))
+    raw_bytes = sum(len(member.tobuf(format=tarfile.PAX_FORMAT)) + ((member.size + 511) // 512) * 512
+                    for _, member, _ in members) + 1024
+    tar_bytes = ((raw_bytes + tarfile.RECORDSIZE - 1) // tarfile.RECORDSIZE) * tarfile.RECORDSIZE
+    bound = gzip_bound(tar_bytes)
+    admit(candidate, "bundle", {"output": (args.output.parent, bound), "candidate": (base, 0),
+          "host": (Path("/"), 0), "temporary": (Path("/tmp"), 0)},
+          {"release_manifest_sha256": sha256(base / "release-manifest.json"),
+           "member_count": len(members), "logical_file_bytes": sum(member.size for _, member, _ in members),
+           "tar_bytes_including_headers_padding": tar_bytes, "gzip_upper_bound_bytes": bound,
+           "bound_method": "zlib compressBound(tar bytes) + 1 MiB wrapper/metadata allowance"},
+          base / ("bundle-admission-" + str(time.time_ns()) + ".json"))
+    with tarfile.open(args.output, "x:gz", format=tarfile.PAX_FORMAT) as archive:
+        for path, member, digest in members:
+            if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(base) or sha256(path) != digest or path.stat().st_size != member.size:
+                raise ValueError("retention artifact changed after resource admission")
+            with path.open("rb") as stream:
+                archive.addfile(member, stream)
     print(json.dumps({"bundle": str(args.output), "sha256": sha256(args.output)}))
+    return 0
+
+
+def admit_qualification(args):
+    candidate, base, _ = load(args.candidate)
+    build_record(candidate, base, "one")
+    record_path = base / "evidence" / ("qualification-admission-" + str(time.time_ns()) + ".json")
+    environment = {key: value for key, value in os.environ.items() if key not in
+                   ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_TLS", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH")}
+    try:
+        raw = subprocess.check_output(["docker", "--host=unix:///var/run/docker.sock", "info", "--format",
+            '{"driver":{{json .Driver}},"data_root":{{json .DockerRootDir}}}'], env=environment, text=True, timeout=30)
+        docker = json.loads(raw)
+        if not isinstance(docker, dict) or not isinstance(docker.get("data_root"), str) or not Path(docker["data_root"]).is_absolute():
+            raise ValueError("absolute actual Docker data filesystem required")
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        atomic_json(record_path, {"schema_version": 1, "phase": "qualification", "status": "blocked",
+                    "run_id": candidate["run_id"], "source_input_sha256": candidate["source"]["inputs"]["sha256"],
+                    "source_revision": candidate["source"]["revision"], "builds": candidate.get("builds", {}),
+                    "reserve_bytes": RESERVE, "forecast_additional_bytes": QUALIFICATION_FORECAST,
+                    "measured_at": now(), "reason": "Docker filesystem identity unavailable: " + str(error)})
+        raise ValueError("Docker filesystem identity unavailable; qualification admission blocked") from error
+    result = admit(candidate, "qualification", {"output": (base, QUALIFICATION_FORECAST),
+        "docker": (Path(docker["data_root"]), QUALIFICATION_FORECAST), "host": (Path("/"), 0), "temporary": (Path("/tmp"), 0)},
+        {"docker": docker, "forecast_basis": "6 GiB combined qualification growth, including measured runtime layers"},
+        record_path)
+    print(json.dumps(result, sort_keys=True))
     return 0
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
-    for name in ("compare", "seal", "bundle", "run", "note"):
+    for name in ("compare", "seal", "bundle", "run", "note", "admit-qualification"):
         command = commands.add_parser(name)
         command.add_argument("--candidate", type=Path, required=True)
         if name in ("run", "note"):
@@ -206,7 +300,7 @@ if __name__ == "__main__":
             command.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        action = compare if args.action == "compare" else seal if args.action == "seal" else bundle if args.action == "bundle" else result
+        action = {"compare": compare, "seal": seal, "bundle": bundle, "admit-qualification": admit_qualification}.get(args.action, result)
         raise SystemExit(action(args))
     except (ValueError, OSError, json.JSONDecodeError, subprocess.CalledProcessError) as error:
         parser.exit(1, str(error) + "\n")

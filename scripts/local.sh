@@ -19,6 +19,9 @@ case "${1:-}" in
       # Keep the normal BuildKit secret API. New Compose versions may delegate
       # to Bake, whose extra host-file entitlement rejects this public CA input.
       COMPOSE_BAKE=false compose build
+      # OPA is external to our builds. Fetch its Compose-pinned digest before
+      # starting services; restored stacks use start without a registry fetch.
+      compose pull opa
     fi
     compose up -d --wait postgres
     compose run --rm migrate

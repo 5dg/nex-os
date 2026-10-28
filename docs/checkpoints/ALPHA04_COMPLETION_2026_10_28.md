@@ -186,3 +186,122 @@ release still contains the affected network dependency, so no verified fixed
 vendor image was substituted. Final candidate image scans, complete ordered
 qualification, two-build measurements and hosted artifact verification remain
 required. Release eligibility remains blocked.
+
+## Browser acceptance and final build-boundary corrections
+
+The separately hashed source2 diagnostic drivers now pass the complete rendered
+workflow and operator regressions against the preserved diagnostic images. Alice
+signed in, reviewed the admitted document, requested its exact export, signed
+out, obtained independent Carol approval, and resumed the recorded result.
+Chromium and the Node request client both accepted the intended public fixture
+root and rejected the foreign root. Node receives that same read-only public CA
+through `NODE_EXTRA_CA_CERTS`; certificate validation remains enabled.
+
+The healthy 2.5-second delayed-response test observed at most one automatic job
+read in flight, zero errors, a 1,591 ms drain within the unchanged five-second
+budget, and three new signed reads within the predeclared bound of five. The
+exact ordered signed-history prefix was preserved. Operator assertions passed
+terminal polling, history failure/recovery, job switching with zero obsolete
+writes, and logout with an in-flight response. Genuine authorized reads produced
+a 136,699-byte signed snapshot: 151 rendered events across five bounded pages,
+with complete stable traversal and exact prefix/order checks. Evidence is in
+`direct-browser-source2-attempt3/{dom,operator}/browser-results.json` under the
+local evidence root. This source2 diagnostic predates the latest dependency and
+build changes; it cannot qualify final candidate images.
+
+The final build-boundary correction compares every captured workspace file's
+bytes, mode and regular-file identity against both the original capture and the
+actual staged tree, before and after `npm ci`. Only the exact generated root
+`node_modules` is permitted after installation. The canonical copy no longer
+silently excludes nested authored names. Thirteen actual-verifier regressions
+cover mutations, missing/injected files, symlinks, modes and capture binding.
+
+Hosted run `40774852003` on `018e94e` passed static checks, built the application
+images, migrated and seeded, then failed because the fresh runner had not fetched
+the pinned external OPA image before offline startup. The supported development
+launcher now explicitly pulls only that existing pinned OPA reference after its
+build. Four actual-launcher tests retain pull-failure refusal and offline restart
+behavior. A successful later hosted run is still required.
+
+Same-session browser revocation subsequently passed both committed authority
+changes. Permission and delegation requests returned typed denials while the
+original session remained unexpired. Coordinator acknowledgements arrived in
+543 and 686 ms, within the unchanged 20-second bound. Job/operation and receipt
+snapshots were byte-equal across each denial, the original authority hash was
+restored exactly, and all twelve application image/container identities remained
+unchanged. The independently reviewed evidence is in
+`direct-browser-source2-attempt4`. The prior trust-maintenance rotation preserved
+the signing key, fourteen receipt bytes, existing proof prefixes and effect
+counts; it was operational maintenance, not final rotation acceptance.
+
+All 111 offline release-tooling tests passed after these browser and build
+corrections. Final fresh canonical builds, complete ordered current-image
+verification, reproducibility, refreshed image scans and hosted
+provenance/retention remain separate required gates. No final candidate or release
+completion is inferred from these diagnostic passes.
+
+## Independent gate-recording and retention review
+
+Pre-capture review found that an outer recorded command could overwrite child
+gate records with its earlier manifest snapshot. The recorder now reloads after
+execution, preserves the existing result prefix and newly appended child
+results, and revalidates source/archive/run/build bindings and tested binary
+bytes. Substitution fails without overwriting the changed manifest; a separate
+attempt record and log remain. Actual nested CLI regressions cover native and
+DOM children, parent/child failures, erased results and source/build substitution.
+
+The canonical pipeline now rejects contradictory inherited build, project, run
+or state identities before runtime admission, then explicitly selects the first
+build and primary stack. Actual-shell tests verify rejection and failed-attempt
+retention. Independent service review accepted both corrections and confirmed
+native fixtures, packaged lifecycle and ordered DOM/revocation/rotation/restore
+gate wiring. All **127** offline release-tooling tests passed after the final
+corrections; the full log is `release-tests-nested-gate-fix.log`.
+
+Connected GitHub artifact retrieval independently downloaded the ordinary
+`018e94e` foundation artifact: 135,530 bytes, SHA-256
+`b0f0ab817bbe2b7194301fe774411445056b245c223289c22043859eb6abb01f`
+matched both GitHub metadata and the upload log. Its source/SBOM identity matched
+that revision and its incomplete security gates remained blocked. It was not a
+candidate artifact. The origin job now also retains its successful pinned
+attestation action's signed bundle as a separate artifact, preserving the exact
+attested subject. This enables independently retrieved bundle verification with
+the existing pinned cryptographic verifier; it does not replace completed-run,
+source, signature, retained-consumer or security checks.
+
+Original polling/history defects were identified from source. A subsequent
+network-isolated Chromium probe executed the unchanged `640ce8f` React component
+with explicit fake API responses: a 2.5-second delay produced three automatic
+reads and maximum concurrency two in the fixed 6.5-second window. The original
+source/compiler/bundle hashes and observations are retained under
+`original-ui-reproduction-runtime-2`. This reproduces the original UI overlap;
+the same attempt failed before stale-write/history observations and did not run
+the original BFF byte cap. It is a UI baseline measurement, not service, TLS,
+authorization or signature qualification. Final canonical execution and hosted
+qualification remain pending.
+
+## Final phase-capacity admission
+
+Measured diagnostic runtime layers require a separate post-build forecast.
+Qualification now checks a reviewed 6 GiB addition plus the unchanged 2 GiB
+reserve on actual Docker/output filesystems, grouping shared devices, both
+before supplemental browser packaging and immediately before stack startup.
+Host and temporary filesystems retain 2 GiB independently. The 6 GiB value is a
+conservative reviewed forecast, not a measured final-run guarantee.
+
+Every bundle path, including failed-pipeline retention, verifies the exact sealed
+file list and computes a conservative archive bound from actual tar/PAX headers,
+logical sparse-file sizes, padding and gzip expansion. A capacity denial records
+source/run/build-bound observations without opening an archive or deleting prior
+evidence. Output symlinks are rejected and exclusive creation protects a target
+introduced after admission. Independent review accepted boundary, incompressible,
+sparse, mutation and failure-retention regressions.
+
+Hosted execution metadata now has a separate explicit non-secret allowlist
+artifact, so admission decisions and incomplete manifests remain retrievable even
+when capacity blocks the full bundle. Private state, keys, backups and compilation
+trees are outside that allowlist. These metadata bytes are separate from the
+attested subject and establish neither signature verification nor release
+approval. All **146** integrated offline release-tooling tests passed after this
+final batch; `release-tests-final-bundle-output.log` retains the full output.
+Final canonical execution remains required.

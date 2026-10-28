@@ -36,7 +36,9 @@ node)
  export NPM_CONFIG_CACHE=/work/npm-cache XDG_CACHE_HOME=/work/node-cache
  mkdir -p "$NPM_CONFIG_CACHE" "$XDG_CACHE_HOME"
  cd /work/workspace
+ node /src/scripts/verify-workspace-staging.mjs /src /work/workspace pristine /out/workspace-staging-pristine.json
  npm ci --strict-ssl=true
+ node /src/scripts/verify-workspace-staging.mjs /src /work/workspace installed /out/workspace-staging-installed.json
  npm run build
  mkdir -p /package/workspace
  cp -a .next/standalone /package/workspace/standalone

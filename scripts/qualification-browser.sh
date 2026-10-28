@@ -181,6 +181,7 @@ start_browser() {
   -e APP_ENV=development -e NEX_PROFILE=synthetic-qualification \
   -e NO_PROXY=workspace.nex.test,issuer.nex.test,untrusted.nex.test,localhost,127.0.0.1,::1 \
   -e no_proxy=workspace.nex.test,issuer.nex.test,untrusted.nex.test,localhost,127.0.0.1,::1 \
+  -e NODE_EXTRA_CA_CERTS=/trust/ca.crt \
   -e "NEX_BROWSER_FIXTURE_NO_SANDBOX=${NEX_BROWSER_FIXTURE_NO_SANDBOX:-0}" \
   "$NEX_BROWSER_FIXTURE_IMAGE" "$@" > /dev/null
  task_browser_created=1

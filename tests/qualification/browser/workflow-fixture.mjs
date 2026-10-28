@@ -15,12 +15,22 @@ export async function workflowCall(page, input) {
   }, input);
 }
 
-export async function snapshot(page, id) {
+export async function snapshot(page, id, diagnostics = {}) {
   const events = [], cursors = new Set();
   let cursor = '', pages = 0;
   do {
+    diagnostics.step = 'request';
+    diagnostics.pagesCompleted = pages;
     assert(pages < budget.maxHistoryPages, 'history traversal did not terminate');
     const response = await workflowCall(page, {operation: 'event_page', id, ...(cursor ? {cursor} : {})});
+    diagnostics.lastStatus = response.status;
+    diagnostics.lastPageBytes = response.bytes;
+    const codes = new Set(['INVALID_REQUEST','DEPENDENCY_UNAVAILABLE','DENIED_BY_POLICY','UNAUTHENTICATED','SESSION_OR_CSRF_DENIED','INVALID_HISTORY_CURSOR','HISTORY_PAGINATION_REQUIRED','HISTORY_EVENT_TOO_LARGE']);
+    if (response.value?.code) diagnostics.lastCode = codes.has(response.value.code) ? response.value.code : 'OTHER_APPLICATION_ERROR';
+    diagnostics.step = 'page acceptance';
+    diagnostics.lastEventCount = Array.isArray(response.value?.events) ? response.value.events.length : null;
+    diagnostics.lastUnverifiedEvents = Array.isArray(response.value?.events) ? response.value.events.filter(event => event.integrity_verified !== true).length : null;
+    diagnostics.cursorIsString = typeof response.value?.next_cursor === 'string';
     assert.equal(response.status, 200, 'history page request failed');
     const value = historyPage(response.value, response.bytes);
     events.push(...value.events);
@@ -31,8 +41,14 @@ export async function snapshot(page, id) {
     }
     pages++;
   } while (cursor);
+  diagnostics.step = 'combined history acceptance';
+  diagnostics.pagesCompleted = pages;
+  diagnostics.events = events.length;
+  diagnostics.duplicateEvents = events.length - new Set(events.map(event => event.event_id)).size;
   verifiedEvents(events);
-  return {events, pages, bytes: Buffer.byteLength(JSON.stringify(events))};
+  diagnostics.step = 'complete';
+  diagnostics.bytes = Buffer.byteLength(JSON.stringify(events));
+  return {events, pages, bytes: diagnostics.bytes};
 }
 
 export function requestInput(request) {

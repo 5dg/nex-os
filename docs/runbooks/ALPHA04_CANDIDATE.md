@@ -98,10 +98,48 @@ unmarked head commit.
 This opt-in push path provides the same captured-source pipeline when an Actions
 dispatch client is unavailable. It does not change network policy, token
 permissions, source checks or release gates. Its producer retains the non-secret bundle
-for 30 days even when the release gate is blocked. A separate scoped job downloads
+for 30 days even when the release gate is blocked, provided storage admission
+permits bundle creation. The separate `alpha04-candidate-execution-metadata`
+artifact retains only `candidate.json`, `release-manifest.json`, `pipeline.log`,
+top-level and `evidence/` admission JSON records, and `builds/*/manifest.json`.
+It runs after successful trusted-main admission even if a later step fails, and
+also retains admission records when a valid subject exists. It excludes private
+state, keys, backups, binaries and source worktrees. These diagnostic records are
+outside the signed subject; they establish neither attestation nor release
+approval. If bundle creation is refused, they preserve the reason without
+inventing a subject or weakening storage admission.
+
+A separate scoped job downloads
 the retained subject, compares its SHA256 to the producer output, and uses the
 commit-pinned official provenance action. An attestation proves origin, not
 qualification, compliance or release approval.
+
+After successful attestation, the origin job retains the official action's signed
+bundle as the separate `alpha04-candidate-origin` artifact for 30 days. The
+`alpha04-candidate-subject` archive remains unchanged. A failed attestation or a
+missing bundle cannot publish the origin artifact.
+
+When connected GitHub artifact tools are available, list artifacts for the exact
+completed run and download both named artifacts. Retain each ZIP and compare its
+SHA256 with GitHub's artifact metadata before bounded inspection. Check their run,
+repository, main branch and source revision bindings. The subject ZIP contains
+`candidate-bundle.tar.gz`; its SHA256 must match the producer output. The separate
+origin ZIP contains the official action's signed bundle. Do not treat the ZIP
+checksum, artifact name or an unsigned manifest as signature verification.
+
+With those verified local files, the existing verifier accepts the signed bundle
+without fetching the attestation through the GitHub API:
+
+```bash
+python3 -B scripts/verify-provenance.py --subject /absolute/candidate-bundle.tar.gz --subject-sha256 BUNDLE_SHA256 --source-revision FULL_COMMIT --attestation-bundle /absolute/signed-origin-bundle.json --output /tmp/nex-alpha04-origin-NEW.json
+```
+
+Install the checksum-pinned verifier first using `scripts/install-gh-attestation.sh`.
+The same repository, workflow, source, issuer and hosted-runner constraints apply;
+required trusted-root material must also be available. A missing dependency or
+failed cryptographic check remains blocked. This separate origin receipt does not
+replace completed-run validation, required local gates or the full retained
+candidate consumer below, which still requires its own supported API access.
 
 After that hosted run has actually completed, independently retrieve the exact
 artifact and verify its origin. Use its actual run/artifact identifiers, expected

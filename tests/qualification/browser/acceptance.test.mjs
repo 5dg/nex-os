@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {budget, exactHistoryPrefix, historyPage, pollingAcceptance, signedReadGrowthBound} from './acceptance.mjs';
-import {navigationFailure} from './tls-diagnostics.mjs';
+import {navigationFailure, requestTLSFailure} from './tls-diagnostics.mjs';
 
 const event = id => ({event_id: id, integrity_verified: true, action: 'document.read', integrity_reference: {signature: 'signed-' + id}});
 
@@ -33,4 +33,7 @@ test('browser network diagnostics retain only typed outcomes', () => {
   assert.deepEqual(navigationFailure(new Error('page.goto: net::ERR_CERT_AUTHORITY_INVALID at https://private.test/callback?code=private-token')), {outcome:'rejected',code:'ERR_CERT_AUTHORITY_INVALID'});
   assert.deepEqual(navigationFailure({name:'TimeoutError',message:'private callback URL and cookies'}), {outcome:'rejected',code:'TIMEOUT'});
   assert.deepEqual(navigationFailure(new Error('secret arbitrary browser error')), {outcome:'rejected',code:'UNCLASSIFIED_NAVIGATION_FAILURE'});
+  assert.equal(requestTLSFailure(new Error('apiRequestContext.get https://private.test?code=private-token: unable to verify the first certificate')), 'UNABLE_TO_VERIFY_LEAF_SIGNATURE');
+  assert.equal(requestTLSFailure({code:'CERT_HAS_EXPIRED',message:'private URL'}), 'CERT_HAS_EXPIRED');
+  assert.equal(requestTLSFailure(new Error('connection timeout with private URL')), 'UNCLASSIFIED_REQUEST_FAILURE');
 });

@@ -8,6 +8,19 @@ export function navigationFailure(error) {
   return {outcome: 'rejected', code: code || (error?.name === 'TimeoutError' ? 'TIMEOUT' : 'UNCLASSIFIED_NAVIGATION_FAILURE')};
 }
 
+export function requestTLSFailure(error) {
+  const known = ['UNABLE_TO_VERIFY_LEAF_SIGNATURE','SELF_SIGNED_CERT_IN_CHAIN','DEPTH_ZERO_SELF_SIGNED_CERT','UNABLE_TO_GET_ISSUER_CERT_LOCALLY','CERT_HAS_EXPIRED','ERR_TLS_CERT_ALTNAME_INVALID','ECONNREFUSED','ENOTFOUND','ETIMEDOUT'];
+  if (known.includes(error?.code)) return error.code;
+  const message = String(error?.message || '');
+  // Playwright wraps native TLS errors without preserving error.code. Export
+  // only a fixed classification, never its URL-bearing error message.
+  if (/unable to verify (?:the first certificate|leaf signature)/i.test(message)) return 'UNABLE_TO_VERIFY_LEAF_SIGNATURE';
+  if (/unable to get local issuer certificate/i.test(message)) return 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY';
+  if (/self.signed certificate/i.test(message)) return 'SELF_SIGNED_CERT_IN_CHAIN';
+  if (/certificate has expired/i.test(message)) return 'CERT_HAS_EXPIRED';
+  return 'UNCLASSIFIED_REQUEST_FAILURE';
+}
+
 export async function listenerProbe(address) {
   const target = new URL(address);
   if (target.protocol !== 'https:' || target.username || target.password) throw new Error('Explicit HTTPS fixture endpoint required');

@@ -284,7 +284,7 @@ class Builder:
    self.compiler_boundary("gosu")
    self.compiler("rust")
    self.compiler_boundary("rust")
-   shutil.copytree(self.source/"apps/workspace",self.work/"workspace",ignore=shutil.ignore_patterns("node_modules",".next","__pycache__"))
+   shutil.copytree(self.source/"apps/workspace",self.work/"workspace")
    self.compiler("node")
    shutil.copytree(self.bin,self.package/"bin")
    binaries = {p.name:sha256(p) for p in sorted(self.bin.iterdir()) if p.is_file() and os.access(p,os.X_OK)}

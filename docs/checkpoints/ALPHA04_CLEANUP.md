@@ -251,3 +251,74 @@ claim. Existing proof formats, v2/v3 behavior, development routes, diagnostic
 entry points and state-preserving fixtures remain supported. Publication and
 independent acceptance belong to the lead and publisher; subsequent changed
 source still requires a follow-up audit before final capture.
+
+## Final capture preparation audit — 2026-10-28
+
+The preceding tooling audit is now bound to the inspected published revision
+`018e94eb8820f639ff009ea602e642b2e1ab19b2`. Its changed-file list includes the
+resource/CI/history gates, gosu overlay/inventory, runtime pins and browser
+diagnostics described above. This binding does not convert their earlier static
+review into executed qualification evidence.
+
+The following D/F completion paths were reviewed as pending, uncommitted changes
+on that baseline; the cleanup owner edited only this ledger.
+
+| Reviewed scope | Consumer evidence | Decision |
+|---|---|---|
+| Exact workspace staging | `canonical-compiler.sh` invokes `verify-workspace-staging.mjs` before and after npm installation. Its CLI calls `verifyStaging` with the candidate input hash supplied by `canonical-build.py`; hash, sorting, canonical JSON and recursive inspection helpers feed admission and its emitted report. `test_workspace_staging.py` invokes the actual CLI for content/mode/closure negatives. | Keep the verifier and reports. The implementation already removes the former recursive copy exclusions; no further deletion justified. |
+| Local OPA image preparation | `local.sh up` pulls the Compose-pinned OPA image before starting services, while `start` retains its existing no-build/no-pull behavior. The shared `run_launcher` test helper serves four launcher regressions covering build environment, pinned pull, restart and pull failure. | Keep the new command and refactored test helper. No competing obsolete launcher was introduced. |
+| Request-client TLS and polling diagnostics | The browser coordinator supplies the public CA to the Node request process. The workflow driver consumes `requestTLSFailure` for trusted/foreign-root checks; redaction tests also consume it. `snapshot` diagnostics are passed through the polling/history reports while its existing callers retain the default argument. Stage, counts and bounded error categories survive in the result JSON on failure. | Keep the TLS classifier, optional diagnostic argument and fields. They are active validation/evidence paths, not unused state. |
+| Standalone scope/history probes and existing-request settlement | Published `document-scope-probe.mjs` and pending `history-probe.mjs` are direct CLI diagnostics using the shared login/request/history helpers. Pending `complete-existing-job.mjs` is a separate CLI that inspects and approves one supplied existing synthetic request as Carol, then reads its result as Alice. Its paging/response helpers are used. The history probe's local `typedTLS` helper remains called by two diagnostic trust paths. | Keep these coordinator tools; absence from the automatic runner is insufficient deletion evidence. Settlement performs a real approval and is not a read-only probe or candidate qualification. No unused helper is established merely by similar classification code. |
+
+No executable deletion justified; the lead independently accepted this decision
+after checking the helper consumers. The cleanup owner verified that the browser
+README now documents all three retained standalone helpers, their runtime-
+coordinator ownership, supported arguments, private input/evidence requirements
+and the distinction between authorized read-audit effects and real approval.
+This documentation check does not establish their execution. No new test,
+runtime, publication or canonical-release pass is claimed here. The ledger is
+frozen and ownership returned to the lead/publisher for the next checkpoint;
+bind the pending batch after publication and check any subsequent source change
+before final capture.
+
+### Evidence and origin-retention follow-up — 2026-10-28
+
+Inspected the additional pending D/E changes against published
+`018e94eb8820f639ff009ea602e642b2e1ab19b2`; these changes are not yet bound to a
+new publication. `candidate-evidence.py` still serves the `run`/`note` CLI paths;
+its new pre-check binding, reload, prefix validation and sidecar records preserve
+nested gate results and rejected attempts. The pipeline consumes its explicit
+build-one argument and primary-context guard before runtime admission. The actual
+CLI regressions consume the new evidence and preflight test helpers.
+
+The origin workflow's `attest` step ID is consumed by the conditional upload of
+the action's signed bundle. Its separate artifact is documented for retrieval
+and the existing verifier's `--attestation-bundle` path. The extracted
+`evaluate_condition` test helper serves both job-selection and retention cases;
+it did not leave an unused replacement evaluator.
+
+No additional executable deletion justified. Only this ledger changed during
+the follow-up; no tests, hosted execution, cryptographic verification or runtime
+qualification were performed by the cleanup owner. The lead's independent
+acceptance remains separate from this consumer audit. Ledger frozen and returned
+for publication together with the preceding accepted completion paths.
+
+### Post-build phase admission follow-up — 2026-10-28
+
+Inspected the pending phase-admission and metadata-retention changes on
+`018e94eb8820f639ff009ea602e642b2e1ab19b2`. `candidate-evidence.py` imports and
+consumes both `phase_admission.admit` and `gzip_bound`; the fixed qualification
+forecast and reserve feed normal admission and retained failure records. The CLI
+dispatches `admit-qualification`, which the pipeline invokes before browser
+tooling and again before stack startup. Bundle member validation, size accounting,
+exclusive output creation and post-admission input checks all remain on the live
+bundle path. Phase/bundle tests and the gitless fixture consume the new module.
+
+The workflow's separate execution-metadata artifact consumes an explicit path
+allowlist for candidate/release records, pipeline logs, admission records and
+build manifests. Its authored condition and exact path list have dedicated test
+consumers; this does not establish hosted artifact retention. No obsolete helper,
+field or entry point was demonstrated, and no executable deletion is justified.
+Only this ledger changed during the static audit. No new test or runtime result
+is claimed. Ledger frozen and returned for the next reviewed publication; bind
+the final source revision before claiming a captured candidate.
