@@ -87,8 +87,22 @@ Only checksum-verified download caches may be shared between reproducibility
 builds. Compilation targets, Go build caches and Node output trees are distinct
 and initially empty. No automatic image/data pruning is part of qualification;
 E inventories and explicitly reviews any removal of reproducible unused cache.
+The resource-plan interface may whitelist exact pinned Go/Rust compiler image
+IDs for phase-boundary removal, bound to the captured source and Docker driver.
+Go and gosu compile consecutively; exported public trust avoids repulling Go for
+scratch runtime packaging. Each boundary verifies fresh exported bytes/metadata
+before deleting only that build's compile scratch. A whitelisted image is removed
+normally only after checking no container references it; no force or broad prune
+is allowed. Rust's Cargo home, unpacked sources and target are fresh per build.
+The Node base shared with browser/runtime remains retained. E/root must approve
+separate first/second-build peak forecasts; a source flag cannot approve itself.
 Proxy/CA material remains ephemeral and credentials are never recorded in the
 manifest. Retain normal TLS, checksum, module and package-signature validation.
+Compiler container names, CIDs and ownership labels include run/build/role and a
+fresh nonce. Timeout/interruption stops only the exactly inspected owned compiler
+and verifies it stopped before further admission or scratch disposal. Unknown
+BuildKit cancellation state remains a reconciliation blocker after packaging
+failure; killing the Docker client alone is not proof that daemon work ended.
 
 ## Isolated run identity and lifecycle
 
@@ -140,10 +154,13 @@ Run two independent builds of the same captured source. Targets are declared
 before comparison: exported native binaries and frontend/runtime filesystem
 payloads must be byte-identical, including permissions and symlink targets.
 The filesystem record includes opaque PAX security metadata (xattrs, capabilities,
-ACLs and flags), excluding only explicitly declared timestamp fields. Hardlinks
-are currently unsupported and fail closed: a target pathname alone cannot bind
-the inode bytes retained after a later layer replaces that pathname. An affected
-image cannot pass payload comparison until faithful hardlink semantics exist.
+ACLs and flags), excluding only explicitly declared timestamp fields and standard
+PAX fields already bound by typed path/content/ownership data. Hardlinks bind an
+existing regular inode at their header position. Later pathname replacement leaves
+older aliases on their original inode; the final identity includes stable surviving
+alias groups. Forward, nonregular, metadata-mutating and ambiguous traversal cases
+remain unsupported and fail closed. Synthetic tests and actual vendor-layer
+qualification must both pass before making a complete runtime payload claim.
 Compare OCI configuration/layer/manifest bytes separately. BuildKit creation times,
 history timestamps and compression may differ; record those exact differences as
 OCI-metadata nonreproducibility, never as a matching OCI digest. Do not normalize
