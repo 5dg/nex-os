@@ -129,6 +129,13 @@ separate first/second-build peak forecasts; a source flag cannot approve itself.
 Proxy/CA material remains ephemeral and credentials are never recorded in the
 manifest. Retain normal TLS, checksum, module and package-signature validation.
 
+Go's downloaded modules may contain read-only directories. Scratch removal may
+restore owner directory access only inside the verified original, same-owner
+build scratch inode, without following links or changing file modes/hardlinked
+targets. Preserve exported bytes and failed attempts. Retention excludes only the
+exact build work/package roots before walking; links or unreadable/nonregular
+entries in retained trees remain errors rather than silently omitted evidence.
+
 ### Measured second-build admission
 
 The lead approved the following fixed policy on 2026-10-28, before either final

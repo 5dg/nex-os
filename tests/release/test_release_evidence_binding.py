@@ -362,6 +362,62 @@ class ReleaseEvidenceBindingTests(unittest.TestCase):
         self.assertEqual(record['status'], 'blocked')
         self.assertEqual(record['source_input_sha256'], self.record['source']['inputs']['sha256'])
 
+    def test_seal_prunes_exact_unretained_scratch_before_symlink_inspection(self):
+        scratch=self.base/'builds/one/work/gosu';scratch.mkdir(parents=True)
+        (scratch/'.gitignore').write_text('upstream gosu source')
+        (scratch/'.dockerignore').symlink_to('.gitignore')
+        package=self.base/'builds/one/package/node_modules';package.mkdir(parents=True)
+        (package/'module-link').symlink_to(scratch,target_is_directory=True)
+        self.seal_for_bundle()
+        record=json.loads((self.base/'release-manifest.json').read_text())
+        self.assertFalse(any(name.startswith(('builds/one/work/','builds/one/package/')) for name in record['artifacts']))
+        self.assertIn('builds/one/bin/evidence',record['artifacts'])
+        self.assertTrue((scratch/'.dockerignore').is_symlink())
+        self.assertEqual(self.sealed_bundle(),0)
+        with tarfile.open(self.base/'bundle.tar.gz','r:gz') as saved:
+            self.assertFalse(any(name.startswith(('builds/one/work/','builds/one/package/')) for name in saved.getnames()))
+
+    def test_seal_prunes_excluded_root_links_without_following_them(self):
+        (self.base/'builds/one/work').symlink_to(self.source,target_is_directory=True)
+        (self.base/'builds/one/package').symlink_to(self.base/'absent-package',target_is_directory=True)
+        self.seal_for_bundle()
+        record=json.loads((self.base/'release-manifest.json').read_text())
+        self.assertNotIn('builds/one/work',record['artifacts'])
+        self.assertNotIn('builds/one/package',record['artifacts'])
+
+    def test_seal_still_rejects_retained_file_and_directory_links(self):
+        directory=self.base/'evidence';directory.mkdir()
+        for name,target in (('file-link',self.base/'source.tar'),('dir-link',self.source)):
+            with self.subTest(name=name):
+                link=directory/name;link.symlink_to(target)
+                with self.assertRaisesRegex(ValueError,'symlinks'):self.seal_for_bundle()
+                link.unlink()
+
+    def test_seal_rejects_optional_top_level_artifact_symlink(self):
+        for target in (self.base/'source.tar',self.base/'missing-target'):
+            with self.subTest(target=target.name):
+                link=self.base/'pipeline.log';link.symlink_to(target)
+                with self.assertRaisesRegex(ValueError,'symlinks'):
+                    self.seal_for_bundle()
+                self.assertFalse((self.base/'release-manifest.json').exists())
+                link.unlink()
+
+    def test_seal_does_not_hide_other_artifacts_named_work_or_package(self):
+        directory=self.base/'evidence/work/package';directory.mkdir(parents=True)
+        (directory/'retain.json').write_text('{}')
+        self.seal_for_bundle()
+        record=json.loads((self.base/'release-manifest.json').read_text())
+        self.assertIn('evidence/work/package/retain.json',record['artifacts'])
+
+    def test_seal_propagates_retained_tree_traversal_failure(self):
+        def denied(*args,**kwargs):
+            kwargs['onerror'](PermissionError('cannot inspect retained artifacts'))
+            return iter(())
+        with patch.object(evidence.os,'walk',side_effect=denied):
+            with self.assertRaisesRegex(PermissionError,'cannot inspect'):
+                self.seal_for_bundle()
+        self.assertFalse((self.base/'release-manifest.json').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

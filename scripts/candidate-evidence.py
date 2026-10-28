@@ -177,17 +177,35 @@ def seal(args):
         checks["reproducibility"] = "unrun"
     files = {}
     allowed = [base / "candidate.json", base / "source.tar"]
+    excluded = {base / "builds" / build / name for build in ("one", "two") for name in ("work", "package")}
+    def walk_error(error):
+        raise error
     for directory in (base / "builds", base / "evidence"):
+        if directory.is_symlink():
+            raise ValueError("artifact retention refuses symlinks")
         if directory.exists():
-            for path in directory.rglob("*"):
-                if path.is_symlink():
-                    raise ValueError("artifact retention refuses symlinks")
-                if path.is_file() and not any(part in ("work", "package") for part in path.relative_to(base).parts):
+            for root, directories, names in os.walk(directory, topdown=True, followlinks=False, onerror=walk_error):
+                for name in directories[:]:
+                    path = Path(root) / name
+                    if path in excluded:
+                        directories.remove(name)
+                    elif path.is_symlink():
+                        raise ValueError("artifact retention refuses symlinks")
+                for name in names:
+                    path = Path(root) / name
+                    if path in excluded:
+                        continue
+                    if path.is_symlink():
+                        raise ValueError("artifact retention refuses symlinks")
+                    if not path.is_file():
+                        raise ValueError("artifact retention requires regular files")
                     allowed.append(path)
     for path in (base / "reproducibility.json", base / "pipeline.log", base / "ipam-preflight.json", base / "browser-image-id"):
-        if path.exists():
+        if path.exists() or path.is_symlink():
             allowed.append(path)
     for path in allowed:
+        if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(base):
+            raise ValueError("artifact retention requires regular in-candidate files, not symlinks")
         files[str(path.relative_to(base))] = sha256(path)
     record = {"schema_version": 1, "profile": "synthetic-qualification", "production_attestation": False,
               "source": candidate["source"], "run_id": candidate["run_id"], "sealed_at": now(),

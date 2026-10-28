@@ -305,3 +305,35 @@ attested subject and establish neither signature verification nor release
 approval. All **146** integrated offline release-tooling tests passed after this
 final batch; `release-tests-final-bundle-output.log` retains the full output.
 Final canonical execution remains required.
+
+## First canonical execution failures and scoped correction
+
+Published `5e0f6a34260ab909ab387d5271c8f80a16b71dc0` explicitly selected hosted
+canonical run `40779933916`. Local run `b099720733b9` first failed because the
+launcher forwarded an outer-only proxy hostname over Docker's reachable managed
+proxy defaults. Its blocked bundle was retained. A normal-TLS pinned compiler
+probe verified the existing configured proxy; local retry `45158dc3631f` used
+those same enforced defaults without changing source, CA, network policy or
+Docker configuration.
+
+Both that local retry and the hosted canonical job compiled Go and the verified
+gosu overlay successfully, then failed deleting read-only Go module directories.
+No Rust compiler, application image or candidate runtime gate followed. Sealing
+also encountered a legitimate gosu scratch symlink before excluding the scratch
+tree. Raw local attempts remain unchanged; the hosted execution-metadata artifact
+retained the incomplete candidate, build manifest and pipeline log despite the
+missing full bundle. Its verified source identity matched the reviewed revision.
+
+The scoped correction restores owner access only on directories inside the
+original owned build scratch inode, uses directory file descriptors without
+following links, and leaves file modes and hardlinked export targets unchanged.
+Phase and final scratch cleanup share that path. Sealing prunes only the exact
+two builds' unretained work/package roots before traversal; retained-tree links,
+nonregular files and traversal errors still fail. These changes require a new
+reviewed source and fresh candidate; earlier attempts are not resumed or relabeled.
+An actual unprivileged regression reproduces the original permission error and
+verifies both cleanup boundaries while external directory/file modes and
+hardlinked export bytes remain unchanged. All **156** offline release tests
+passed after the correction, including realistic gosu scratch links, retained
+links and failed traversal. Independent review accepted the fixes; the full log
+is `release-tests-readonly-scratch-retention.log`.

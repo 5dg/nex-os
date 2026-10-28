@@ -322,3 +322,27 @@ field or entry point was demonstrated, and no executable deletion is justified.
 Only this ledger changed during the static audit. No new test or runtime result
 is claimed. Ledger frozen and returned for the next reviewed publication; bind
 the final source revision before claiming a captured candidate.
+
+### Read-only scratch and retained-tree correction — 2026-10-28
+
+Inspected the frozen, pending four-file correction against published
+`5e0f6a34260ab909ab387d5271c8f80a16b71dc0`. `PHASE_SCRATCH` now supplies both
+phase cleanup names and the exact allowed-name check. The captured
+`work_identity` is read by `discard_owned_scratch`, which is invoked at phase
+boundaries and final build cleanup. Its recursive directory-permission helper
+has live descriptor-based consumers; it changes directory permissions only and
+does not replace file permissions or follow scratch symlinks. The implementation
+already removed the superseded direct cleanup calls.
+
+In `candidate-evidence.py`, `seal` consumes the exact four scratch/package root
+exclusions before traversal, and `os.walk` consumes `walk_error` through its
+`onerror` callback. Other retained paths still undergo regular-file, containment
+and link checks. The compiler-cleanup and evidence-binding regressions consume
+the new helper, failure branches and exact-exclusion behavior. No helper, field
+or test fixture was shown to be unused; no executable deletion is justified.
+
+D confirmed the four paths frozen and reported G's independent acceptance.
+This entry records only the cleanup owner's static consumer audit, not a new
+test run or evidence that the failed candidate became qualified. Only the ledger
+was edited. Ledger frozen and returned for publication before a fresh capture;
+earlier failed captures and their evidence retain their original identities.

@@ -9,6 +9,7 @@ import re
 import secrets
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import threading
 import sys
@@ -26,6 +27,8 @@ COMPILERS = {
 }
 GIB = 1024 ** 3
 FRONTEND = "docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e"
+PHASE_SCRATCH = {"gosu": ("go-cache", "gopath", "gosu", "gosu-go-cache", "gosu-gopath", "tmp"),
+                 "rust": ("target", "cargo")}
 
 
 class Builder:
@@ -38,6 +41,8 @@ class Builder:
   self.path.mkdir(mode=0o700, parents=True)
   self.bin, self.package, self.work = (self.path / name for name in ("bin", "package", "work"))
   for path in (self.bin, self.package, self.work): path.mkdir()
+  work_stat = self.work.stat()
+  self.work_identity = (work_stat.st_dev, work_stat.st_ino)
   self.prefix = ["docker", "--host=unix:///var/run/docker.sock"]
   self.env = {k: v for k, v in os.environ.items() if k not in ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_TLS", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH")}
   raw = subprocess.check_output(self.docker("info", "--format",
@@ -256,15 +261,49 @@ class Builder:
    # Normal exact-ID removal only: no force, prune, unrelated image or volume.
    self.run(role+"-evict-reviewed-compiler",self.docker("image","rm",actual["id"]))
   # Only scratch created by THIS build. Exported outputs and raw logs persist.
-  owned = {"gosu":("go-cache","gopath","gosu","gosu-go-cache","gosu-gopath","tmp"),"rust":("target","cargo")}[role]
+  owned = PHASE_SCRATCH[role]
   discarded = []
   for name in owned:
-   path = self.work/name
-   if path.exists():
-    shutil.rmtree(path)
+   if self.discard_owned_scratch(name):
     discarded.append(name)
   self.record.setdefault("phase_boundaries",[]).append({"after":role,"discarded_own_scratch":discarded,"compiler_eviction_reviewed":bool(eviction),"at":self.now()})
   atomic_json(self.manifest,self.record)
+
+ def discard_owned_scratch(self, name=None):
+  # Go module caches deliberately contain 0555 directories. Restore owner
+  # directory access only inside this build's original scratch inode; never
+  # chmod files (which may be hardlinked) or follow source/cache symlinks.
+  if self.work != self.path/"work" or self.path.is_symlink() or (name is not None and name not in {item for names in PHASE_SCRATCH.values() for item in names}):
+   raise ValueError("cleanup requires exact owned build scratch")
+  flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+  with_fd = os.open(self.work, flags)
+  try:
+   work_stat = os.fstat(with_fd)
+   if (work_stat.st_dev, work_stat.st_ino) != self.work_identity or work_stat.st_uid != os.getuid():
+    raise ValueError("build scratch ownership or original inode changed")
+   try:
+    target_fd = os.dup(with_fd) if name is None else os.open(name, flags, dir_fd=with_fd)
+   except FileNotFoundError:
+    return False
+   def writable_directories(fd):
+    current = os.fstat(fd)
+    if current.st_uid != os.getuid() or current.st_dev != work_stat.st_dev:
+     raise ValueError("scratch directory ownership/filesystem differs; preserve it")
+    os.fchmod(fd, stat.S_IMODE(current.st_mode) | 0o700)
+    for child in os.listdir(fd):
+     child_stat = os.stat(child, dir_fd=fd, follow_symlinks=False)
+     if stat.S_ISDIR(child_stat.st_mode):
+      child_fd = os.open(child, flags, dir_fd=fd)
+      try: writable_directories(child_fd)
+      finally: os.close(child_fd)
+   try: writable_directories(target_fd)
+   finally: os.close(target_fd)
+   if name is None:
+    shutil.rmtree(self.work)
+   else:
+    shutil.rmtree(name, dir_fd=with_fd)
+   return True
+  finally: os.close(with_fd)
 
  def image(self, name, dockerfile):
   tag = f"nex-alpha04-{self.candidate['run_id']}-{name}:{self.args.build}"
@@ -303,7 +342,7 @@ class Builder:
    self.save_image("opa",opa,{"requested":opa})
    if identity(self.source,canonical=True) != self.candidate["source"]: raise ValueError("source changed during build")
    self.record.update(status="built",ended_at=self.now())
-   shutil.rmtree(self.work)  # Only this newly created compilation scratch, not state.
+   self.discard_owned_scratch()  # Only this newly created compilation scratch, not state.
    self.record["compilation_scratch_discarded"] = True
    self.record["resource_budget"]["measurements"] = summarize_measurements(self.initial_free,self.record["commands"],self.measure_free())
    atomic_json(self.manifest,self.record)
