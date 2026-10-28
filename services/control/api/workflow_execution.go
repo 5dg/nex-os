@@ -94,7 +94,23 @@ func (s *Server) step(w http.ResponseWriter, r *http.Request) {
 		workflowError(w, e)
 		return
 	}
+	if e = s.beforeDispatch(ctx); e != nil {
+		if failure := s.preExecutionFailure(ctx, j, lease.Token, kind+"_PREPARATION_NOT_STARTED"); failure != nil {
+			workflowError(w, failure)
+			return
+		}
+		workflowError(w, e)
+		return
+	}
 	payload, digest, e := s.Policy.PrepareExecution(ctx, j.ID, j.Operation)
+	if current := s.currentRequest(ctx); current != nil {
+		if failure := s.preExecutionFailure(ctx, j, lease.Token, kind+"_PREPARATION_NOT_STARTED"); failure != nil {
+			workflowError(w, failure)
+			return
+		}
+		workflowError(w, errRequestOutcomeUnavailable)
+		return
+	}
 	if e != nil {
 		failure := kind + "_PREPARATION_NOT_STARTED"
 		if errors.Is(e, guard.ErrDenied) {
@@ -128,10 +144,24 @@ func (s *Server) step(w http.ResponseWriter, r *http.Request) {
 	}
 	var generated contracts.GenerationResult
 	var exported contracts.ExportResult
+	if e = s.beforeDispatch(ctx); e != nil {
+		if failure := s.preExecutionFailure(ctx, j, lease.Token, kind+"_PREPARATION_NOT_STARTED"); failure != nil {
+			workflowError(w, failure)
+			return
+		}
+		workflowError(w, errRequestOutcomeUnavailable)
+		return
+	}
 	if kind == "model" {
 		e = rpc.Call(ctx, request, &generated)
 	} else {
 		e = rpc.Call(ctx, request, &exported)
+	}
+	if current := s.afterDispatch(ctx); current != nil {
+		// The receiver may have committed a real protected result. Do not reset
+		// it, assert no effect or start another callback after losing the caller.
+		workflowError(w, current)
+		return
 	}
 	// Persist completion in a new transaction after the external boundary. Lease
 	// fencing prevents a stale worker from overwriting a newer attempt or cancel.
@@ -218,7 +248,7 @@ func (s *Server) step(w http.ResponseWriter, r *http.Request) {
 // when signing is unavailable; never fabricate unsigned evidence of execution.
 // A short independent context lets a timed-out preparation release its lease.
 func (s *Server) preExecutionFailure(parent context.Context, j storedJob, lease, code string) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)
+	ctx, cancel := context.WithTimeout(operationalAccounting(context.WithoutCancel(parent)), 5*time.Second)
 	defer cancel()
 	tx, e := s.begin(ctx)
 	if e != nil {

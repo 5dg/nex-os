@@ -84,7 +84,13 @@ func (s *Server) evaluateTx(ctx context.Context, tx pgx.Tx, a guard.Actor, deleg
 			return contracts.Decision{}, e
 		}
 	}
+	if e := s.beforeDispatch(ctx); e != nil {
+		return contracts.Decision{}, e
+	}
 	d, e := s.Policy.Evaluate(ctx, in)
+	if current := s.currentRequest(ctx); current != nil {
+		return d, current
+	}
 	if e != nil {
 		return d, e
 	}

@@ -24,9 +24,20 @@ func (s *Server) begin(ctx context.Context) (pgx.Tx, error) {
 	if !s.qualification() {
 		return s.DB.Begin(ctx)
 	}
+	if e := s.currentRequest(ctx); e != nil {
+		return nil, e
+	}
 	acquire, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	return s.DB.Begin(acquire)
+	tx, e := s.DB.Begin(acquire)
+	if e != nil {
+		return nil, e
+	}
+	if e = s.currentRequest(ctx); e != nil {
+		_ = tx.Rollback(ctx)
+		return nil, e
+	}
+	return requestTx{Tx: tx, check: func() error { return s.currentRequest(ctx) }}, nil
 }
 func (s *Server) qualifiedHandler(next http.Handler) http.Handler {
 	if !s.qualification() {
@@ -45,7 +56,7 @@ func (s *Server) qualifiedHandler(next http.Handler) http.Handler {
 		default:
 			roles = []trust.Role{trust.Workspace}
 		}
-		s.Trust.Middleware(roles, next).ServeHTTP(w, r)
+		s.Trust.Middleware(roles, next).ServeHTTP(w, s.withRequestAuthority(r, roles))
 	})
 }
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {

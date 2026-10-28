@@ -186,7 +186,15 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 		workflowError(w, e)
 		return
 	}
+	if e := s.beforeDispatch(r.Context()); e != nil {
+		workflowError(w, e)
+		return
+	}
 	allowed, e := s.Policy.DecideApproval(r.Context(), r.PathValue("id"), in.RequestDigest, a.ID, a.TenantID, *in.Approve)
+	if current := s.afterDispatch(r.Context()); current != nil {
+		workflowError(w, current)
+		return
+	}
 	if e != nil {
 		workflowError(w, e)
 		return

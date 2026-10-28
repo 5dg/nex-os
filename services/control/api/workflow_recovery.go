@@ -122,7 +122,16 @@ func (s *Server) reconcileJob(w http.ResponseWriter, r *http.Request) {
 	}
 	u.Path = "/status"
 	statusClient.URL = u.String()
-	if e = statusClient.Call(r.Context(), in, out); e != nil {
+	if e = s.beforeDispatch(r.Context()); e != nil {
+		workflowError(w, e)
+		return
+	}
+	e = statusClient.Call(r.Context(), in, out)
+	if current := s.afterDispatch(r.Context()); current != nil {
+		workflowError(w, current)
+		return
+	}
+	if e != nil {
 		state := "unknown"
 		if errors.Is(e, broker.ErrNotStarted) {
 			state = "not_started"

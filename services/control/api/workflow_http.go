@@ -106,7 +106,10 @@ func (s *Server) createJob(w http.ResponseWriter, r *http.Request) {
 			workflowError(w, errConflict)
 			return
 		}
-		tx.Commit(r.Context())
+		if e = tx.Commit(r.Context()); e != nil {
+			workflowError(w, e)
+			return
+		}
 		r.SetPathValue("id", oldID)
 		s.getJob(w, r)
 		return
@@ -323,6 +326,11 @@ func (s *Server) workerAuthorized(w http.ResponseWriter, r *http.Request) bool {
 }
 func (s *Server) claim(w http.ResponseWriter, r *http.Request) {
 	if !s.workerAuthorized(w, r) {
+		return
+	}
+	// Consume the bounded empty body before awaiting the database so net/http
+	// can observe an HTTP/1 client disconnect while the claim is in flight.
+	if !emptyRecoveryRequest(w, r) {
 		return
 	}
 	ctx := r.Context()

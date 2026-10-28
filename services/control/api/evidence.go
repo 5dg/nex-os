@@ -55,6 +55,9 @@ func (s *Server) anchor(ctx context.Context, tx pgx.Tx, id string) error {
 		}
 		return nil
 	} // Explicit development-only legacy fixtures.
+	if e := s.currentRequest(ctx); e != nil {
+		return e
+	}
 	if s.qualification() {
 		if s.Trust == nil {
 			return errors.New("control identity absent")
@@ -74,7 +77,13 @@ func (s *Server) anchor(ctx context.Context, tx pgx.Tx, id string) error {
 	event.Timestamp = timestamp.UnixMicro()
 	event.Producer = "control"
 	var proof evidence.Proof
+	if e = s.currentRequest(ctx); e != nil {
+		return e
+	}
 	if e = s.EvidenceRPC.Call(ctx, event, &proof); e != nil {
+		return e
+	}
+	if e = s.currentRequest(ctx); e != nil {
 		return e
 	}
 	if !evidence.VerifyEvent(ed25519.PublicKey(s.EvidencePublic), proof, event) {
