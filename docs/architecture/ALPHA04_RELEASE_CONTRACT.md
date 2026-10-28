@@ -54,6 +54,24 @@ workspace configuration hook. No build identifier grants runtime authority.
 Framework-generated private randomness must be measured and reported; never use a
 public source hash as an encryption/signing key to force byte equality.
 
+The current pinned Next 16.4.3 application declares no Server Actions, preview,
+draft mode or on-demand revalidation. Canonical packaging runs
+`scripts/prepare-workspace-runtime.mjs` against the actual standalone payload and
+the admitted authored app source. It requires empty node/edge action maps,
+exactly empty per-route action maps, known mirrored manifest formats and no
+unexpected occurrences of generated credentials. It rejects new authored uses of
+the excluded framework features and unsupported layouts/versions before mutation.
+It removes unused action encryption material and replaces preview credentials
+with the explicit disabled marker `{"previewModeId":false}`. Omitting the marker,
+using null, or using a public string is unsafe: pinned framework paths compare
+Node undefined, Web null and wire strings against this value. Boolean false
+matches none and cannot enable draft mode. The same image payload bytes, including
+the transformed manifests, remain subject to full reproducibility comparison;
+no file or field is excluded. The preparation report retains before/after hashes
+and authored-input identities, never credential values. Introducing those
+features requires a new reviewed key/runtime contract rather than silently
+retaining or deriving a shared secret.
+
 Build outputs are freshly exported, hashed and mapped to source paths. Runtime
 packaging receives only those verified outputs and the declared runtime files.
 The coordinator PKI and evidence CLIs are part of this closure: canonical `init`
@@ -177,6 +195,15 @@ receiver proofs, coordinated PKI rotation and quiescent restore. Shared mutation
 and lifecycle transitions are serial. D independently checks manifest/image/test
 binding and supplies negative tests for stale tools, changed inputs and mismatched
 images. A combined wrapper is passed only after that wrapper actually executes.
+
+The required `packaged-shutdown` gate is distinct from native `shutdown` checks.
+It exercises actual candidate containers under admitted model/export work before
+DOM/rotation/restore, verifies direct authenticated admission closure and existing
+drain budgets, restarts the same containers/images, and checks real protected
+results, receipts and one signed authorization/completion after replay. Candidate
+execution, sealing and independent retained-artifact verification all require
+this gate. A compiled harness or diagnostic host-image run cannot qualify the
+canonical images.
 
 Persist non-secret candidate records, raw findings, SBOMs and test outputs together
 with checksums and source/image identities; retain failed attempts separately.

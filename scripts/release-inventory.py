@@ -35,6 +35,12 @@ def component(ecosystem, name, version, properties=None, hashes=None):
         value['properties'] = [{'name': key, 'value': str(val)} for key, val in sorted(properties.items())]
     if hashes:
         value['hashes'] = hashes
+    previous = components.get(purl)
+    if previous:
+        for field, keys in (('properties', ('name', 'value')), ('hashes', ('alg', 'content'))):
+            merged = {tuple(item[key] for key in keys): item for item in previous.get(field, []) + value.get(field, [])}
+            if merged:
+                value[field] = [merged[key] for key in sorted(merged)]
     components[purl] = value
 
 result = subprocess.run(['go', 'list', '-mod=readonly', '-m', '-json', 'all'], cwd=root, capture_output=True, text=True, check=True)
@@ -49,18 +55,20 @@ while remaining.strip():
         raise SystemExit('Release inventory requires explicit handling of replaced Go modules.')
     component('golang', module['Path'], module['Version'], {'nex:go:module-sum': module.get('Sum', '')})
 
-lock = json.loads((root / 'apps/workspace/package-lock.json').read_text())
-for path, package in lock['packages'].items():
-    if not path:
-        continue
-    name = package.get('name') or path.rsplit('node_modules/', 1)[-1]
-    properties = {'nex:dependency-source': 'package-lock.json', 'nex:development': str(package.get('dev', False)).lower(), 'nex:optional': str(package.get('optional', False)).lower()}
-    hashes = []
-    for integrity in package.get('integrity', '').split():
-        algorithm, _, encoded = integrity.partition('-')
-        if algorithm in ('sha256', 'sha384', 'sha512'):
-            hashes.append({'alg': 'SHA-' + algorithm[3:], 'content': base64.b64decode(encoded).hex()})
-    component('npm', name, package['version'], properties, hashes)
+npm_locks = ('apps/workspace/package-lock.json', 'apps/workspace/tests/browser/package-lock.json')
+for lock_name in npm_locks:
+    lock = json.loads((root / lock_name).read_text())
+    for path, package in lock['packages'].items():
+        if not path:
+            continue
+        name = package.get('name') or path.rsplit('node_modules/', 1)[-1]
+        properties = {'nex:dependency-source': lock_name, 'nex:development': str(package.get('dev', False)).lower(), 'nex:optional': str(package.get('optional', False)).lower()}
+        hashes = []
+        for integrity in package.get('integrity', '').split():
+            algorithm, _, encoded = integrity.partition('-')
+            if algorithm in ('sha256', 'sha384', 'sha512'):
+                hashes.append({'alg': 'SHA-' + algorithm[3:], 'content': base64.b64decode(encoded).hex()})
+        component('npm', name, package['version'], properties, hashes)
 
 lock = tomllib.loads((root / 'services/guard-kernel/Cargo.lock').read_text())
 for package in lock['package']:
@@ -70,6 +78,7 @@ for package in lock['package']:
     component('cargo', package['name'], package['version'], {'nex:dependency-source': package['source']}, hashes)
 
 inputs = ['go.mod', 'go.sum', 'apps/workspace/package.json', 'apps/workspace/package-lock.json', 'services/guard-kernel/Cargo.toml', 'services/guard-kernel/Cargo.lock', 'deploy/local/compose.yaml']
+inputs += ['apps/workspace/tests/browser/package.json', 'apps/workspace/tests/browser/package-lock.json', 'apps/workspace/tests/browser/Dockerfile']
 if profile == 'synthetic-qualification':
     inputs += ['deploy/qualification/compose.yaml', 'deploy/qualification/pki.json']
 inputs += [str(path.relative_to(root)) for path in sorted((root / 'deploy').rglob('Dockerfile*'))]
@@ -80,7 +89,7 @@ bom = {
     'serialNumber': 'urn:uuid:' + str(uuid.uuid5(uuid.NAMESPACE_URL, 'nex.os/source-inventory/' + identity)),
     'metadata': {
         'component': {'type': 'application', 'name': 'Nex.os', 'version': 'alpha-0.4'},
-        'properties': [{'name': 'nex:inventory-scope', 'value': 'Source dependencies including development and optional packages; no image OS-package inventory.'}, {'name': 'nex:runtime-profile', 'value': profile}],
+        'properties': [{'name': 'nex:inventory-scope', 'value': 'Source dependencies including development, optional and isolated browser-tool packages; no image OS-package inventory.'}, {'name': 'nex:runtime-profile', 'value': profile}],
     },
     'components': [components[key] for key in sorted(components)],
 }

@@ -32,7 +32,7 @@ if [[ "${NEX_BUILD_QUALIFICATION_FIXTURES:-0}" == 1 ]]; then
   go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/qualification-issuer ./tests/qualification/cmd/oidc-issuer
 fi
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/tmp/nex-rust-target}"
-cargo build --locked --manifest-path services/guard-kernel/Cargo.toml -j 3
+cargo build --locked --manifest-path services/guard-kernel/Cargo.toml -j "${CARGO_BUILD_JOBS:-2}"
 cp "$CARGO_TARGET_DIR/debug/nex-guard-kernel" bin/guard-kernel.next
 strip bin/guard-kernel.next
 mv bin/guard-kernel.next bin/guard-kernel

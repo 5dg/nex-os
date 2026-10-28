@@ -88,6 +88,7 @@ if python3 scripts/canonical-build.py --candidate "$1" --build one "${task_plan_
  if ./scripts/qualification.sh up; then
   # A fresh private fixture exports its temporary endpoints only into the child.
   check native-fixtures bash scripts/qualification-native-fixtures.sh --candidate "$1" -- bash scripts/candidate-native-suite.sh
+  check packaged-shutdown bash scripts/qualification-packaged-lifecycle.sh
   # This ordered runner includes DOM/revocation/polling before PKI/restore.
   check qualification ./scripts/verify-qualification.sh
  else

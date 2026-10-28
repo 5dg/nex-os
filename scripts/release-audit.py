@@ -76,7 +76,8 @@ for tool, arguments in {'govulncheck': ['-version'], 'cargo-audit': ['--version'
 
 run('go-vulnerabilities', ['govulncheck', '-json', './...'])
 run('rust-vulnerabilities', ['cargo-audit', 'audit', '--file', 'services/guard-kernel/Cargo.lock', '--json'])
-run('npm-vulnerabilities', ['npm', 'audit', '--json', '--audit-level=low'], root / 'apps/workspace')
+run('npm-vulnerabilities', ['npm', 'audit', '--package-lock-only', '--ignore-scripts', '--json', '--audit-level=low'], root / 'apps/workspace')
+run('browser-npm-vulnerabilities', ['npm', 'audit', '--package-lock-only', '--ignore-scripts', '--json', '--audit-level=low'], root / 'apps/workspace/tests/browser')
 # Built-image scans include OS packages; never silently substitute a source-only scan.
 images = {name: 'nex-' + name + ':local' for name in ('control', 'guard', 'workspace')}
 if profile == 'synthetic-qualification':

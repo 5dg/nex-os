@@ -41,6 +41,7 @@ node)
  mkdir -p /package/workspace
  cp -a .next/standalone /package/workspace/standalone
  cp -a .next/static /package/workspace/static
+ node /src/scripts/prepare-workspace-runtime.mjs /package/workspace/standalone /src/apps/workspace /out/workspace-packaging.json
  node --version > /out/node-version.txt
  npm --version > /out/npm-version.txt
  sha256sum /usr/local/bin/node > /out/node-compiler.sha256

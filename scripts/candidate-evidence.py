@@ -135,7 +135,7 @@ def seal(args):
         first = build_record(candidate, base, "one")
     except (ValueError, OSError):
         first = None
-    required = ["qualification", "proof-parity", "shutdown", "dom-browser", "vulnerability-scans", "hosted-ci", "durable-retention", "provenance-attestation"]
+    required = ["qualification", "proof-parity", "shutdown", "packaged-shutdown", "dom-browser", "vulnerability-scans", "hosted-ci", "durable-retention", "provenance-attestation"]
     checks = {}
     for name in required:
         records = [check for check in candidate.get("results", []) if check["name"] == name]
