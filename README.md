@@ -2,7 +2,7 @@
 
 A governed AI workspace for defense-contractor CUI use cases. Alpha 0.3 is a **synthetic-data qualification profile** using Go orchestration, a Rust Nex.Guard kernel, gRPC, PostgreSQL, OPA, and a Next.js workspace. Actual local identity, workflow and lifecycle checks passed; release and regulated-production gates remain open. Live GovCloud deployment, approved Bedrock invocation, and customer identity configuration are deferred at the user's request.
 
-Start with the active [Alpha 0.4 goal and agent plan](docs/NEXT_GOAL_ALPHA_0_4.md), [current build plan](docs/BUILD_PLAN.md), [Alpha 0.3 executed evidence](docs/ALPHA_0_3.md), and [qualification runbook](docs/runbooks/QUALIFICATION.md). The [Alpha 0.5 proposal](docs/NEXT_GOAL_ALPHA_0_5.md) is for later; Alpha 0.4 remains in progress.
+Start with the current [completion goal and ten-agent plan](docs/FINISH_GOAL_2026_10_28.md), [current build plan](docs/BUILD_PLAN.md), [Alpha 0.3 executed evidence](docs/ALPHA_0_3.md), and [qualification runbook](docs/runbooks/QUALIFICATION.md). The earlier [Alpha 0.4 plan](docs/NEXT_GOAL_ALPHA_0_4.md) and [Alpha 0.5 proposal](docs/NEXT_GOAL_ALPHA_0_5.md) retain historical context; Alpha 0.4 remains in progress.
 
 ## Working demonstration
 

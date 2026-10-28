@@ -1,5 +1,9 @@
 # Next goal: Alpha 0.5 synthetic release qualification
 
+Current execution ordering and ownership: [28 October completion goal](FINISH_GOAL_2026_10_28.md).
+This proposal is retained as history. Its source/xattr first tickets and several
+tooling gaps below are implemented at `640ce8f`; candidate execution is still required.
+
 Reviewed against published `main` through `56adf29` and the current authored
 working tree on 2026-10-28. This is the next execution goal, not a statement that
 unfinished code, candidate builds or release gates passed. Preserve the

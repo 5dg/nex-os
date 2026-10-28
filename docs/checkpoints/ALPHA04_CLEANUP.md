@@ -146,3 +146,25 @@ not pending cleanup work or evidence that an implementation can be deleted.
 For each future batch record: producing revision, exclusive files, obsolete
 items, consumer checks, validation commands/results, independent and lead review,
 publisher commit/verified remote revision, and candidate-capture status.
+
+## Current-baseline consumer audit — 2026-10-28
+
+Reviewed baseline: `640ce8f` (immutable candidate builds and qualification delivery
+tooling). The lead granted the cleanup owner exclusive access to this ledger;
+this audit changes no executable source and does not establish remote publication.
+
+| Reviewed paths | Observed consumers | Decision |
+|---|---|---|
+| `scripts/candidate-pipeline.sh`, `canonical-build.py`, `canonical-compiler.sh` and `candidate-evidence.py` | The canonical CI job invokes the pipeline; the pipeline invokes two builds, comparison and evidence retention; the builder invokes the compiler script. The candidate runbook exposes the supported local entry point. | Keep. These are connected delivery paths, not obsolete replacements. |
+| `scripts/ipam-preflight.py`, `qualification-native-fixtures.sh`, `candidate-native-suite.sh` and `qualification-native-check.sh` | The pipeline invokes IPAM admission and native fixtures; the fixture child runs the native suite, which dispatches the proof-parity and shutdown checks. | Keep. Their execution remains a qualification gate; lack of a completed candidate run does not make them dead code. |
+| `scripts/qualification-browser.sh`, browser tooling and qualification drivers | The ordered verifier invokes the browser harness when a candidate manifest is present; the harness mounts the workflow and revocation drivers into the browser fixture. | Keep. Preserve the real-browser qualification path and its isolated fixture. |
+| `scripts/verify-retained-candidate.py`, `verify-provenance.py` and `install-gh-attestation.sh` | The candidate runbook invokes retained verification and the pinned verifier installer; retained verification imports the provenance verifier. Existing release tests exercise these interfaces. | Keep. Deferred hosted execution is not proof of obsolescence. |
+| Development smoke, workflow, recovery and restore scripts | `scripts/verify-local.sh` still invokes these checks for the supported development profile. | Keep. Qualification delivery does not retire the development workflow. |
+
+No additional executable deletion is justified by this bounded consumer audit.
+The existing cleanup exclusions remain in force, including provider seams,
+framework/generated dispatch, historical migrations and proofs, v2/v3 contracts
+and uncertain receipts. This records static call-path inspection only: no new
+behavioral tests, canonical builds, hosted CI, reproducibility checks or release
+qualification were executed by the cleanup owner. Later implementation batches
+still need their own consumer audit before final candidate capture.

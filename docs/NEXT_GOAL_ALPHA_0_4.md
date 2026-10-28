@@ -1,5 +1,8 @@
 # Next goal: Alpha 0.4 verified governance evidence and reproducible synthetic release candidate
 
+Current execution ordering and ownership: [28 October completion goal](FINISH_GOAL_2026_10_28.md).
+This earlier plan is retained as history; several implementation tickets below are now complete.
+
 Code review: 2026-10-27, starting from published `main` commit `5b7b34e5a540d21b47b5578123ca7d65953123de`. This is the next development plan; its proposed checks have not been executed by this review. Preserve [Alpha 0.3 evidence](ALPHA_0_3.md) and earlier history.
 
 ## Copyable goal

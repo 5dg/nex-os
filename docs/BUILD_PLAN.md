@@ -7,24 +7,27 @@ release candidate before expanding the product. Bind clean pinned builds,
 immutable images, actual browser/service tests, reproducibility measurements and
 retained security evidence to the same captured revision.
 
-The active goal is [Alpha 0.4](NEXT_GOAL_ALPHA_0_4.md). Continue its remaining
-implementation and execution gates. The [Alpha 0.5 proposal](NEXT_GOAL_ALPHA_0_5.md)
-is a future plan and has not started; writing it did not replace the active work.
+The active execution goal is the [28 October completion plan](FINISH_GOAL_2026_10_28.md),
+with ten bounded agent assignments, explicit acceptance tests and a same-day
+decision target. It continues Alpha 0.4; it does not claim completion or start
+Alpha 0.5 product expansion. The earlier [Alpha 0.4 plan](NEXT_GOAL_ALPHA_0_4.md)
+and [Alpha 0.5 proposal](NEXT_GOAL_ALPHA_0_5.md) retain historical context.
 
 ## Starting evidence and open work
 
 Published checkpoints include exact signed-event verification
 (`ada368e`), original HTTP caller authority checks (`1819277`) and three separately
 reviewed cleanup checkpoints. Diagnostic shutdown/restart/load and post-dispatch
-tests have local evidence, but the corresponding lifecycle batch and new delivery
-machinery are not a qualified canonical image set.
+tests have local evidence. The lifecycle batch and delivery machinery are now
+published through `640ce8f`, but are not a qualified canonical image set.
 
 Independent regression tests now cover authored nested `src/bin` inputs,
 canonical physical-tree closure and security xattrs/capabilities. The narrow
 integrity checkpoint initially failed closed on hardlinks; a bounded inode/layer
 model is now implemented with independent synthetic regressions. Actual vendor
 layer compatibility and canonical runtime payload qualification remain execution
-gates. Broader delivery tooling and additional negative tests are in progress. Passing
+gates. Candidate build, browser/revocation, CI and retained-artifact tooling are
+implemented; their complete candidate execution remains unverified. Passing
 offline tests do not establish canonical builds, two-build reproducibility,
 the combined verifier, actual DOM/revocation/polling, hosted CI, attestation or
 durable artifact retrieval; those execution gates remain unfinished or unverified.
@@ -36,9 +39,11 @@ advisory access remain explicit release blockers.
 
 ## Ordered development path
 
-1. Close source-input and rootfs security-metadata integrity gaps with independent
-   negatives; freeze performance, resource and reproducibility contracts.
-2. Finish bounded lifecycle and operator fixes, then execute actual DOM,
+1. Preserve the implemented source/rootfs integrity protections and run their
+   independent negatives. Preflight capacity/access and investigate frontend
+   build randomness before expensive canonical builds.
+2. Bound history responses and polling, prevent stale UI updates, enforce browser
+   measurement limits and add packaged lifecycle acceptance. Execute actual DOM,
    same-unexpired-session DB revocation and measured polling/load qualification.
 3. Complete applicable cleanup, audit/capture the coherent source, and build all
    required images and coordinator tools from fresh pinned containers. Preserve
@@ -46,22 +51,21 @@ advisory access remain explicit release blockers.
 4. Run the complete ordered verifier against those exact images and independently
    rebuild the same source. Compare binaries, runtime payloads and OCI bytes
    separately; retain full inventories and raw security findings.
-5. Complete hosted CI/provenance production, retrieval and verification when
+5. Execute hosted CI/provenance production, retrieval and verification when
    access permits. Publish a durable evidence bundle and explicit passed/failed/
    blocked/not-run gate decision without substituting source publication for
    release eligibility.
 
 ## Team and publication
 
-A owns application/contracts/workspace, B governance/effects, C delivery/security
-tooling and D independent verification. E is the **sole Git publisher and shared
-runtime coordinator**; E pushes audited coherent checkpoints normally to `main`
-and verifies the remote SHA. F is the **separate trailing dead-code purger**;
-F proves consumer closure, receives an exclusive handoff, makes small deletions,
-obtains independent review and sends a separate cleanup checkpoint through E.
-Root audits contracts, implementation, evidence and release decisions.
+The current ten-role map is defined in the [completion plan](FINISH_GOAL_2026_10_28.md).
+A/B own workspace/API, C governance, D builds, E security/provenance, F browser
+verification and G service verification. H is the **sole Git publisher**; I is the
+**sole shared-runtime coordinator**. J is the **separate dead-code cleanup owner**,
+with no deletion quota. Root audits contracts, changes, evidence and release decisions.
+Schedule these roles in waves within the available concurrency limit.
 
-Keep ownership exclusive and freezes brief. E does not stage other agents' WIP.
+Keep ownership exclusive and freezes brief. H does not stage other agents' WIP.
 Finish relevant cleanup before final candidate capture; later code changes create
 a new candidate and rerun affected gates. Preserve active development/deferred
 provider paths, framework dispatch, SQL sentinels, v2/v3 codecs, migrations,
