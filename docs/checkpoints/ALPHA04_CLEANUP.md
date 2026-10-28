@@ -367,3 +367,25 @@ Keep these helpers and raw-finding retention; no executable deletion justified.
 Only this ledger changed during the static audit. Root/G acceptance and their
 reported test evidence remain separate; this entry claims no new scanner run or
 project vulnerability clearance. Ledger frozen and released for publication.
+
+### Early browser dependency checkpoint — 2026-10-28
+
+Reviewed only the completed six-path F/E batch against published
+`bdefbbc7b9a289c5e34d945dc886728bbdae7ef9`: the CI workflow, candidate runbook,
+trigger tests, `browser-dependency-preflight.sh`, its browser driver and the
+process-boundary regression tests. Concurrent OCI/archive and runtime-image work
+was not inspected or accepted by this cleanup pass.
+
+The workflow invokes the preflight before cold compilation and consumes its
+validated immutable image ID for the later pipeline. The preflight mounts and
+runs `dependency-preflight.mjs`; its command, digest and report helpers feed
+image-input checks, bounded native-sandbox startup, owned cleanup and retained
+results. The driver's engine/status output is read by the coordinator. Both
+regression suites exercise these actual entry points and the expanded explicit
+diagnostic-artifact allowlist. The runbook documents the same retained outputs
+and preserves their dependency-only scope.
+
+No executable deletion justified. Only this ledger changed during static
+consumer review. F/G acceptance and their focused test results remain separate;
+this entry claims no hosted startup, DOM qualification, final candidate or
+reproducibility pass. Ledger frozen and released for the diagnostic checkpoint.

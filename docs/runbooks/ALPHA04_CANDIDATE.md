@@ -101,13 +101,32 @@ permissions, source checks or release gates. Its producer retains the non-secret
 for 30 days even when the release gate is blocked, provided storage admission
 permits bundle creation. The separate `alpha04-candidate-execution-metadata`
 artifact retains only `candidate.json`, `release-manifest.json`, `pipeline.log`,
-top-level and `evidence/` admission JSON records, and `builds/*/manifest.json`.
+`reproducibility.json`, top-level and `evidence/` admission JSON records,
+`builds/*/manifest.json`, the named `evidence/dom-browser-*.log` and
+`evidence/qualification-*.log` gate outputs, and
+`evidence/browser-*/{dom,operator,revocation}/browser-results.json` (three explicit
+paths in the workflow). These browser results contain assertion statuses, engine
+identity, counts, timings and fixed failure codes. They exclude browser profiles,
+Chromium logs, cookies, tokens, receipts and private fixture state. Preserve their
+exact bytes and check available hashes against the candidate and release manifest;
+they provide diagnostics when the full subject exceeds a download client's limit.
+The artifact also retains exactly `startup-result.json`, `browser-engine.json`
+and `browser-image-id` under `evidence/browser-dependency-preflight/`.
 It runs after successful trusted-main admission even if a later step fails, and
 also retains admission records when a valid subject exists. It excludes private
 state, keys, backups, binaries and source worktrees. These diagnostic records are
 outside the signed subject; they establish neither attestation nor release
 approval. If bundle creation is refused, they preserve the reason without
 inventing a subject or weakening storage admission.
+
+Before either cold compilation, the trusted-main job builds the pinned browser
+fixture from the captured source and runs `scripts/browser-dependency-preflight.sh`
+with a 45-second startup limit, no network, the native sandbox enabled, a public
+CA and private temporary storage. A failure stops compilation and retains the
+small sanitized startup result. A successful check passes the immutable fixture
+image ID to the later pipeline, which checks its captured helper inputs during
+browser qualification. This dependency check does not exercise Nex OS, replace
+the DOM gate, or establish release readiness; no sandbox fallback is attempted.
 
 A separate scoped job downloads
 the retained subject, compares its SHA256 to the producer output, and uses the

@@ -157,6 +157,14 @@ jobs:
           echo "$NEX_TOOLS_DIR/cargo/bin" >> "$GITHUB_PATH"
           echo "CARGO_HOME=$NEX_TOOLS_DIR/cargo" >> "$GITHUB_ENV"
           echo "RUSTUP_HOME=$NEX_TOOLS_DIR/rustup" >> "$GITHUB_ENV"
+      - name: Preflight the pinned browser dependency before cold compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash /tmp/nex-ci-candidate/source/scripts/browser-dependency-preflight.sh --output /tmp/nex-ci-candidate/evidence/browser-dependency-preflight
+          task_browser_image="$(cat /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/browser-image-id)"
+          [[ "$task_browser_image" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Immutable browser fixture identity required.' >&2; exit 2; }
+          printf 'NEX_BROWSER_FIXTURE_IMAGE=%s\n' "$task_browser_image" >> "$GITHUB_ENV"
       - name: Execute canonical candidate with capacity and overlap admission
         run: bash /tmp/nex-ci-candidate/source/scripts/candidate-pipeline.sh /tmp/nex-ci-candidate/candidate.json 10.231.0.0/20
       - name: Prepare evidence even when setup or the canonical build is blocked
@@ -196,8 +204,17 @@ jobs:
             /tmp/nex-ci-candidate/candidate.json
             /tmp/nex-ci-candidate/release-manifest.json
             /tmp/nex-ci-candidate/pipeline.log
+            /tmp/nex-ci-candidate/reproducibility.json
             /tmp/nex-ci-candidate/*admission*.json
             /tmp/nex-ci-candidate/evidence/*admission*.json
+            /tmp/nex-ci-candidate/evidence/dom-browser-*.log
+            /tmp/nex-ci-candidate/evidence/qualification-*.log
+            /tmp/nex-ci-candidate/evidence/browser-*/dom/browser-results.json
+            /tmp/nex-ci-candidate/evidence/browser-*/operator/browser-results.json
+            /tmp/nex-ci-candidate/evidence/browser-*/revocation/browser-results.json
+            /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/startup-result.json
+            /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/browser-engine.json
+            /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/browser-image-id
             /tmp/nex-ci-candidate/builds/*/manifest.json
           if-no-files-found: error
           retention-days: 30

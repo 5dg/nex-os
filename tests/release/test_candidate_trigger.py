@@ -183,8 +183,15 @@ class ExecutionMetadataRetentionTests(unittest.TestCase):
         retained = self.retention()
         paths = retained.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
         actual = [line.strip() for line in paths.splitlines() if line.strip()]
-        relative = ['candidate.json', 'release-manifest.json', 'pipeline.log', '*admission*.json',
-                    'evidence/*admission*.json', 'builds/*/manifest.json']
+        relative = ['candidate.json', 'release-manifest.json', 'pipeline.log', 'reproducibility.json',
+                    '*admission*.json', 'evidence/*admission*.json',
+                    'evidence/dom-browser-*.log', 'evidence/qualification-*.log',
+                    'evidence/browser-*/dom/browser-results.json',
+                    'evidence/browser-*/operator/browser-results.json',
+                    'evidence/browser-*/revocation/browser-results.json',
+                    'evidence/browser-dependency-preflight/startup-result.json',
+                    'evidence/browser-dependency-preflight/browser-engine.json',
+                    'evidence/browser-dependency-preflight/browser-image-id', 'builds/*/manifest.json']
         self.assertEqual(actual, ['/tmp/nex-ci-candidate/' + path for path in relative])
         self.assertIn('          name: alpha04-candidate-execution-metadata\n', retained)
         self.assertIn('          if-no-files-found: error\n', retained)
@@ -192,16 +199,67 @@ class ExecutionMetadataRetentionTests(unittest.TestCase):
         self.assertNotIn('include-hidden-files:', retained)
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
-            expected = {'candidate.json', 'release-manifest.json', 'pipeline.log', 'bundle-admission-1.json',
-                        'evidence/qualification-admission-1.json', 'builds/one/manifest.json', 'builds/two/manifest.json'}
+            expected = {'candidate.json', 'release-manifest.json', 'pipeline.log', 'reproducibility.json',
+                        'bundle-admission-1.json', 'evidence/qualification-admission-1.json',
+                        'evidence/dom-browser-123.log', 'evidence/qualification-456.log',
+                        'evidence/browser-abc/dom/browser-results.json',
+                        'evidence/browser-abc/operator/browser-results.json',
+                        'evidence/browser-def/revocation/browser-results.json',
+                        'evidence/browser-dependency-preflight/startup-result.json',
+                        'evidence/browser-dependency-preflight/browser-engine.json',
+                        'evidence/browser-dependency-preflight/browser-image-id',
+                        'builds/one/manifest.json', 'builds/two/manifest.json'}
             excluded = {'private/tls.key', 'backups/database.sql', 'source/go.mod', 'builds/one/bin/control',
-                        'evidence/private/secret-admission.json', 'candidate-bundle.tar.gz'}
+                        'evidence/private/secret-admission.json', 'candidate-bundle.tar.gz',
+                        'evidence/other-gate-123.log', 'evidence/private/dom-browser-123.log',
+                        'evidence/browser-abc/dom/chromium.log', 'evidence/browser-abc/dom/browser-engine.json',
+                        'evidence/browser-abc/dom/profile/Cookies', 'evidence/browser-abc/private/browser-results.json',
+                        'evidence/browser-dependency-preflight/chromium.log',
+                        'evidence/browser-dependency-preflight/profile/Cookies',
+                        '.local/browser-private-abc/dom/browser-results.json',
+                        'source/evidence/dom-browser-123.log'}
             for name in expected | excluded:
                 path = base / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('fixture')
             matched = {str(path.relative_to(base)) for pattern in relative for path in base.glob(pattern)}
             self.assertEqual(matched, expected)
+
+
+class BrowserDependencyPreflightTests(unittest.TestCase):
+    STEP = 'Preflight the pinned browser dependency before cold compilation'
+
+    def test_preflight_runs_after_exact_admission_and_tools_before_cold_pipeline(self):
+        block = job_block('canonical-candidate')
+        self.assertLess(block.index('Require exact trusted main'), block.index(self.STEP))
+        self.assertLess(block.index('Prepare pinned verification tools'), block.index(self.STEP))
+        self.assertLess(block.index(self.STEP), block.index('Execute canonical candidate'))
+        step = block.split('      - name: ' + self.STEP + '\n', 1)[1].split('\n      - ', 1)[0]
+        self.assertNotIn('continue-on-error', step)
+        self.assertNotIn('if:', step)
+        self.assertNotIn('NEX_BROWSER_FIXTURE_NO_SANDBOX', step)
+        self.assertNotIn('dom-browser', step)
+
+    def test_only_successful_preflight_forwards_an_immutable_image(self):
+        for exit_code, image_id in [(0, 'sha256:' + 'a' * 64), (1, 'sha256:' + 'a' * 64),
+                                    (0, 'mutable:tag'), (0, 'sha256:' + 'a' * 63),
+                                    (0, 'sha256:' + 'a' * 64 + '\nINJECTED=value')]:
+            with self.subTest(exit_code=exit_code, image_id=image_id), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                script = base / 'source/scripts/browser-dependency-preflight.sh'
+                script.parent.mkdir(parents=True)
+                script.write_text('set -eu\n[[ "$1" == --output ]]\nmkdir -p "$2"\nprintf "%s\\n" "$FIXTURE_IMAGE" > "$2/browser-image-id"\nexit "$FIXTURE_EXIT"\n')
+                environment = base / 'github-env'
+                shell = step_shell('canonical-candidate', self.STEP).replace('/tmp/nex-ci-candidate', str(base))
+                completed = subprocess.run(['bash', '-c', shell], capture_output=True, timeout=5,
+                    env={**os.environ, 'GITHUB_ENV': str(environment), 'FIXTURE_IMAGE': image_id,
+                         'FIXTURE_EXIT': str(exit_code)})
+                expected = exit_code == 0 and image_id == 'sha256:' + 'a' * 64
+                self.assertEqual(completed.returncode == 0, expected)
+                if expected:
+                    self.assertEqual(environment.read_text(), 'NEX_BROWSER_FIXTURE_IMAGE=' + image_id + '\n')
+                else:
+                    self.assertFalse(environment.exists(), 'failed or malformed startup must not export a fixture')
 
 
 class OriginBundleRetentionTests(unittest.TestCase):
