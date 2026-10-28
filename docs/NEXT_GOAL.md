@@ -1,6 +1,6 @@
 # Next goal: Nex.os Alpha 0.2 execution integrity
 
-Historical milestone proposal. For executed Alpha 0.3 results see [ALPHA_0_3.md](ALPHA_0_3.md); the current development path and remaining release/cloud gates are in [BUILD_PLAN.md](BUILD_PLAN.md).
+Historical Alpha 0.2 milestone proposal. The current goal is [Alpha 0.5 synthetic release qualification](NEXT_GOAL_ALPHA_0_5.md), which first finishes the remaining Alpha 0.4 work. See [BUILD_PLAN.md](BUILD_PLAN.md) for navigation and [ALPHA_0_3.md](ALPHA_0_3.md) for earlier executed evidence.
 
 ## Goal
 

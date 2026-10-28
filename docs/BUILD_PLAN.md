@@ -1,46 +1,69 @@
 # Nex.os development goal and implementation path
 
-## Current goal: Alpha 0.4 governance evidence and reproducible release candidate
+## Current goal: Alpha 0.5 synthetic release qualification
 
-Turn the working synthetic document-review → independent approval → exact export slice into an exact-source, operationally tested release candidate. Close the identified Rust proof-content verification asymmetry, establish bounded shutdown/current-authority behavior, and connect a captured revision to pinned builds, immutable images and retained qualification/security evidence.
+Finish the remaining Alpha 0.4 engineering and qualify one exact-source synthetic
+release candidate before expanding the product. Bind clean pinned builds,
+immutable images, actual browser/service tests, reproducibility measurements and
+retained security evidence to the same captured revision.
 
-The executable plan, dependency waves, acceptance gates and cleanup/publication protocol are in [NEXT_GOAL_ALPHA_0_4.md](NEXT_GOAL_ALPHA_0_4.md). This update plans the next work; it does not claim those changes or tests have been implemented.
+The executable goal, dependency waves, gate criteria and seven-seat ownership map
+are in [NEXT_GOAL_ALPHA_0_5.md](NEXT_GOAL_ALPHA_0_5.md). The
+[Alpha 0.4 plan](NEXT_GOAL_ALPHA_0_4.md) remains historical context; Alpha 0.4 is not
+being declared complete by naming the next goal.
 
-## Grounded starting point
+## Starting evidence and open work
 
-[Alpha 0.3](ALPHA_0_3.md) records actual synthetic OIDC/BFF sessions, workload TLS, strict API tokens, v3 route/input/result binding, minimal database roles, independent approvals, receiver proofs, PKI rotation and isolated restore. [VALIDATION.md](VALIDATION.md) preserves earlier Alpha 0.2 results. Published `main` now contains `5b7b34e`; historical push failures no longer block publication. Hosted CI status is currently unverified because its API lookup was Forbidden.
+Published `main` through `56adf29` includes exact signed-event verification
+(`ada368e`), original HTTP caller authority checks (`1819277`) and three separately
+reviewed cleanup checkpoints. Diagnostic shutdown/restart/load and post-dispatch
+tests have local evidence, but the corresponding lifecycle batch and new delivery
+machinery are not a qualified canonical image set.
 
-The earlier application candidate was accurately recorded as a host-built Go/Rust and container-built workspace snapshot. The pinned Rust builder and combined one-shot verifier have not been established by that evidence. A fresh container build also needs to close the existing host `bin/evidence` dependency. Freeze measurable shutdown/load budgets and binary/rootfs/OCI reproducibility targets before testing; only declared metadata nondeterminism is allowed, with no normalization of unexplained payload/artifact differences. The next candidate must include cleanup before final source capture, avoiding another distinction between finished source and tested images.
+Current source integrity tooling can exclude authored nested `src/bin` files;
+rootfs identity omits security xattrs/capabilities. Close those gaps before making
+complete input/rootfs binding claims. Eleven passing offline tooling tests cover
+specific negatives, not those missing guarantees. Canonical builds, two-build
+comparison, the combined verifier, actual DOM/revocation/polling and hosted
+CI/attestation/artifact retrieval remain unfinished or unverified.
 
-This remains synthetic data and a deterministic model. Ordinary TLS/test PKI does not establish FIPS qualification, CUI authorization or FedRAMP/NIST/CMMC compliance. Live account/model/customer-identity setup remains deferred.
+[Alpha 0.3](ALPHA_0_3.md) and [VALIDATION.md](VALIDATION.md) retain earlier executed
+results and their exact tested identities. GitHub publication works; hosted CI
+status remains unknown because its API is blocked. Unresolved image findings and
+advisory access remain explicit release blockers.
 
-## Development path and acceptance gates
+## Ordered development path
 
-| Order | Deliverable | Acceptance evidence |
-|---|---|---|
-| 1 | Exact signed-content verification | A correctly signed wrong-content proof with the same ID/producer is rejected; canonical cross-language v1 vectors and historical valid proofs pass without format changes. |
-| 2 | Bounded operational/current-authority behavior | Actual SIGTERM stops new admission and drains/cancels under defined bounds; original caller expiry, committed revocation, cancellation and saturation tests preserve denied/started/unknown semantics. |
-| 3 | Self-contained pinned build | Fresh exact-source builds need no stale host artifacts; all binaries, builder/ABI/image identities are recorded; clean-build reproducibility is measured. |
-| 4 | Complete qualification of the same artifacts | Actual DOM smoke plus existing protocol, database, mutation, readiness, rotation and restore tests run in order against the selected images; previous state remains intact. |
-| 5 | Supply-chain evidence and release decision | Complete source/image inventories, raw findings, advisory results, durable verification artifacts and actual CI/provenance status share the same candidate identity. Any unmet required gate remains blocked. |
+1. Close source-input and rootfs security-metadata integrity gaps with independent
+   negatives; freeze performance, resource and reproducibility contracts.
+2. Finish bounded lifecycle and operator fixes, then execute actual DOM,
+   same-unexpired-session DB revocation and measured polling/load qualification.
+3. Complete applicable cleanup, audit/capture the coherent source, and build all
+   required images and coordinator tools from fresh pinned containers. Preserve
+   previous state and keys; verify actual runtime ABI and isolated namespaces.
+4. Run the complete ordered verifier against those exact images and independently
+   rebuild the same source. Compare binaries, runtime payloads and OCI bytes
+   separately; retain full inventories and raw security findings.
+5. Complete hosted CI/provenance production, retrieval and verification when
+   access permits. Publish a durable evidence bundle and explicit passed/failed/
+   blocked/not-run gate decision without substituting source publication for
+   release eligibility.
 
-Do not start broad model routing, terminal execution, connectors, distributed sessions/custody or deployment frameworks. Add production integrations only after the separate boundary and account prerequisites below are ready.
+## Team and publication
 
-## Parallel ownership and continuous publication
+A owns application/contracts/workspace, B governance/effects, C delivery/security
+tooling and D independent verification. E is the **sole Git publisher and shared
+runtime coordinator**; E pushes audited coherent checkpoints normally to `main`
+and verifies the remote SHA. F is the **separate trailing dead-code purger**;
+F proves consumer closure, receives an exclusive handoff, makes small deletions,
+obtains independent review and sends a separate cleanup checkpoint through E.
+Root audits contracts, implementation, evidence and release decisions.
 
-| Agent | Responsibility |
-|---|---|
-| A — application/contracts | Control/auth/workspace, migration runner (not SQL), shared trust/broker/contracts, caller validity and bounded operator behavior. |
-| B — governance/effects | Rust kernel, policies, new SQL migrations, receivers/worker/evidence, exact signed content and effect/shutdown invariants. |
-| C — builds/supply chain | Deployment/tooling/CI source, pinned builds, image remediation, inventories and operator documentation. |
-| D — independent verification | Proof/identity/revocation/load/browser/lifecycle fixtures, integration checks and evidence verification. |
-| E — dedicated publisher | Sole staging/commit/push owner and shared runtime scheduler; publish audited coherent checkpoints to `main`, never force, and verify the remote SHA. |
-| F — trailing dead-code cleanup | Follow completed batches, prove obsolete consumers, obtain exclusive file handoff, remove safely, obtain independent review and submit a separate cleanup checkpoint through E. |
-| Lead — auditor | Audit contracts, changes, test evidence and release decisions; resolve ownership without doing feature implementation. |
-
-Precise paths and handoff rules are in the Alpha 0.4 plan. Keep three implementation lanes, an independent verifier, the publisher and the cleanup agent active. Source freezes cover only coherent capture. E runs shared builds/database/PKI/restore operations serially; unrelated file owners can continue once the snapshot is fixed. Final candidate cleanup must precede capture and affected validation.
-
-Preserve active development paths, v2/v3 codecs, migrations, proof history and uncertain receipts. The cleanup agent is not paid by deletion count: interface/route dispatch, SQL lock sentinels, saved startup hooks and intentional deferred-provider seams require consumer checks.
+Keep ownership exclusive and freezes brief. E does not stage other agents' WIP.
+Finish relevant cleanup before final candidate capture; later code changes create
+a new candidate and rerun affected gates. Preserve active development/deferred
+provider paths, framework dispatch, SQL sentinels, v2/v3 codecs, migrations,
+historical proofs and uncertain receipts. No deletion quota applies.
 
 ## GovCloud production path after synthetic release qualification
 
@@ -54,6 +77,17 @@ Cloud identifiers and access are deferred at the user's request. Once available,
 
 Keep on-premises packaging, Kubernetes, arbitrary terminal execution, broad connectors, vector search and multiregion deployment deferred until an actual requirement justifies them. A dedicated Ubuntu server is not required for managed AWS compute; Ubuntu remains a practical development host or a separately scoped future on-premises target.
 
-## Report readiness accurately
+## Readiness boundary
 
-Report local functionality, synthetic qualification, release readiness, actual cloud enforcement and formal assessment/authorization as separate results. GitHub publication is now verified at `5b7b34e`; the earlier HTTP 403 failures are historical. Current blockers include the denied native Go advisory feed, unresolved image findings and unverified hosted CI/provenance/reproducibility. After publication, the CI-status API lookup was Forbidden, so current hosted status is unknown/access blocked rather than assumed unrun. Preserve raw findings and incomplete evidence; do not weaken severity gates or invent waivers. See [ALPHA03_WIP.md](checkpoints/ALPHA03_WIP.md) for local checkpoint status.
+Engineering completion requires a successful clean canonical build, the complete
+combined functional qualification and a completed measured reproducibility report.
+Unrun internal gates do not satisfy it. An engineering-complete synthetic
+candidate may have a documented blocked release decision while required external
+scans/CI are unavailable. It cannot be called
+release-eligible, reproducible or cryptographically attested without the matching
+verified evidence. Preserve raw findings and failed attempts; no invented waivers,
+severity reductions or normalization of unexplained payload differences.
+
+No CUI, FedRAMP authorization, NIST control completion or CMMC certification is
+claimed. Cloud preparation is optional only after candidate qualification; no
+live AWS setup or product expansion is included in the current goal.
