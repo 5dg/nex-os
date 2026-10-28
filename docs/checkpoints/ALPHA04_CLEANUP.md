@@ -192,3 +192,15 @@ Only this ledger changed; the cleanup owner did not run behavioral tests, mutate
 shared runtime state, stage files or publish commits. Independent review and
 publication remain with the lead and publisher. Any later edits to the reviewed
 application batch require a follow-up audit before final candidate capture.
+
+### Publication binding — 2026-10-28
+
+The application/history/browser batch reviewed above is now bound to
+`6fe65018dda7b09b25b4519e9955970f6dc66e31` (bounded signed history and workspace
+polling). The cleanup owner inspected that commit's file list; the publisher
+reported a successful normal push, an exact remote `main` SHA match and a clean
+worktree. The lead confirmed the same publication checkpoint. The no-additional-
+deletion decision remains unchanged. This addendum records publication of the
+reviewed source, not a canonical build, runtime qualification or release pass.
+The upcoming Rust PEM maintenance change is outside this audit and requires its
+own follow-up consumer review.

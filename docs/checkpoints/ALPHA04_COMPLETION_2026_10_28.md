@@ -95,3 +95,45 @@ unexpected errors and excessive read growth. Real DOM drivers now include long
 signed history, stale-job response, history failure/recovery, terminal polling,
 in-flight logout and same-session revocation cases. Actual browser execution
 against the new packaged source remains pending at this checkpoint.
+
+## Maintenance, hosted CI diagnosis and current source scans
+
+Removed the unmaintained `rustls-pemfile` dependency using the existing Rustls
+`pki_types::pem::PemObject` API, with no new crate or cryptographic implementation.
+Certificate-chain order, first PKCS#1/PKCS#8/SEC1 key selection and the existing
+workload identity/key checks remain. All 12 Rust tests passed, including three
+malformed-input/key-format regressions; formatting passed. The updated lockfile
+audit reported zero vulnerabilities and zero warnings against the same current
+RustSec database. The earlier maintenance warning is retained in its original
+scan record.
+
+Explicitly approved read-only Go metadata resolution completed without changing
+Go lock inputs. The current-source SBOM contains 445 external components: 67 Go,
+276 Cargo and 102 npm, including the isolated browser dependency. It must be
+regenerated for the captured final source. Go advisory scanning reached the real
+feed and received Forbidden; that gate remains blocked rather than clean.
+
+Connected GitHub tools established actual hosted status despite the cloud shell's
+API restriction. [Run 40769426263](https://github.com/5dg/nex-os/actions/runs/40769426263)
+for `6fe65018dda7b09b25b4519e9955970f6dc66e31` failed in static checks: positive
+custody fixtures assumed Go's `t.TempDir()` was private. Go 1.27 creates those
+directories subject to the process umask; hosted `022` exposed mode `0755`, while
+the local default `077` hid the assumption. The failure was reproduced locally.
+Positive fixtures now use private child directories created by the production
+constructor. Production permission rejection is unchanged. A regression verifies
+the public parent remains unchanged while the child/lock are `0700`/`0600`.
+All Go unit packages passed again with race instrumentation under umask `022`.
+This local correction does not establish a successful later hosted run.
+
+The isolated host-image packaged lifecycle diagnostic passed: actual Guard,
+model, executor and control shutdown/drain/restart with real protected effects,
+independent approval and unchanged replay receipts. Its approximately 12-second
+run belongs to diagnostic input
+`9c7bd0d57f125f2da92393e8502da7882b53bc6bc987c7579217e63074432905`,
+which precedes the PEM maintenance change. Final images must repeat it.
+
+The real browser fixture's native sandbox probe failed with a namespace permission
+restriction. The lead approved sandbox-disabled execution only for this isolated
+synthetic cloud fixture, retaining read-only/capability restrictions, private
+storage, frontend/issuer-only links and normal certificate validation. The
+effective mode is recorded; no production browser or TLS bypass is implied.

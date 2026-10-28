@@ -19,7 +19,6 @@ hmac = "0.12"
 base64 = "0.22"
 ed25519-dalek = "2"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
-rustls-pemfile = "2"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 tokio-postgres-rustls = "0.14.0"
 tokio-stream = { version = "0.1", features = ["net"] }

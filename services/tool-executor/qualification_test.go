@@ -47,7 +47,7 @@ func exportRequest(t *testing.T, s *Service, in contracts.Export, path, audience
 }
 func exportFixture(t *testing.T) (*Service, *authority, contracts.Export) {
 	t.Helper()
-	receipts, e := broker.OpenReceiptStore(t.TempDir(), "export")
+	receipts, e := broker.OpenReceiptStore(filepath.Join(t.TempDir(), "receipts"), "export")
 	if e != nil {
 		t.Fatal(e)
 	}

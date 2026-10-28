@@ -64,7 +64,7 @@ func TestChallengeProvesCredentialAndPinnedKeyWithoutAppend(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	directory := t.TempDir()
+	directory := filepath.Join(t.TempDir(), "journal")
 	journal, e := OpenJournal(directory, private)
 	if e != nil {
 		t.Fatal(e)
@@ -108,7 +108,7 @@ func TestChallengeProvesCredentialAndPinnedKeyWithoutAppend(t *testing.T) {
 }
 func TestChallengeRequiresCurrentPeerAndUntamperedStorage(t *testing.T) {
 	_, private, _ := ed25519.GenerateKey(rand.Reader)
-	journal, e := OpenJournal(t.TempDir(), private)
+	journal, e := OpenJournal(filepath.Join(t.TempDir(), "journal"), private)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -130,7 +130,7 @@ func TestChallengeRequiresCurrentPeerAndUntamperedStorage(t *testing.T) {
 }
 func TestReadinessAndAppendRespectCancelledContext(t *testing.T) {
 	_, private, _ := ed25519.GenerateKey(rand.Reader)
-	journal, e := OpenJournal(t.TempDir(), private)
+	journal, e := OpenJournal(filepath.Join(t.TempDir(), "journal"), private)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -151,7 +151,7 @@ func TestReadinessAndAppendRespectCancelledContext(t *testing.T) {
 
 func TestReadinessAndAppendDoNotWaitForeverForWriter(t *testing.T) {
 	_, private, _ := ed25519.GenerateKey(rand.Reader)
-	journal, e := OpenJournal(t.TempDir(), private)
+	journal, e := OpenJournal(filepath.Join(t.TempDir(), "journal"), private)
 	if e != nil {
 		t.Fatal(e)
 	}

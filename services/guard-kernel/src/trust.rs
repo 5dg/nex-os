@@ -5,14 +5,13 @@ use rustls::{
         WebPkiServerVerifier,
         danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
     },
-    pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime},
+    pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime, pem::PemObject},
     server::{WebPkiClientVerifier, danger::ClientCertVerifier},
 };
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
     fs,
-    io::Cursor,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -162,20 +161,23 @@ fn read_certificates(
     path: &str,
 ) -> Result<Vec<CertificateDer<'static>>, Box<dyn std::error::Error>> {
     let bytes = fs::read(path)?;
-    let certs = rustls_pemfile::certs(&mut Cursor::new(bytes)).collect::<Result<Vec<_>, _>>()?;
+    let certs = CertificateDer::pem_slice_iter(&bytes).collect::<Result<Vec<_>, _>>()?;
     if certs.is_empty() {
         return Err("certificate PEM required".into());
     }
     Ok(certs)
 }
+fn read_private_key(path: &str) -> Result<PrivateKeyDer<'static>, Box<dyn std::error::Error>> {
+    // Retain the first supported PKCS#1, PKCS#8 or SEC1 key. Parsing its PEM
+    // envelope does not validate DER or its match to the workload certificate;
+    // server_config still performs those checks before the process can start.
+    Ok(PrivateKeyDer::from_pem_slice(&fs::read(path)?)?)
+}
 impl Trust {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let ca = read_certificates(&std::env::var("NEX_TLS_CA_FILE")?)?;
         let certificate = read_certificates(&std::env::var("NEX_TLS_CERT_FILE")?)?;
-        let key = rustls_pemfile::private_key(&mut Cursor::new(fs::read(std::env::var(
-            "NEX_TLS_KEY_FILE",
-        )?)?))?
-        .ok_or("private key PEM required")?;
+        let key = read_private_key(&std::env::var("NEX_TLS_KEY_FILE")?)?;
         let trust = Self {
             ca,
             certificate,
@@ -327,6 +329,96 @@ impl Trust {
                 chains: None,
             }));
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod pem_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Fixture(std::path::PathBuf);
+    impl Fixture {
+        fn new(contents: &str) -> Self {
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "nex-pem-parser-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed),
+            ));
+            // Refuse stale or redirected fixtures instead of replacing them.
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .unwrap();
+            std::io::Write::write_all(&mut file, contents.as_bytes()).unwrap();
+            Self(path)
+        }
+        fn path(&self) -> &str {
+            self.0.to_str().unwrap()
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+    fn pem(label: &str, body: &str) -> String {
+        format!("-----BEGIN {label}-----\n{body}\n-----END {label}-----\n")
+    }
+
+    #[test]
+    fn certificate_bundle_preserves_chain_order_and_rejects_malformed_suffix() {
+        let bundle =
+            pem("CERTIFICATE", "AQID") + &pem("PUBLIC KEY", "BAUG") + &pem("CERTIFICATE", "BwgJ");
+        let file = Fixture::new(&bundle);
+        let certs = read_certificates(file.path()).unwrap();
+        assert_eq!(
+            certs.iter().map(|cert| cert.as_ref()).collect::<Vec<_>>(),
+            vec![&[1, 2, 3][..], &[7, 8, 9][..]]
+        );
+        // Envelope decoding must never turn arbitrary DER into a trust root.
+        assert!(roots_at(&certs).is_err());
+        let broken = Fixture::new(&(bundle + &pem("CERTIFICATE", "!not-base64!")));
+        assert!(read_certificates(broken.path()).is_err());
+        let empty = Fixture::new(&pem("PUBLIC KEY", "AQID"));
+        assert!(read_certificates(empty.path()).is_err());
+    }
+
+    #[test]
+    fn private_key_formats_and_first_key_selection_remain_compatible() {
+        for label in ["RSA PRIVATE KEY", "PRIVATE KEY", "EC PRIVATE KEY"] {
+            let file = Fixture::new(
+                &(pem("CERTIFICATE", "BAUG") + &pem(label, "AQID") + &pem("PRIVATE KEY", "BwgJ")),
+            );
+            let key = read_private_key(file.path()).unwrap();
+            assert_eq!(key.secret_der(), &[1, 2, 3]);
+            assert!(matches!(
+                (&key, label),
+                (PrivateKeyDer::Pkcs1(_), "RSA PRIVATE KEY")
+                    | (PrivateKeyDer::Pkcs8(_), "PRIVATE KEY")
+                    | (PrivateKeyDer::Sec1(_), "EC PRIVATE KEY")
+            ));
+            // The existing provider rejects syntactically decoded but invalid
+            // key material before with_single_cert can establish server identity.
+            assert!(provider().key_provider.load_private_key(key).is_err());
+        }
+    }
+
+    #[test]
+    fn missing_truncated_mismatched_and_invalid_base64_keys_fail_closed() {
+        for contents in [
+            String::new(),
+            pem("CERTIFICATE", "AQID"),
+            pem("ENCRYPTED PRIVATE KEY", "AQID"),
+            pem("PRIVATE KEY", "!bad-base64!"),
+            "-----BEGIN PRIVATE KEY-----\nAQID\n".into(),
+            "-----BEGIN PRIVATE KEY-----\nAQID\n-----END CERTIFICATE-----\n".into(),
+        ] {
+            let file = Fixture::new(&contents);
+            assert!(read_private_key(file.path()).is_err());
+        }
     }
 }
 #[derive(Debug)]

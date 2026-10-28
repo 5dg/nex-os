@@ -9,6 +9,7 @@ import (
 	"github.com/5dg/nex-os/packages/contracts"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -75,7 +76,7 @@ func modelRequest(t *testing.T, s *Service, in contracts.Generation, path, audie
 }
 func modelFixture(t *testing.T) (*Service, *recordingGenerator, *receiverAuthority) {
 	t.Helper()
-	receipts, e := broker.OpenReceiptStore(t.TempDir(), "model")
+	receipts, e := broker.OpenReceiptStore(filepath.Join(t.TempDir(), "receipts"), "model")
 	if e != nil {
 		t.Fatal(e)
 	}

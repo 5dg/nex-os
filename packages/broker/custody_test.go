@@ -11,7 +11,7 @@ import (
 )
 
 func TestLocalCustodyRejectsAnotherWriterAndClosedEffects(t *testing.T) {
-	directory := t.TempDir()
+	directory := filepath.Join(t.TempDir(), "receipts")
 	store, e := OpenReceiptStore(directory, "model")
 	if e != nil {
 		t.Fatal(e)
@@ -35,7 +35,7 @@ func TestLocalCustodyRejectsAnotherWriterAndClosedEffects(t *testing.T) {
 	defer next.Close()
 }
 func TestCustodyLossAfterAuthorizationCannotStartEffect(t *testing.T) {
-	store, e := OpenReceiptStore(t.TempDir(), "model")
+	store, e := OpenReceiptStore(filepath.Join(t.TempDir(), "receipts"), "model")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -70,6 +70,29 @@ func TestCustodyRejectsPublicOrReplacedLock(t *testing.T) {
 	}
 	if c.Check() == nil {
 		t.Fatal("replaced custody lock accepted")
+	}
+}
+func TestCustodyCreatesPrivateChildWithoutChangingSharedParent(t *testing.T) {
+	parent := t.TempDir()
+	// testing.TempDir uses 0777 subject to umask; a CI runner may expose 0755.
+	// Require the same safe behavior regardless of this process's default umask.
+	if err := os.Chmod(parent, 0755); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(parent, "receipts")
+	store, err := OpenReceiptStore(directory, "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	for path, want := range map[string]os.FileMode{parent: 0755, directory: 0700, filepath.Join(directory, ".custody.lock"): 0600} {
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != want {
+			t.Fatalf("custody fixture permissions differ: want %04o, stat error %v", want, err)
+		}
+	}
+	if err = store.Ready(); err != nil {
+		t.Fatal("private child did not establish custody", err)
 	}
 }
 func TestStatusClientNarrowsScopeAndPreservesTransport(t *testing.T) {
