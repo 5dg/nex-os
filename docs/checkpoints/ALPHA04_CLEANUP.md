@@ -129,14 +129,17 @@ not pending cleanup work or evidence that an implementation can be deleted.
   Go formatting and diff-whitespace checks passed. No new tests were introduced.
 - Review/publication: D independently accepted the exact one-line source diff
   and proportionate checks. The lead accepted the exact diff and verification.
-  Publication is pending. The one-file handoff remains held until E's approved
-  separate publication.
+  E published the two approved files in
+  `56adf29d6e9f4590974c316b136b13dbc391e118` and verified remote `main` matches that
+  revision. The source file was then returned to A.
 
 ## Reviewed implementation batches
 
 | Published batch | Consumer audit | Cleanup decision |
 |---|---|---|
 | `ada368e20b57a38f2b19e2683a897a0337a6d9cc` — exact Rust evidence content | The new `evidence_v1` head/canonical/normalization helpers, event/envelope fields and `serde_json` raw-value feature all have active writer or conformance-test consumers. The fixed v1 vectors and real signed-wrong-content regression remain active verification. | No deletion justified. B's overlapping lifecycle files remain reserved for active implementation; no cleanup edits there. |
+| `1819277d4859ea601c298d4f759edadadae12208` — original caller rechecks | The request snapshot, current-caller checks, pre/post-dispatch checks, fenced operational accounting and transaction wrapper are consumed by the control paths or meaningful boundary tests. `requestTx.Begin` deliberately overrides the embedded `pgx.Tx` method to preserve the original authority and nested cancellation; an absent direct application call is not evidence of obsolescence. | No deletion justified. Keep the wrapper/interface guard and the caller expiry, disconnect, cancellation and accounting tests. |
+| `139a242559a6cded70794afdbb92194f944ce73d` — bounded workload shutdown | The new shutdown control, watch subscriptions, request/database permit accounting, capacity constants and listener cancellation branches are consumed by the process, transport, state store or meaningful shutdown tests. `StateStore::admission` is also used as a method pointer. The Go 70-second drain and Compose 75-second grace remain an active coordinated contract. | No deletion justified. Preserve platform signal branches and the signal/admission/database/post-dispatch tests. C's newer Compose and script work remains reserved; this audit reviewed the published cohort, not unpublished replacements. |
 
 For each future batch record: producing revision, exclusive files, obsolete
 items, consumer checks, validation commands/results, independent and lead review,
