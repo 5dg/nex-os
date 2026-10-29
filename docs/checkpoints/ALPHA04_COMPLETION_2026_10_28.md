@@ -482,3 +482,69 @@ new-code assignments identified during that review. The combined test log is
 New source publication, measured admission, fresh capture and full captured-image
 qualification remain required. No final-candidate or release-eligibility claim
 follows from these component results.
+
+## First complete reproducibility result and runtime corrections
+
+Published `852269a64adfc41f01361bed639a7064dabdcd36` was captured locally as
+run `3dde8e20ab27`, input digest
+`8cec60744ca01104c027f00186f3c1ff27735a205dd72d5ca3a15c8346e04497`.
+J independently matched all 21 published files, captured bytes/modes, source
+companion and input map to the reviewed batch. The final source inventory has
+447 components across all 27 dependency input hashes.
+
+Hosted run `40790684153`, candidate `161e1a70f135`, completed both independent
+builds and passed native binary, all-six runtime payload, OCI configuration/layer
+and emitted archive comparisons. Raw OPA Docker-save differences remained
+separately reported with exact outer-header transformation proofs. This is a
+measured reproducibility pass for that source, not functional qualification.
+
+The local first build passed all four cold compilers and control, Guard,
+fixtures and workspace packaging. PostgreSQL crossed its declared 4 GiB phase
+growth forecast and stopped safely: sampled growth was 4,335,747,072 bytes, and
+the exact owned daemon stopped in 1.09 seconds. No second build or application
+stack was admitted. The failed attempt was sealed into a 220,731,254-byte bundle,
+SHA-256 `4f27d30fe73df38c7be8a787623735e650696b7b465aa2a884b56d97a9c951eb`.
+The original reserve remained intact. Any revised PostgreSQL budget requires
+measured capacity and a fresh run; old compilation outputs cannot be resumed.
+
+Hosted qualification then failed during migration. Actual control/fixture
+payloads showed mode0444 on `/etc`, `/etc/ssl` and `/etc/ssl/certs`: the public
+CA file's COPY permission had also applied to its newly created parent chain.
+The nonroot process could not traverse `/etc` to read Docker's resolver file,
+so the Go resolver fell back to localhost. An isolated run of the exact captured
+control image under UID65532 reproduced `EACCES` on the CA and resolver paths
+without making a DNS request. Native/browser/recovery gates were not executed.
+
+The bounded correction stages only the frozen public CA in a fresh runtime-root
+tree, explicitly sets directory traversal and read-only certificate modes, and
+copies that tree into both scratch images while retaining their nonroot user.
+Nine focused layout regressions passed independent review. A fresh diagnostic
+image exported and loaded by the official backend then passed the actual
+UID65532 probe: parent modes0555, public CA0444, exact CA hash, readable CA and
+Docker resolver file, with no DNS query. Its receipt is
+`runtime-root-probe-results-1/acceptance.json`, SHA-256
+`e7587c601e5c121dfc09d9264084069ed77f9d44b2e4e0b8c6e1db4285a94d78`.
+Only its exact owned reader, builder, profile and cache were normally removed.
+The original failed capture remains preserved.
+
+Failed-phase analysis also exposed discarded buffered command output and a
+termination exception swallowed by Python's selector polling. The packaging
+helper now retains canceled public output once, hashes private output, preserves
+the original failure cause through logging errors, and reaches owned cleanup on
+actual termination during communication. Nineteen focused process tests passed
+independent review. The combined 220-test release suite passed in 38.963 seconds,
+log SHA-256 `2d1b3a5e14ac4d796b5cf15a3fd40291588c91ef15048d48878c6d751b4c7da3`.
+An earlier mock startup test hit its 20-second harness deadline under load; that
+failed run and the unchanged isolated ten-test pass remain retained. Cleanup
+review matched all six frozen source files and found no additional justified
+deletion. These tooling fixes preserve all qualification limits. Publication,
+fresh capture, measured PostgreSQL admission and full qualification still follow.
+
+Source Go, Rust and both npm audits passed in the hosted run. Its foundation
+images retained 793 finding rows; exact canonical scan data remains in the full
+subject. The 819,937,286-byte subject again exceeded the connector's 512 MiB cap.
+Successful small downloads return a file ID rather than a local path, and their
+next download stage has a separate documented 32 MiB limit. A roughly 400 MiB
+compressed subject would still exceed that stage; no such large second-stage
+attempt or successful full retrieval is claimed. No compression, chunking,
+external release service or alternative trust mechanism was added for this.

@@ -79,6 +79,14 @@ executes the exported, manifest-bound static tools. It must not fall back to a
 stale host `bin/evidence` or require a host Go/Rust compiler to create those tools.
 Generate short-lived fixture PKI after compilation, not before a long build.
 
+Scratch control/fixture images receive a fresh staged public-trust root. Bind its
+CA bundle to the frozen compiler export before and after copying; require only
+that declared public input. Set each parent directory to mode0555 and the bundle
+to mode0444 explicitly under any coordinator umask. Copy the complete tree while
+preserving those per-entry modes, and retain its layout/export metadata. Keep
+the existing nonroot image user and binary permissions. Actual nonroot traversal,
+public trust access and Docker-injected resolver access must work at runtime.
+
 The host development path remains explicitly diagnostic, with its host compiler,
 ABI and output identities recorded. A diagnostic output cannot satisfy a canonical
 gate or silently replace a missing canonical artifact. Existing active development
@@ -197,6 +205,11 @@ fresh nonce. Timeout/interruption stops only the exactly inspected owned compile
 and verifies it stopped before further admission or scratch disposal. Unknown
 BuildKit cancellation state remains a reconciliation blocker after packaging
 failure; killing the Docker client alone is not proof that daemon work ended.
+Cancellation retains merged public command output, including its termination
+tail, exactly once where logging succeeds. Private inspection output remains
+digest-only. Logging/report failures cannot replace the original failure cause
+or prevent the exact owned daemon stop. Signal handling must reach cleanup while
+the process is communicating through selector-backed pipes.
 
 Packaging also has a declared per-image peak addition and an admission floor
 equal to that peak plus the unchanged 2 GiB reserve. Samples cover the builder,

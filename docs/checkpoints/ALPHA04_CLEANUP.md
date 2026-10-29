@@ -477,3 +477,36 @@ Only this ledger changed in the static audit. F/E's focused tests, I's paired
 cross-UID runtime evidence, and root/G's combined validation remain separately
 attributed; no new test execution or full browser qualification is claimed here.
 Ledger frozen and released for publication and subsequent exact-source binding.
+
+### Cancellation evidence and scratch runtime-root audit — 2026-10-29
+
+Reviewed D's frozen six-path correction against published
+`852269a64adfc41f01361bed639a7064dabdcd36`: canonical image/build coordinators,
+control/fixtures runtime Dockerfiles, and the backend/runtime-root regressions.
+Matched all six content hashes in the outside-repository
+`runtime-root-source-freeze.json`.
+
+`retain_output` has live success and cancellation-finally consumers. Its
+once-only guard prevents duplicate cumulative output; private-output digests
+and retention-failure fields feed retained command records and regression
+assertions. The TERM handler remains installed and now raises an exception
+that reaches owned cleanup while the subprocess selector is polling.
+
+`prepare_runtime_root` is called at the gosu compiler boundary, consumes the
+frozen compiler trust digest, and returns the recorded directory/file layout.
+The staged public root is consumed by both scratch Dockerfiles; its file hash
+and layout are included in phase exports and compiler metadata. The original
+trust bundle remains active as the validated compiler export and staging input.
+Tests exercise the helper and actual compiler boundary. Replaced direct-file
+COPY instructions are absent; no additional executable deletion justified.
+
+Only this ledger changed during static review. D/root's final combined log
+`release-tests-runtime-root-final.log` was read and hash-checked: 220 tests passed
+in 38.963 seconds, SHA256
+`2d1b3a5e14ac4d796b5cf15a3fd40291588c91ef15048d48878c6d751b4c7da3`.
+G's acceptance of 19 process and nine layout tests is separately attributed.
+Root retained the earlier transient mock-preflight timeout and isolated 10/10
+pass; the final suite does not erase that earlier record. No tests were run by
+the cleanup owner. I's corrected tiny-image probe remains pending at this entry;
+no probe success, fresh candidate success or full qualification is claimed.
+Ledger frozen and released; publication binding follows the approved checkpoint.

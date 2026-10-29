@@ -1,5 +1,6 @@
 FROM scratch
-COPY --chmod=0444 trust/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# Explicit staged directories remain traversable by the nonroot runtime user.
+COPY runtime-root/ /
 COPY --chmod=0555 bin/qualification-edge bin/qualification-policy-edge bin/qualification-issuer /
 USER 65532:65532
 ENTRYPOINT ["/qualification-edge"]

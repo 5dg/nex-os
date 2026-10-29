@@ -16,6 +16,7 @@ import tempfile
 import time
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[2] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
@@ -172,6 +173,92 @@ class CanonicalImageTests(unittest.TestCase):
         executable.write_bytes(b'first reviewed binary'); first.write_text('{}')
         with self.assertRaisesRegex(ValueError, 'first-build binding changed'):
             packager.execute()
+
+    def output_command_fixture(self):
+        helper = self.root / 'partial-output.py'
+        helper.write_text("import pathlib,signal,sys,time\ndef stop(*args):\n print('TERM-stdout-tail',flush=True); print('TERM-stderr-tail',file=sys.stderr,flush=True); raise SystemExit(42)\nsignal.signal(signal.SIGTERM,stop)\nprint('stdout-prefix',flush=True); print('stderr-prefix',file=sys.stderr,flush=True)\npathlib.Path(sys.argv[1]).write_text('ready')\ntime.sleep(30)\n")
+        expected = b'stdout-prefix\nstderr-prefix\nTERM-stdout-tail\nTERM-stderr-tail\n'
+        packager = packaging.Packager.__new__(packaging.Packager)
+        packager.env = os.environ.copy(); packager.record = {'commands': []}
+        packager.sample = lambda: None; packager.write = lambda: None
+        packager.deadline = time.monotonic() + 20
+        return packager, [sys.executable, str(helper), str(self.root / 'command-ready')], expected
+
+    def test_cancel_retains_merged_prefix_and_term_tail_once_for_timeout_and_resource_denial(self):
+        for cause in ('timeout', 'resource'):
+            with self.subTest(cause=cause):
+                packager, argv, expected = self.output_command_fixture()
+                if cause == 'resource':
+                    calls = []
+                    def sample():
+                        calls.append(1)
+                        if len(calls) > 1: raise ValueError('original resource denial')
+                    packager.sample = sample
+                output = io.BytesIO()
+                with patch.object(packaging.sys, 'stdout', SimpleNamespace(buffer=output)):
+                    with self.assertRaisesRegex(ValueError, 'deadline' if cause == 'timeout' else 'original resource denial'):
+                        packager.command('export-fixture', argv, timeout=0.2 if cause == 'timeout' else 10)
+                self.assertEqual(output.getvalue(), expected)
+                self.assertEqual(packager.record['commands'][0]['exit_code'], 42)
+
+    def test_canceled_private_output_retains_only_digest_including_term_tail(self):
+        packager, argv, expected = self.output_command_fixture()
+        output = io.BytesIO()
+        with patch.object(packaging.sys, 'stdout', SimpleNamespace(buffer=output)):
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                packager.command('private-fixture', argv, timeout=0.2, private_output=True)
+        self.assertEqual(output.getvalue(), b'')
+        self.assertEqual(packager.record['commands'][0]['private_output_sha256'], hashlib.sha256(expected).hexdigest())
+        self.assertNotIn('stdout-prefix', json.dumps(packager.record))
+
+    def test_cancel_log_write_failure_preserves_original_error_and_completes_owned_stop(self):
+        _, env = self.child_fixture()
+        packager, argv, _ = self.output_command_fixture()
+        packager.env = env; packager.expected, _ = container_fixture()
+        packager.container_id = 'owned-id'; packager.volume_created = True
+        packager.execute = lambda: packager.command('export-fixture', argv, timeout=10)
+        calls = []
+        def sample():
+            calls.append(1)
+            if len(calls) > 1:
+                packager.write = lambda: (_ for _ in ()).throw(OSError('report write failed'))
+                raise ValueError('original resource denial')
+        packager.sample = sample
+        class BrokenLog:
+            def write(self, _): raise OSError('log write failed')
+            def flush(self): raise OSError('log flush failed')
+        with patch.object(packaging.sys, 'stdout', SimpleNamespace(buffer=BrokenLog())), patch.object(packaging.sys, 'stderr', io.StringIO()):
+            with self.assertRaisesRegex(ValueError, 'original resource denial'):
+                packager.run()
+        self.assertEqual((self.root / 'stopped').read_text(), 'owned-id')
+        self.assertTrue(packager.record['owner']['stopped'])
+        failed_output = [item['name'] for item in packager.record['commands'] if item.get('output_retention_failed')]
+        self.assertEqual(failed_output, ['export-fixture', 'stop-owned'])
+        self.assertEqual(packager.record['error'], 'original resource denial')
+
+    def test_actual_term_during_command_retains_prefix_and_term_tail_before_owned_stop(self):
+        child, env = self.child_fixture()
+        _, argv, expected = self.output_command_fixture()
+        text = child.read_text()
+        text = text.replace("obj.sample=lambda: (_ for _ in ()).throw(ValueError('simulated low disk'))", 'obj.sample=lambda: None')
+        text = text.replace("obj.write=lambda: (_ for _ in ()).throw(OSError('simulated full report filesystem'))", 'obj.write=lambda: None; obj.deadline=time.monotonic()+20')
+        text = text.replace("(root/'ready').write_text('ready')\n while True: time.sleep(0.05)", f"obj.command('export-fixture',{argv!r},timeout=20)")
+        child.write_text(text)
+        log = self.root / 'term-command.log'
+        with log.open('wb') as output:
+            proc = subprocess.Popen([sys.executable, str(child)], env=env, stdout=output, stderr=subprocess.STDOUT)
+            try:
+                deadline = time.monotonic() + 5
+                while not (self.root / 'command-ready').exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue((self.root / 'command-ready').exists())
+                proc.terminate(); proc.wait(timeout=5)
+            finally:
+                if proc.poll() is None: proc.kill(); proc.wait()
+        contents = log.read_bytes()
+        self.assertEqual(contents.count(expected), 1)
+        self.assertEqual((self.root / 'stopped').read_text(), 'owned-id')
+        self.assertNotIn(b'private-proxy-value', contents)
 
     def child_fixture(self, foreign=False):
         expected, info = container_fixture()

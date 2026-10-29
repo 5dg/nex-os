@@ -225,21 +225,38 @@ class Packager:
             self.write()
         proc = subprocess.Popen(argv, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         deadline = time.monotonic() + timeout if cleanup else min(self.deadline, time.monotonic() + timeout)
+        output = None
+        output_attempted = False
+        def retain_output():
+            nonlocal output_attempted
+            if output_attempted or output is None:
+                return True
+            output_attempted = True
+            if private_output:
+                item['private_output_sha256'] = hashlib.sha256(output).hexdigest()
+                return True
+            try:
+                sys.stdout.buffer.write(output)
+                sys.stdout.buffer.flush()
+                return True
+            except (OSError, ValueError):
+                # Logging failure must never abort exact owned-daemon cleanup,
+                # or replace the original timeout/resource/interruption error.
+                item['output_retention_failed'] = True
+                return False
         try:
             while True:
                 try:
                     output, _ = proc.communicate(timeout=1)
                     break
-                except subprocess.TimeoutExpired:
+                except subprocess.TimeoutExpired as partial:
+                    output = partial.output  # cumulative prefix, never append it
                     if not cleanup:
                         self.sample()
                     if time.monotonic() > deadline:
                         raise ValueError('bounded packaging command deadline exceeded: ' + label)
-            if not private_output:
-                sys.stdout.buffer.write(output)
-                sys.stdout.buffer.flush()
-            else:
-                item['private_output_sha256'] = hashlib.sha256(output).hexdigest()
+            if not retain_output() and not cleanup:
+                raise ValueError('packaging command output could not be retained: ' + label)
             item.update(exit_code=proc.returncode, ended_ns=time.time_ns())
             if not cleanup:
                 self.sample()
@@ -254,17 +271,22 @@ class Packager:
             try: os.killpg(proc.pid, signal.SIGTERM)
             except ProcessLookupError: pass
             try:
-                proc.communicate(timeout=10)
-            except subprocess.TimeoutExpired:
-                try: os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError: pass
-                try: proc.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    if proc.stdout: proc.stdout.close()
-                    item['client_pipe_reconciliation_required'] = True
-            if proc.poll() is None:
-                proc.wait(timeout=1)
-            item.update(exit_code=proc.returncode, ended_ns=time.time_ns())
+                try:
+                    output, _ = proc.communicate(timeout=10)
+                except subprocess.TimeoutExpired as partial:
+                    output = partial.output
+                    try: os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError: pass
+                    try: output, _ = proc.communicate(timeout=5)
+                    except subprocess.TimeoutExpired as partial:
+                        output = partial.output
+                        if proc.stdout: proc.stdout.close()
+                        item['client_pipe_reconciliation_required'] = True
+                if proc.poll() is None:
+                    proc.wait(timeout=1)
+            finally:
+                retain_output()
+                item.update(exit_code=proc.returncode, ended_ns=time.time_ns())
             raise
 
     def docker(self, label, *args, **kwargs):
@@ -439,7 +461,9 @@ class Packager:
 
 def interrupted(signum, _frame):
     signal.signal(signum, signal.SIG_IGN)
-    raise InterruptedError('packaging interrupted by signal ' + str(signum))
+    # selectors.select() catches InterruptedError and would swallow TERM while
+    # communicate() polls pipes. Use an exception that reaches owned cleanup.
+    raise ValueError('packaging interrupted by signal ' + str(signum))
 
 
 if __name__ == '__main__':

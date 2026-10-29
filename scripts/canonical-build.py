@@ -60,6 +60,43 @@ def interrupted(signum, _frame):
  raise InterruptedError("canonical build interrupted by signal "+str(signum))
 
 
+def prepare_runtime_root(package, expected_digest):
+ # COPY --chmod on a file can also chmod newly created parent directories.
+ # Stage the complete public tree so Docker preserves traversal permissions.
+ if not re.fullmatch(r"[a-f0-9]{64}",expected_digest):
+  raise ValueError("frozen public trust digest required")
+ trust = package/"trust"
+ certificate = trust/"ca-certificates.crt"
+ root = package/"runtime-root"
+ if package.is_symlink() or not package.is_dir() or trust.is_symlink() or not trust.is_dir():
+  raise ValueError("regular owned public trust directories required")
+ if set(trust.iterdir()) != {certificate} or certificate.is_symlink() or not certificate.is_file():
+  raise ValueError("public trust export must contain only the regular CA bundle")
+ if root.exists() or root.is_symlink():
+  raise ValueError("runtime root must be fresh; do not overwrite existing output")
+ if sha256(certificate) != expected_digest:
+  raise ValueError("public trust export differs from frozen compiler digest")
+ root.mkdir(mode=0o700)
+ directories = [root]
+ for relative in ("etc","etc/ssl","etc/ssl/certs"):
+  directory = root/relative
+  directory.mkdir(mode=0o700)
+  directories.append(directory)
+ target = root/"etc/ssl/certs/ca-certificates.crt"
+ with certificate.open("rb") as source, target.open("xb") as destination:
+  shutil.copyfileobj(source,destination)
+ if sha256(certificate) != expected_digest or sha256(target) != expected_digest:
+  raise ValueError("public trust bytes changed during runtime staging")
+ target.chmod(0o444)
+ for directory in reversed(directories): directory.chmod(0o555)
+ layout = {"schema_version":1,"kind":"scratch-public-trust-root-v1","public_ca_sha256":expected_digest,
+  "directories":{str(path.relative_to(root)):stat.S_IMODE(path.stat().st_mode) for path in directories},
+  "files":{"etc/ssl/certs/ca-certificates.crt":{"sha256":sha256(target),"mode":stat.S_IMODE(target.stat().st_mode)}}}
+ if set(layout["directories"].values()) != {0o555} or layout["files"]["etc/ssl/certs/ca-certificates.crt"]["mode"] != 0o444:
+  raise ValueError("runtime trust layout permissions differ from declared contract")
+ return layout
+
+
 class Builder:
  def __init__(self, args):
   self.candidate, self.base, self.source = load(args.candidate)
@@ -289,17 +326,25 @@ class Builder:
   atomic_json(self.manifest,self.record)
 
  def compiler_boundary(self, role):
+  if role == "gosu":
+   digest_path = self.bin/"runtime-trust-bundle.sha256"
+   layout_path = self.bin/"runtime-root-layout.json"
+   if digest_path.is_symlink() or not digest_path.is_file() or layout_path.exists() or layout_path.is_symlink():
+    raise ValueError("regular compiler trust digest and fresh runtime layout record required")
+   digest_record = re.fullmatch(r"([a-f0-9]{64})  /package/trust/ca-certificates\.crt\n?",digest_path.read_text())
+   if not digest_record: raise ValueError("unexpected compiler trust digest format")
+   atomic_json(layout_path,prepare_runtime_root(self.package,digest_record.group(1)))
   names = ("control","dev-issuer","model","executor","worker","evidence","qualification-edge","qualification-policy-edge","qualification-pki","qualification-issuer","qualification-receiver-readiness") if role == "gosu" else ("guard-kernel",)
   exported = {}
   paths = [self.bin/name for name in names]
-  if role == "gosu": paths += [self.package/"trust/ca-certificates.crt",self.package/"postgres/usr/local/bin/gosu",self.package/"postgres/usr/local/share/nex/gosu-build.txt",self.package/"postgres/usr/local/share/nex/gosu-dependency-overlay.json"]
+  if role == "gosu": paths += [self.package/"runtime-root/etc/ssl/certs/ca-certificates.crt",self.package/"trust/ca-certificates.crt",self.package/"postgres/usr/local/bin/gosu",self.package/"postgres/usr/local/share/nex/gosu-build.txt",self.package/"postgres/usr/local/share/nex/gosu-dependency-overlay.json"]
   for path in paths:
    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
     raise ValueError("missing or unsupported fresh compiler export: "+path.name)
    if path.parent == self.bin and not os.access(path,os.X_OK):
     raise ValueError("fresh compiler binary is not executable: "+path.name)
    exported[str(path.relative_to(self.path))] = {"sha256":sha256(path),"mode":path.stat().st_mode & 0o7777}
-  metadata_names = ("go-version.txt","go-target.txt","go-compiler.sha256","runtime-trust-bundle.sha256") if role == "gosu" else ("rustc-version.txt","rust-target.txt","rustc-compiler.sha256","rust-libc.txt","guard-linked-libraries.txt")
+  metadata_names = ("go-version.txt","go-target.txt","go-compiler.sha256","runtime-trust-bundle.sha256","runtime-root-layout.json") if role == "gosu" else ("rustc-version.txt","rust-target.txt","rustc-compiler.sha256","rust-libc.txt","guard-linked-libraries.txt")
   for name in metadata_names:
    path = self.bin/name
    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
