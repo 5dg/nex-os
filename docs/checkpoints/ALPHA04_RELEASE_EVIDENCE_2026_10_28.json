@@ -1,0 +1,812 @@
+{
+  "artifacts": {
+    "candidate_subject": {
+      "bundle_subject_sha256": "3884c61f6feb44a88d4461108246108580e80dc878ece82cbe86d434100f33d3",
+      "connector_rejection_limit_bytes": 536870912,
+      "id": 12865776887,
+      "independently_retrieved": false,
+      "subject_digest_scope": "producer log matches decoded unverified origin statement",
+      "zip_bytes": 820027680,
+      "zip_sha256": "09933136ffc90753261abb568de9f32fe9183d6a363945595359908c33d5e638"
+    },
+    "origin_statement": {
+      "id": 12865489522,
+      "independent_signature_verification": false,
+      "independently_retrieved": true,
+      "zip_bytes": 6770,
+      "zip_sha256": "23742f3fb144531c549ae83869451a9bd0be2c0b66143daea3546074db8b2712"
+    },
+    "public_metadata": {
+      "id": 12864959694,
+      "independently_retrieved": true,
+      "verified_available_sealed_files": 24,
+      "zip_bytes": 8762832,
+      "zip_sha256": "a383a6cc913b80ca66a1ecbd3b0fabba47d51b5420ddbc273dc965dc9aa27247"
+    }
+  },
+  "decision_at": "2026-10-29T01:45:10.839931+00:00",
+  "gates": [
+    {
+      "name": "captured-source-and-modes",
+      "next_action": "Preserve this immutable capture; bind every future receipt to its exact source identity.",
+      "owners": [
+        "H",
+        "J",
+        "G"
+      ],
+      "reason": "G independently verified all316 captured bytes/modes, input-map digest, companion SHA and all frozen reviewed content hashes. Freeze working modes0600 are historical; published/captured modes match canonical map.",
+      "status": "passed"
+    },
+    {
+      "name": "offline-regressions",
+      "next_action": "Preserve226 regression receipts alongside the separately accepted runtime evidence.",
+      "owners": [
+        "D",
+        "E",
+        "root",
+        "G"
+      ],
+      "reason": "Retained226-test log hash/summary verified; G separately executed22 backend,18 admission,14 workflow and actual pinnedNext loader regression on frozen code.",
+      "status": "passed"
+    },
+    {
+      "name": "native-worker-probe",
+      "next_action": "Retain per-image effective worker assertions; require the same checks for any future build.",
+      "owners": [
+        "I",
+        "D",
+        "G"
+      ],
+      "reason": "Actual oneOCI/native worker with pinned backend/config, source verifier accepted lowercase schema; normal owned cleanup. Daemon-only scope.",
+      "status": "passed"
+    },
+    {
+      "name": "external-node-disposal-helper-review",
+      "next_action": "Preserve the frozen helper and completed boundary receipt with verified unchanged protected inventories; no further cleanup is implied.",
+      "owners": [
+        "I",
+        "G"
+      ],
+      "reason": "Exact frozen helper reviewed;8 read-only safety cases passed. No new scratch disposal performed by this review.",
+      "status": "passed"
+    },
+    {
+      "name": "local-first-build-admission",
+      "next_action": "Preserve the approved plan and actual phase/reserve samples; local execution remains first-only.",
+      "owners": [
+        "root",
+        "I"
+      ],
+      "reason": "Root approved exact source/run/helper/driver-bound first-only numeric plan after actual post-preflight free13123395584B exceeded12884901888B whole admission; G verified receipt and three referenced record hashes. Actual execution still enforces all floors.",
+      "status": "passed"
+    },
+    {
+      "name": "local-first-canonical-build",
+      "next_action": "Preserve this first-only result; no local second build or application qualification is authorized/claimed.",
+      "owners": [
+        "I"
+      ],
+      "reason": "Original approved launcher completed builder/helper exit0; firstmanifest built, all native/packaging commands exit0, owned compiler/backend cleanup recorded, reserve preserved. Transient execution transport outage did not restart builder or grant new admission.",
+      "status": "passed"
+    },
+    {
+      "name": "local-second-build",
+      "next_action": "Keep the local first-only scope; the completed two fresh hosted builds supply the required pair.",
+      "owners": [
+        "root",
+        "I"
+      ],
+      "reason": "Outside authorized local16ed first-only scope.",
+      "status": "not_run"
+    },
+    {
+      "name": "hosted-two-build-comparison",
+      "next_action": "Preserve the accepted fresh pair and independent cross-host comparison; complete hosted-subject retrieval remains a separate prerequisite.",
+      "owners": [
+        "D",
+        "F",
+        "G",
+        "E"
+      ],
+      "reason": "Both fresh sequential build manifests completed all commands exit0. Twelve native hashes and all six config/layer/payload/emitted archive identities match; producer proof references bind to seal. Retrieved workspace/PG full maps independently rehashed and identical. Raw OPA export inequality retained.",
+      "status": "passed"
+    },
+    {
+      "name": "proof-parity",
+      "next_action": "Preserve exact hosted evidence; do not promote this functional result to release/provenance/security clearance.",
+      "owners": [
+        "D",
+        "F",
+        "G",
+        "E"
+      ],
+      "reason": "Exact hosted candidate gate command, exit0, source/run/build-manifest and six testedimage bindings independently verified. Raw inner log remains in full subject.",
+      "status": "passed"
+    },
+    {
+      "name": "shutdown",
+      "next_action": "Preserve exact hosted evidence; do not promote this functional result to release/provenance/security clearance.",
+      "owners": [
+        "D",
+        "F",
+        "G",
+        "E"
+      ],
+      "reason": "Exact hosted candidate gate command, exit0, source/run/build-manifest and six testedimage bindings independently verified. Raw inner log remains in full subject.",
+      "status": "passed"
+    },
+    {
+      "name": "history-pagination",
+      "next_action": "Preserve exact hosted evidence; do not promote this functional result to release/provenance/security clearance.",
+      "owners": [
+        "D",
+        "F",
+        "G",
+        "E"
+      ],
+      "reason": "Exact hosted candidate gate command, exit0, source/run/build-manifest and six testedimage bindings independently verified. Raw inner log remains in full subject.",
+      "status": "passed"
+    },
+    {
+      "name": "packaged-shutdown",
+      "next_action": "Preserve exact hosted evidence; do not promote this functional result to release/provenance/security clearance.",
+      "owners": [
+        "D",
+        "F",
+        "G",
+        "E"
+      ],
+      "reason": "Exact hosted candidate gate command, exit0, source/run/build-manifest and six testedimage bindings independently verified. Raw inner log remains in full subject.",
+      "status": "passed"
+    },
+    {
+      "name": "dom-browser",
+      "next_action": "Preserve exact hosted evidence; do not promote this functional result to release/provenance/security clearance.",
+      "owners": [
+        "D",
+        "F",
+        "G",
+        "E"
+      ],
+      "reason": "Exact hosted candidate gate command, exit0, source/run/build-manifest and six testedimage bindings independently verified. Retrieved raw outer gate log hash verified.",
+      "status": "passed"
+    },
+    {
+      "name": "ordered-qualification-rotation-restore",
+      "next_action": "Preserve exact hosted evidence; do not promote this functional result to release/provenance/security clearance.",
+      "owners": [
+        "D",
+        "F",
+        "G",
+        "E"
+      ],
+      "reason": "Exact hosted candidate gate command, exit0, source/run/build-manifest and six testedimage bindings independently verified. Retrieved final ordered wrapper marker requires rotation and restore commands/harnesses/after.verified success; inner transition logs remain in full subject.",
+      "status": "passed"
+    },
+    {
+      "name": "cross-host-reproducibility",
+      "next_action": "Preserve current16ed cross-host success separately from historical4f mismatch; no release/security/provenance clearance inferred.",
+      "owners": [
+        "D",
+        "E",
+        "G",
+        "I"
+      ],
+      "reason": "G independently hashed12actual nativefiles and all6local archives/configurations/encoded+uncompressed layers, matching both retrieved hosted manifests. Exact fullWS/PGmaps match bothhosted. E independently rederived6merged maps using unchangedcaptured contract; allmatch. Hosted fullarchive materialization remains separate.",
+      "status": "passed"
+    },
+    {
+      "name": "source-security-audits",
+      "next_action": "Preserve447-component inventory and the matched hosted source-audit evidence; refresh on source/dependency changes. Canonical image findings remain separate.",
+      "owners": [
+        "E",
+        "G"
+      ],
+      "reason": "Foundation source Go/Rust/workspaceNPM/browserNPM audits passed; G verified ZIP and raw source-audit hashes. Captured inputs match, but foundation fullidentity differs because two generated typecheck files exist. Exact captured inventory447 components.",
+      "status": "passed"
+    },
+    {
+      "name": "canonical-image-security",
+      "next_action": "Obtain supported reviewed image fixes, rebuild and rescan all selectedimages; retain raw vendor statuses and required gates.",
+      "owners": [
+        "E",
+        "I",
+        "D"
+      ],
+      "reason": "Canonical vulnerability gate failed. Independent E review verified47 raw local canonical scan/SBOM files, exact6image/source/manifest/archive bindings,793 rows including4critical/168high and no waivers. All6actual local archive/config/layer/payload identities match both hosted manifests; separate raw hosted canonical reports remain inside unretrievedfullsubject.",
+      "status": "failed"
+    },
+    {
+      "name": "independent-full-subject-retrieval",
+      "next_action": "Obtain the complete matching820027680-byte artifact through a supported authorized path and verify its hash/bindings; the metadata subset does not replace the subject.",
+      "owners": [
+        "E",
+        "root"
+      ],
+      "reason": "Actual16ed complete subject820027680B rejected by connector536870912B ceiling. Separate materializer32MiB limit also remains; retrieved metadata8762832B is only a subset.",
+      "status": "blocked"
+    },
+    {
+      "name": "independent-origin-verification",
+      "next_action": "Use pinned verifier/default trust and exact source/run/workflow/subject constraints; do not infer signature success from origin job success.",
+      "owners": [
+        "E",
+        "root"
+      ],
+      "reason": "Origin producer job succeeded and detached ZIP digest/decoded subject matched actual producer log; independent16ed signature verification NOT attempted because exact fullsubject unavailable. Historical actual defaultTUF403 is separate context.",
+      "status": "blocked"
+    },
+    {
+      "name": "release-eligibility",
+      "next_action": "Require every release gate and complete independently verified evidence; no production authorization implied.",
+      "owners": [
+        "root",
+        "E",
+        "G"
+      ],
+      "reason": "Hosted complete functional qualification, hosted fresh-pair comparison and independent local first-build/cross-host comparison passed. Canonical image security failed793rows and independent origin/fullsubject/retention remain blocked; overall CI/release did not pass.",
+      "status": "blocked"
+    },
+    {
+      "name": "hosted-origin-producer",
+      "next_action": "Do not treat producer success or decoded content as cryptographic verification; require exactfullsubject and independent pinned-verifier acceptance.",
+      "owners": [
+        "E",
+        "G"
+      ],
+      "reason": "Completed originjob123209080725 success; detachedZIP SHA verified; decodedUNVERIFIED subject SHA matches actual logged candidate-bundle SHA. Producer success only.",
+      "status": "passed"
+    },
+    {
+      "name": "local-node-scratch-boundary",
+      "next_action": "Preserve the completed boundary receipt, exact approved roots and unchanged protected inventories; no additional scratch disposal is implied.",
+      "owners": [
+        "I",
+        "G"
+      ],
+      "reason": "Independently verified exact helper/plan/source/run, Node exit0 and owned writer absence/cleanup, control marker precedes boundary, only three freshroots absent while workroot remains. Protected source/bin/package inventories byte-identical; all316captured source hashes/modes match.",
+      "status": "passed"
+    }
+  ],
+  "hosted": {
+    "actions_run_id": 40798668756,
+    "builds": {
+      "one": {
+        "ended_at": "2026-10-29T01:20:41.463337+00:00",
+        "manifest_sha256": "b0546128d28a1537d577eebd5a61844633b2ca37cfc2123c05fa02351c6d56b7",
+        "started_at": "2026-10-29T01:14:11.349054+00:00",
+        "status": "built"
+      },
+      "two": {
+        "ended_at": "2026-10-29T01:26:36.220367+00:00",
+        "manifest_sha256": "ee9aa2500bd7c253a26e571c94b05808516e6f49cd5fca8482e04eefbabde7d6",
+        "started_at": "2026-10-29T01:20:43.164673+00:00",
+        "status": "built"
+      }
+    },
+    "candidate_run_id": "2895df3aa4df",
+    "jobs": {
+      "canonical": {
+        "conclusion": "failure",
+        "id": 123201210343
+      },
+      "foundation": {
+        "conclusion": "failure",
+        "id": 123201209999
+      },
+      "origin_producer": {
+        "conclusion": "success",
+        "id": 123209080725
+      }
+    },
+    "url": "https://github.com/5dg/nex-os/actions/runs/40798668756"
+  },
+  "images": {
+    "control": {
+      "canonical_archive_sha256": "971041cb28c679e2cf9a0f7056684d82168d52d5c6eedc2ae254ffad37dd776f",
+      "compressed_layer_paths": [
+        "blobs/sha256/673e7db73e65221055bb17198198170365db281064a262d2b750c41ad58dcc8e",
+        "blobs/sha256/4bfe6abb80d04233345fa89b207291e9118f566f3b0b947b574e1cfd7ae22234"
+      ],
+      "id": "sha256:7459ff735c79ff3ecc43a8c0d2dca60d80f96cb4aadc75b9c3082d0169504a96",
+      "payload_entries": 10,
+      "payload_sha256": "05dd5782c5b54235c4651936efc81c4277c94e7ebb966fcc3d415e3ec353587e",
+      "uncompressed_layer_diff_ids": [
+        "sha256:96249515f22050bcdedb68526d323aef36bc3a2b59f1349efa5508583f5abb4f",
+        "sha256:d2cd8e2b1a831fe68265d12a86f6bcc25f891e87534470104ca3113145e08198"
+      ]
+    },
+    "fixtures": {
+      "canonical_archive_sha256": "7aa3c81ba43b306f1c5792bc4c02887ac5c3996b158965977ff46b817241f2af",
+      "compressed_layer_paths": [
+        "blobs/sha256/673e7db73e65221055bb17198198170365db281064a262d2b750c41ad58dcc8e",
+        "blobs/sha256/eb4aa6b712c0711dfc9071efcf7cb6dd34a596db70800a8f311baea549ca646d"
+      ],
+      "id": "sha256:15ebfca08cf93945eb39dfe9c4dda1c61585a024dc3ceef854bea0ee59124ab4",
+      "payload_entries": 7,
+      "payload_sha256": "1f10506ef2d6b89818da85718d94ba0c5d4ca0a56c342f3c57887305aa3a9e89",
+      "uncompressed_layer_diff_ids": [
+        "sha256:96249515f22050bcdedb68526d323aef36bc3a2b59f1349efa5508583f5abb4f",
+        "sha256:5026aa6c56d573c82e0c421c303205129f6aa1e892a43356ac105e248fb430a3"
+      ]
+    },
+    "guard": {
+      "canonical_archive_sha256": "8d6c3bf19a846ea78c0de3ad05877277471849a74b59cf1ced3bceae46c81465",
+      "compressed_layer_paths": [
+        "blobs/sha256/f2be67225471500c788ce88c597eb5ea8336e912ad1ca4815650e0281afe2034",
+        "blobs/sha256/219d70eddb619ec267b2355d0a1c5bdcf8962f1d2d645881b5f5fc13ac561fa2"
+      ],
+      "id": "sha256:eb5ca8e02cc3cf09edc6ec97c4df496b9eb87318998ed521be0efcea8f659dc9",
+      "payload_entries": 3272,
+      "payload_sha256": "7978e3f2ece0e436108443fd934b18e080f39c32f2a2fc044dcf926e2bf9b95d",
+      "uncompressed_layer_diff_ids": [
+        "sha256:a70f6272827f64e1427d048ced77491aab5d64ab95725e56920802ff391197d7",
+        "sha256:6fedcfa8efcfb914ea0f709fa3127be371d720fb3f00f50d050457814ab29188"
+      ]
+    },
+    "opa": {
+      "canonical_archive_sha256": "2165df2d1ce74a6bf76f758cb47953455cc7625a25d1623d5927f31f7d0bf4b9",
+      "compressed_layer_paths": [
+        "blobs/sha256/fb755f0d1135aa0c93f43ab8f7a4877f957290b2bef85224c41c3b0b09658eb7",
+        "blobs/sha256/2ebcf72fa26638157a4787c58b5eb5d06caa59671cc56cbff326ca0839899300"
+      ],
+      "id": "sha256:b4014616f8e378a07fc4acd3ea3cc169dcd9b80178ab0f0cfcf386163ea5030d",
+      "payload_entries": 1342,
+      "payload_sha256": "0317c7a21c27a31163c3d0fb54ad4fdbdd11322e06e3a617d535de4ddef6f852",
+      "uncompressed_layer_diff_ids": [
+        "sha256:fb755f0d1135aa0c93f43ab8f7a4877f957290b2bef85224c41c3b0b09658eb7",
+        "sha256:2ebcf72fa26638157a4787c58b5eb5d06caa59671cc56cbff326ca0839899300"
+      ]
+    },
+    "postgres": {
+      "canonical_archive_sha256": "6f865776d304a21e7dd6f51beddb08922acd157cde6cb3214e79deaf801f74f2",
+      "compressed_layer_paths": [
+        "blobs/sha256/11422d7ca1a44390a32bd8d8d9dc5946b4d053b3bbd9507d682e35584ba84a26",
+        "blobs/sha256/a03cba1ee28ff277dc286bd9b9b1f06c579ac1bead0739d8de4fb954bd727cba",
+        "blobs/sha256/32ac211a4068fa6dffa60b7a198e73ddab6d34512f68e274d35f0687e84fdd85",
+        "blobs/sha256/80015fd9769785a4069f738ef63a27af1ceb1ac0997d81334e64f490443217b0",
+        "blobs/sha256/3d633189a25727df0d33aa3d700a68dadbd31196517faa346d364572c49cb5b0",
+        "blobs/sha256/abc91d04c1906d41ac911a8bfb9a98f7f81394c36ad19f7e0464cae9732a142b",
+        "blobs/sha256/b69f574b66a338b2d3ca82c03f864ea1f9c0a064068dc076106fdf1c692052d6",
+        "blobs/sha256/ebb1e532806bea3c99b76d408642a6a2d0b81e2ad1413429d758a64e93a6e539",
+        "blobs/sha256/c5f39862cce6bdf55d2c1782a0ca5119323e704858e0de0f2bcf5df62c9f71f8",
+        "blobs/sha256/1dc57ea82d8b46691da575f8e0da097074e648e9081e04b5aadc03d400d526fd",
+        "blobs/sha256/2433825d376d579d37a0b91fdaea2fb7ab9d7529197a8b1c7de6db07aff9af5f",
+        "blobs/sha256/66361375bc70b8df444091abe587f939424c137113411d329fed2dd5221bb0ac",
+        "blobs/sha256/34c01ab7a5453f71f1fdb7f93feb59ae4dab573a8bd61cfe818bd9cf3ed205fc",
+        "blobs/sha256/eb2a6aab6a8efa7ba586d8156d8ed039a252f51d74e5c7a9768c6e86d9c0abd9",
+        "blobs/sha256/0e5341d6e40e49f047db9e11d2681732dbb3a0661018cc668fadc3c35e36812e",
+        "blobs/sha256/9bc4e8de4e71862d6b6e823238be35e0b3dd01d37d5e1a50c6cf1dd51ac7bcfb"
+      ],
+      "id": "sha256:9728055846b793de717ecf8ecf23a22afd46d927feb32cfa2e1baaa6a7bec310",
+      "payload_entries": 10225,
+      "payload_sha256": "cb1112135e6015401ac03758250655703c619e4cfbefe15a3ff9747c6677f42f",
+      "uncompressed_layer_diff_ids": [
+        "sha256:9b35de7893378218e365c34c2c735fb0032a859112fb7345ca8ea73f9aa1db70",
+        "sha256:ba9435b9aaff1b426c372d32d94a4d6f657c27b26646ad807d5eead24ae9d76a",
+        "sha256:e7303073a123df2ba4bf415130aa8979365743bbcaf105670c53a51911755fad",
+        "sha256:7afd4d866c80126854ab1554fc734f46f09b8c3d4598e75270699c8497c21c2a",
+        "sha256:46e1a0b3b48d36b4f177a0cb65dd017704c0edda734430e0a540075e685fc125",
+        "sha256:1b55e6b4a79ca74bfd356d406b737e01ce6534485672c333ed292a488856145c",
+        "sha256:c428ddd9d30970eba6da139ab9b43137eede0ed3daf984b9534f2ba60ddec23c",
+        "sha256:d13b72c2e1a080635550e6b38b2dd60e55135497c3a8bb3e93476ecef929cf0c",
+        "sha256:b30a3b3909215d3baf3baf60b50377158b2f23c78c33b12c3d215ac3747c3448",
+        "sha256:081753777dccc42da338577d8e4659c720be88f5490da79b4f91fe9c13390063",
+        "sha256:b854b8f138a38b6981e02191afa61ca8bf7ba486e62b06dd426865d14cfdc2c8",
+        "sha256:6eda1787c67c749bd1015041317153b3c732ab41e718dc41f949a13e60391387",
+        "sha256:ce793c01b88e3141abc5174e76281a60b6fbc90d5746107e1e6c92f1d32cf02a",
+        "sha256:ed78ed279688062d5b4992b2dcad6f8e875c35b9f309214e88c3fc3f7dc92328",
+        "sha256:1536e7054975c2285cb62b5914603173ddd97422d4b545ffe1d8153b4edc2476",
+        "sha256:6478e5e01a189a952751b0604f49515aa946bb6848f570a2b9c4a6d9240c6c4b"
+      ]
+    },
+    "workspace": {
+      "canonical_archive_sha256": "b38bc1ddfa958a38c1185d8bb6ee247a0f7c54af2f7fe026957e2f727e73ebc7",
+      "compressed_layer_paths": [
+        "blobs/sha256/a8ac7f6c67abc236e4c745052c404112b8fab6fe8ac3a329d1ef3b867ad67c71",
+        "blobs/sha256/990581063f5c8a03a57db7a0d116679ea6e6e335d4ac48ef457f26f82d917eba",
+        "blobs/sha256/4996e33358abd29e5daf56cdda6681efb4db3bd55b5ab63a7d3d44f8400195a4",
+        "blobs/sha256/f95897c2a1fb7bce26b018dd74b2845f816f7b86d5adff2939c6482b1d5b474c",
+        "blobs/sha256/c35748eaa5ecc949b0f7cc349a9f7c4a5417dc008e2d9bebd53678d87238fcbf",
+        "blobs/sha256/106c0a95e8a3c82fed60096ce6c87322ecd2993423a3ead0cf335924aaa6f1cc",
+        "blobs/sha256/f6f3624c0eba85203dca0bfc6f86c54ce4618b30221021e749d2a7f44cfa0e17",
+        "blobs/sha256/953573419445e030b27dc8576fb8d620e9263ec5e86d6164e333825f9d491bb3",
+        "blobs/sha256/f156599c89e7a5dc6f33567a3436014abdd014f4a775d431a6aed7968be110b0"
+      ],
+      "id": "sha256:2ec520c757e54c7abeb6d1734317149d33f993985af343dc0e267059af1701d2",
+      "payload_entries": 6338,
+      "payload_sha256": "a192aec101422692fc46b5c54300e9b6ebdee90444fe87f63ba4bd052e13ee09",
+      "uncompressed_layer_diff_ids": [
+        "sha256:1d69a5fd31932841d7825ef4780c06f008eea65aaa9f3110fe09d5832ed5c7d8",
+        "sha256:1ecd584585e16573c2663ba440a96264e380d3b73d1aa134bd412832a7a9d007",
+        "sha256:26bfa8972980bd9e51648c04196656bce2b61da00740da02193ad26350dcec03",
+        "sha256:f8df5cf514d8a65c9cc96cb515c1551f829b4fe10355783d2e7f4edfb095d4b7",
+        "sha256:aaa6cd2b99bfcc6c44dbf6f7a291414c7fc026f228eadfd3bd5b608afbfecb81",
+        "sha256:19c37ca853c2a7161e282834decfeec0c1d49f9bfbb18f2a6289485748dc267c",
+        "sha256:0a2b90f9468924e0867188cb607d666ec1f6fbdeb56d168ea46815ae42021f6b",
+        "sha256:155f479c5fc463b67449dfdebf5a94cc63b323c39317ec8a0d61a90ab25d88fd",
+        "sha256:3100721eacc57820de61a2aba032f0524b1bec8446e2d9c321a870c8c57ecd04"
+      ]
+    }
+  },
+  "limits": [
+    "Full candidate subject, raw inner service/transition/effect artifacts and complete hosted image archives were not independently materialized.",
+    "Strict final16ed cryptographic origin verification was not attempted: exact subject unavailable; retained default Sigstore TUF HTTP403 diagnostic is historical and applies to unchanged access policy.",
+    "Canonical vulnerability gate failed; no severity reduction, vendor-status exclusion or waiver.",
+    "Raw OPA Docker export archives differ; documented outer header preparation and exact config/layer/payload/emitted archives match.",
+    "Production remains dependent on the customer/cloud/identity/custody/authorization backlog."
+  ],
+  "local": {
+    "availability_incident": "Execution transport briefly unavailable around01:37UTC; restored automatically; original builder continued and recorded exit0; no restart or duplicate build.",
+    "builder_observed_exit_code": 0,
+    "candidate_run_id": "edbcc110b45d",
+    "cross_host_comparison": "All12 native bytes, all6 canonical archives/configs/encoded and uncompressed layers match both hosted builds. All6 merged maps independently rederived; actual downloaded workspace/Postgres maps exactly match.",
+    "ended_at": "2026-10-29T01:40:07.187712+00:00",
+    "first_manifest_sha256": "7aaac59e4dd9cec7d4161733579db2cf6c4c7b82cfceee477b84abcfc4882837",
+    "helper_observed_exit_code": 0,
+    "native_binaries": "12 actual local hashes match both hosted manifests",
+    "postgres_phase_initial_free_bytes": 11246567424,
+    "postgres_phase_peak_additional_bytes": 6438555648,
+    "postgres_phase_required_free_bytes": 10737418240,
+    "reserve_bytes": 2147483648,
+    "runtime_end_state": "Zero running containers observed; retained all application state, images and evidence.",
+    "scope": "independent fresh first build only, no local second build or combined verifier",
+    "status": "built",
+    "whole_docker_minimum_free_bytes": 4807544832,
+    "whole_docker_peak_additional_bytes": 8315723776,
+    "workspace_image_id_matches_hosted": true
+  },
+  "native_binaries": {
+    "control": "7c40c9b8d5c93ec89f4e55c5f22281e73bc62ba92abec559550d4f26423bdbe8",
+    "dev-issuer": "a9409e868c17188ea3d99dc62dfa1fae89ea1197680d8d503297243110a2fcee",
+    "evidence": "1f76eace66ee0fb4ee90d7c19dcae4a451ac2e5a50775f5a8e7e008c1bed884e",
+    "executor": "0330dc5149ef9bc15f5fdbf520ee465bf707e5735a956a24fcb4dac57bbdce81",
+    "guard-kernel": "1d657a8d9fcdda032861b9587d477590c0e5fd8a8f315d010a980e8d25909ef0",
+    "model": "836f3d2c93fb2b2751559ff40b3c3c9002a75fd0a7a0f47f8ec8b435344691c7",
+    "qualification-edge": "a2b56fc8811f5b066fcfb4b30759f01c48e7e50b5490289253e404732a234078",
+    "qualification-issuer": "aeb82e716f348a11966c9c6b6c5b8d99a89862ca6e3bc985c8f5e7d4cd378c6b",
+    "qualification-pki": "9ae818cd7f67de91abf886f12e01af6ccb65356c750ccf58a97995b54a4917e8",
+    "qualification-policy-edge": "7121ac1c4100a4a522350158b0bdf8d116980451cabad98f80398490c049eb55",
+    "qualification-receiver-readiness": "8222bf1e097bf85e9759b93b4aaee13d5b80492041ffc0d14775c2d034d60a85",
+    "worker": "ed62e6baf5f83bde5e807eaf12fa55b6d1ba7032898b05a9d2f57115b48e560a"
+  },
+  "production_attestation": false,
+  "profile": "synthetic-qualification",
+  "receipt_path_base": "Paths in receipt_sha256 are relative to the separately retained nex-completion-20261028 completion-evidence directory outside this repository.",
+  "receipt_scope": "This public index records checksums; it does not embed all raw local review receipts or assert complete hosted-subject retrieval.",
+  "receipt_sha256": {
+    "candidate-final-16edb6a68ca2-first-only1/evidence/node-scratch-boundary/acceptance.json": "fa9ab858679793eabd753c2c8dbf747a6a2e9cc06620aa86de0ec6da90fc87f9",
+    "candidate-final-16edb6a68ca2-first-only1/evidence/runtime-availability-incident.json": "945f7b0b42da1667f5fca472f8f1780f42dc34c05ac383f8c362af68c1a9fd47",
+    "cleanup-publication-binding-16edb6a.json": "01578b3e52b167cb159e26c57198136babe32507b7a2bab16670ff4348d57650",
+    "final-browser-review-16edb6a.json": "8020177f8d469aeaddf6fde21f0cc042bfb22be0a17c654fef56a9fdf1e17c3e",
+    "release-tests-native-worker-final.log": "65c0a2a212bba41b383e3dca84cb99e36da19de8ae2550e8d9a0126766b82a76",
+    "root-local-first-16ed-approval.json": "58fd1189208cca94a24ffaf6dccb68ad1fa417a81c11bb52030b22aa6325816b",
+    "runtime-final-handoff-16edb6a.json": "459a062905b3ec82466361ddd4638b5d888e5b853f23b7ce33a6c773b3d83351",
+    "security/final-16ed-canonical-scan-review.json": "ce21b3787845dfdd821f212492fc5f22fd4def8024af2c122ee5be0fe7b35378",
+    "security/final-16ed-local-hosted-comparison.json": "18cd8290c1dd67e0eefc7b58929ab4c4172ee3183f0d708e7803bd415a44a9c4",
+    "security/final-16ed-security-provenance-decision.json": "deeb20aa3e754477f45174f9ee85da0c84cbd2f50fe10c340b3187c5514be94a",
+    "security/g-independent-16ed-local-hosted-bytes.json": "b2f9753b5d091573c66508a93ec112b5fc16d5957a04760ff1ec224ef468fa4f",
+    "security/github-candidate-16edb6a-metadata/retrieval-review.json": "38c0d4b67ae9ebe3de350df3695a6a7414c0ffea9bc23f13281681ed365694fc",
+    "security/github-candidate-16edb6a-origin/retrieval-review.json": "3effc3c63c99e2bd27cfa5cd3f507f93098a047399e1a4e1b004fa8c0f18c395",
+    "security/hosted-16ed-image-comparison.json": "a03bdedd517f1b43dfa9b10e35821d42c4eebd77b1964dd74135139e48dea12b",
+    "security/payload-rederivation-final-16ed/review.json": "bdbd3b90a74113b9c4f090106d093926526c57bb96b9f0c3c14aff86ec64dde6"
+  },
+  "report_commit_is_not_a_new_qualified_candidate": true,
+  "schema_version": 1,
+  "security": {
+    "batch_manifest_sha256": "7bf86460bda394e6885ea03ca33f79949bcf5c52f029daab0dfd97f4efb77a17",
+    "database": {
+      "metadata": {
+        "DownloadedAt": "2026-10-28T21:25:46.635487957Z",
+        "NextUpdate": "2026-10-29T19:18:03.419608078Z",
+        "UpdatedAt": "2026-10-28T19:18:03.419608319Z",
+        "Version": 2
+      },
+      "sha256": "1c66d0d801a194ed5df7a9c334d7991a6529d82952ab07a23cff1047c637c598",
+      "version": 2
+    },
+    "exclusions": [],
+    "fixed_version_rows": [
+      {
+        "FixedVersion": "0.62.0",
+        "InstalledVersion": "v0.60.0",
+        "PkgName": "golang.org/x/net",
+        "Severity": "UNKNOWN",
+        "Status": "fixed",
+        "VulnerabilityID": "CVE-2026-78661",
+        "role": "opa"
+      },
+      {
+        "FixedVersion": "0.62.0",
+        "InstalledVersion": "v0.60.0",
+        "PkgName": "golang.org/x/net",
+        "Severity": "UNKNOWN",
+        "Status": "fixed",
+        "VulnerabilityID": "CVE-2026-97045",
+        "role": "opa"
+      }
+    ],
+    "gate": "failed",
+    "per_image": {
+      "control": {
+        "exit_code": 0,
+        "findings": 0,
+        "image_id": "sha256:7459ff735c79ff3ecc43a8c0d2dca60d80f96cb4aadc75b9c3082d0169504a96",
+        "severity_counts": {},
+        "timed_out": false
+      },
+      "fixtures": {
+        "exit_code": 0,
+        "findings": 0,
+        "image_id": "sha256:15ebfca08cf93945eb39dfe9c4dda1c61585a024dc3ceef854bea0ee59124ab4",
+        "severity_counts": {},
+        "timed_out": false
+      },
+      "guard": {
+        "exit_code": 1,
+        "findings": 162,
+        "image_id": "sha256:eb5ca8e02cc3cf09edc6ec97c4df496b9eb87318998ed521be0efcea8f659dc9",
+        "severity_counts": {
+          "HIGH": 43,
+          "LOW": 60,
+          "MEDIUM": 58,
+          "UNKNOWN": 1
+        },
+        "timed_out": false
+      },
+      "opa": {
+        "exit_code": 1,
+        "findings": 3,
+        "image_id": "sha256:b4014616f8e378a07fc4acd3ea3cc169dcd9b80178ab0f0cfcf386163ea5030d",
+        "severity_counts": {
+          "UNKNOWN": 3
+        },
+        "timed_out": false
+      },
+      "postgres": {
+        "exit_code": 1,
+        "findings": 400,
+        "image_id": "sha256:9728055846b793de717ecf8ecf23a22afd46d927feb32cfa2e1baaa6a7bec310",
+        "severity_counts": {
+          "CRITICAL": 3,
+          "HIGH": 69,
+          "LOW": 168,
+          "MEDIUM": 156,
+          "UNKNOWN": 4
+        },
+        "timed_out": false
+      },
+      "workspace": {
+        "exit_code": 1,
+        "findings": 228,
+        "image_id": "sha256:2ec520c757e54c7abeb6d1734317149d33f993985af343dc0e267059af1701d2",
+        "severity_counts": {
+          "CRITICAL": 1,
+          "HIGH": 56,
+          "LOW": 83,
+          "MEDIUM": 87,
+          "UNKNOWN": 1
+        },
+        "timed_out": false
+      }
+    },
+    "raw_files": {
+      "binding.json": {
+        "bytes": 55549,
+        "sha256": "f1aa091876da01e264f96d9b57cb3ddc3794d9197a341dd362a01e34c9bc9d4e"
+      },
+      "control.convert.stderr": {
+        "bytes": 178,
+        "sha256": "5fc4c330b2672fcad303c1b8745028a6aecae7cb6a51ca0018bdbdfe58468d88"
+      },
+      "control.convert.stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "control.image.json": {
+        "bytes": 1604,
+        "sha256": "a2253ca64ef29c6c6c19548515ea1dd54132851fe070bc5db0aacb77a59e356a"
+      },
+      "control.record.json": {
+        "bytes": 4302,
+        "sha256": "8fe4f5678466b76714ecb8b8c8c9322d58113b0019f25ba081c07a22245f42c8"
+      },
+      "control.sbom.cdx.json": {
+        "bytes": 64674,
+        "sha256": "efb2a1be95022da7ab60d333a8263243ebd69aaf5c6101f903cddeac88149140"
+      },
+      "control.stderr": {
+        "bytes": 517,
+        "sha256": "0d48b1343fcd6e49c90c804c4df1b0c4eb03de2f12634597028cfa3ec9d0ad6a"
+      },
+      "control.stdout.json": {
+        "bytes": 43740,
+        "sha256": "cbf3a6b570e81cffff1567549c374feb17ca0be348a58a73f7c9dc36154331b3"
+      },
+      "fixtures.convert.stderr": {
+        "bytes": 178,
+        "sha256": "5fc4c330b2672fcad303c1b8745028a6aecae7cb6a51ca0018bdbdfe58468d88"
+      },
+      "fixtures.convert.stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "fixtures.image.json": {
+        "bytes": 1616,
+        "sha256": "b6f74158cce0937499663136a3ca3c0563aff53da305fd0944cd298f02ee0cfe"
+      },
+      "fixtures.record.json": {
+        "bytes": 4305,
+        "sha256": "72b4cf8fe59e1bc8f00ca17b14828c7c0c7323abb73922c996fd41b2d2fef571"
+      },
+      "fixtures.sbom.cdx.json": {
+        "bytes": 11346,
+        "sha256": "0cb045a43aac90b443b2c4730447ba9fe972c77e742ab7e9a2f2ab110d80e9bf"
+      },
+      "fixtures.stderr": {
+        "bytes": 517,
+        "sha256": "ce233d014e2a6fe6cf6ebbcb9a2a55de68cb2a0e9b0242f12db896036ff55158"
+      },
+      "fixtures.stdout.json": {
+        "bytes": 8190,
+        "sha256": "0681791d4e5db75deaa5faca81e5da95b49ab2a7150bdb3d395b00dd098125cf"
+      },
+      "guard.convert.stderr": {
+        "bytes": 178,
+        "sha256": "589ec9062394a4a83c8e25b822935f6ee3c31fa2286dba7ce2fefeca8707e003"
+      },
+      "guard.convert.stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "guard.image.json": {
+        "bytes": 1606,
+        "sha256": "4de3bc62f7489944d4720f930baf988dbc641d070a7f235a4c5992cedf76927c"
+      },
+      "guard.record.json": {
+        "bytes": 4365,
+        "sha256": "cf6d8f2b76c64a266377b812058c96dfb3bef0c2e754f3ea1eb3fcfff541b6d9"
+      },
+      "guard.sbom.cdx.json": {
+        "bytes": 410905,
+        "sha256": "b4fdbd80bdb558edd46de677a20797fb99f7ce772be2fed7a9760b0e01ce609e"
+      },
+      "guard.stderr": {
+        "bytes": 793,
+        "sha256": "1e4f22e738b3d96cc2da4c5d5a984683f1e8898096643938e9b359a72f24583e"
+      },
+      "guard.stdout.json": {
+        "bytes": 785685,
+        "sha256": "d79c9cb7abe29eecd41a3a544bd7e4ab0ff3873a41c1ea7b63b38acab99e451c"
+      },
+      "opa.convert.stderr": {
+        "bytes": 178,
+        "sha256": "303caf51c15ca353cc09e0f67049f585d12d5c02c1e63cef32469076e9df9537"
+      },
+      "opa.convert.stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "opa.image.json": {
+        "bytes": 2160,
+        "sha256": "f94716ba2097016909fbba5cb95ea53007840403ec620abfb8378b9b77144e90"
+      },
+      "opa.record.json": {
+        "bytes": 4306,
+        "sha256": "232a85df2e308e6b651f29548158faa29c0a0b680e339aba1ce494ea43b7786c"
+      },
+      "opa.sbom.cdx.json": {
+        "bytes": 93896,
+        "sha256": "7d2437d812c57a40e996d709825f6bed4ed3e0f1c7c6b32951aaea1e9329ea05"
+      },
+      "opa.stderr": {
+        "bytes": 844,
+        "sha256": "0648f3028341503e9addaa6d4d4eb54b806962f0143feef317ba3c3bddfa334b"
+      },
+      "opa.stdout.json": {
+        "bytes": 129244,
+        "sha256": "b86fb82fcbd5722a00ba9c57f4b73b08052ef303a32c86641c93b531413ed57a"
+      },
+      "postgres.convert.stderr": {
+        "bytes": 178,
+        "sha256": "303caf51c15ca353cc09e0f67049f585d12d5c02c1e63cef32469076e9df9537"
+      },
+      "postgres.convert.stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "postgres.image.json": {
+        "bytes": 3575,
+        "sha256": "180542f8bbd23839200cf2b242b3fd35ae10ccd65fbc0f49b803838f27153b2a"
+      },
+      "postgres.record.json": {
+        "bytes": 4399,
+        "sha256": "1ed640a3069a07ecb61c8e634fb4699f1a5689d6695b2ed541a095aae76025e2"
+      },
+      "postgres.sbom.cdx.json": {
+        "bytes": 815110,
+        "sha256": "019ce1f2f5338fcfca0738b0b3a6c45fa17043d657cdcd522010ace3cb238fe5"
+      },
+      "postgres.stderr": {
+        "bytes": 861,
+        "sha256": "6f083122460363a4458bf0fd9c9c48f7c468fc837db1b8c2ae58820adb2859fa"
+      },
+      "postgres.stdout.json": {
+        "bytes": 1979829,
+        "sha256": "ecc40e09998d5605f0a4d2db8110ab67cef3a3db4a2ee16034ed97947d47eaba"
+      },
+      "progress.json": {
+        "bytes": 1512,
+        "sha256": "7208399dee261adb513e27ae6065fbb702c19b7cd5afbc0eb6c5b2645db0c14d"
+      },
+      "summary.json": {
+        "bytes": 3090,
+        "sha256": "01ef834b55977bfb9f966318567a5e0f18bc43668b15c993a6a3c51c511d3e42"
+      },
+      "trivy-version.stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "trivy-version.stdout": {
+        "bytes": 210,
+        "sha256": "825ee75a376418d121f30d47cd3fab87ea3f1de61c3ec73dee86640d71e606cd"
+      },
+      "workspace.convert.stderr": {
+        "bytes": 178,
+        "sha256": "2dc7b46268b6dc5d7f153779a6ec57d4a450b8f208eabf88bdc5246c5430a573"
+      },
+      "workspace.convert.stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "workspace.image.json": {
+        "bytes": 2577,
+        "sha256": "d27f443536985fdd267ce8d548985cc5dfeb96349337d6ef3b58fce502986415"
+      },
+      "workspace.record.json": {
+        "bytes": 4401,
+        "sha256": "30075a210c2a57d65ab6262d2b4893fd2a144604faaf5f78fff1d5d1c16bf033"
+      },
+      "workspace.sbom.cdx.json": {
+        "bytes": 546067,
+        "sha256": "84f5403ed97d781045e4c6992506b7d44cdc937632cc84c5faa716dd96ce6591"
+      },
+      "workspace.stderr": {
+        "bytes": 860,
+        "sha256": "46855fa915c421a8356c58e1d70a7d82d6486a28e96778033b5cce74ecdd093f"
+      },
+      "workspace.stdout.json": {
+        "bytes": 1079773,
+        "sha256": "cb52f50ae6fce592b5c9393400b3bacac901638e5b40f0a8cc170eea1e8631eb"
+      }
+    },
+    "raw_findings": 793,
+    "remediation": "Fourteen earlier finding rows cleared: nine Go-binary rows and five OS rows, counted per row rather than unique CVEs. Remaining critical rows have no vendor fixed version recorded; only two OPAx/net findings advertise0.62.0, with no reviewed supported official fixed image established.",
+    "scanner": {
+      "binary_sha256": "d1dfca6ae10a1ad4540bb94e64f0510077c47008920a9b554986b39dca573d83",
+      "name": "Trivy",
+      "version": "0.76.1"
+    },
+    "scope": "Actual local canonical image scans. All6 local archive/config/layer/payload identities independently match both hosted manifests; separate raw hosted canonical reports remain inside the unretrieved full subject.",
+    "severity_counts": {
+      "CRITICAL": 4,
+      "HIGH": 168,
+      "LOW": 311,
+      "MEDIUM": 301,
+      "UNKNOWN": 9
+    },
+    "vendor_status_counts": {
+      "affected": 610,
+      "fix_deferred": 146,
+      "fixed": 2,
+      "will_not_fix": 35
+    },
+    "waivers": []
+  },
+  "selected_implementation_revision": "16edb6a68ca2a91770239c7220acb670d2d080d1",
+  "source_archive_sha256": "625086b876767f493d87cbfea090c8ba3b8d71e06299c102bd74647cf821533a",
+  "source_companion_sha256": "fd4f8f1d212b13cc79caa72fa9beed0fc38216f932306aa98d24f129b7841154",
+  "source_input_count": 316,
+  "source_input_sha256": "54e9f209b74b18aef885be997aca8c0521da580356287377253178da247e0c48",
+  "state": "final decision: synthetic functional acceptance and measured reproducibility passed; release eligibility blocked"
+}

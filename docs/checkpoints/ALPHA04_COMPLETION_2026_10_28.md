@@ -608,3 +608,14 @@ the resource/metadata changes, and all 226 offline release tests passed in
 The changes require new publication, capture and an actual cross-environment
 comparison. Existing mismatches, vendor findings, TUF denial and full-artifact
 retrieval limits remain retained and unresolved at this checkpoint.
+
+
+## Final captured candidate decision — 28 October objective
+
+Selected implementation `16edb6a68ca2a91770239c7220acb670d2d080d1` passed the complete hosted functional verifier and fresh pair in run `40798668756`, candidate `2895df3aa4df`, input `54e9f209b74b18aef885be997aca8c0521da580356287377253178da247e0c48`. Independent E/F/G reviews verified the available retained records, including all twenty browser assertions, required native/history/packaged lifecycle gates and ordered rotation/restore completion. Raw inner artifacts remain outside the independently retrieved metadata.
+
+Fresh local first build `edbcc110b45d` completed with observed exit 0. All twelve native binaries and six actual archives/configurations/encoded and uncompressed layers match both hosted builds. All six complete filesystem maps were regenerated from archive bytes; downloaded workspace and PostgreSQL maps match exactly, with zero differing paths. A brief transport outage recovered without restarting the builder. Required disk reserves held. No local second build or local combined verifier was claimed.
+
+The exact six local canonical images were scanned and independently bound to both hosted manifests. All 47 scan/SBOM files are retained; 793 finding rows remain, including four critical and 168 high, without waivers. Fourteen earlier cleared rows comprise nine Go-binary and five OS rows. Origin production succeeded, but independent signature verification and full retained-subject verification remain blocked by actual delivery limits and default trust-service access. The complete subject was uploaded but not independently downloaded or verified.
+
+The [final gate decision](ALPHA04_RELEASE_DECISION_2026_10_28.md) and [public evidence index](ALPHA04_RELEASE_EVIDENCE_2026_10_28.json) separate implementation, synthetic functional acceptance, measured reproducibility and blocked release eligibility. Any documentation commit publishing this report is distinct from the tested implementation above. Production dependencies remain explicit; project completion is not claimed.
