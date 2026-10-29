@@ -19,12 +19,11 @@ sys.dont_write_bytecode = True
 from candidate import load
 from image_archive import inspect as inspect_archive
 from image_record import payload
+from resource_admission import image_forecast
 from source_record import atomic_json, sha256
 
 GIB = 1024 ** 3
 RESERVE = 2 * GIB
-DEFAULT_FORECAST = 6 * GIB
-MINIMUM_REVIEWED_FORECAST = 4 * GIB
 IMAGE = 'moby/buildkit:v0.34.1@sha256:b651bf250c2805569f1db385ad1ea8fb73737dfc851de305f274ca02690fa93f'
 IMAGE_ID = 'sha256:2a2c53740b68d6a814cfed5af9f6d9a8eaec67a8546058c226a8251ad4680450'
 FRONTEND = 'docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e'
@@ -34,6 +33,7 @@ insecure-entitlements = []
   disabled = true
 [worker.oci]
   enabled = true
+  snapshotter = "native"
   max-parallelism = 1
   networkMode = "bridge"
   gc = true
@@ -137,6 +137,20 @@ def verify_container(info, expected):
         raise ValueError('unexpected packaging container environment')
 
 
+def verify_worker(raw):
+    """Assert the effective worker; its random ID is diagnostic, not tool identity."""
+    workers = json.loads(raw)
+    if not isinstance(workers, list) or len(workers) != 1 or not isinstance(workers[0], dict):
+        raise ValueError('exactly one OCI native worker required')
+    worker = workers[0]
+    labels = worker.get('labels')
+    if (not isinstance(worker.get('id'), str) or not worker['id'] or not isinstance(labels, dict)
+            or labels.get('org.mobyproject.buildkit.worker.executor') != 'oci'
+            or labels.get('org.mobyproject.buildkit.worker.snapshotter') != 'native'):
+        raise ValueError('effective OCI native snapshotter required')
+    return worker
+
+
 class Packager:
     def __init__(self, args):
         self.args = args
@@ -150,9 +164,7 @@ class Packager:
         if not isinstance(settings, dict):
             raise ValueError('canonical parent phase settings required')
         budgets = settings.get('packaging_image_estimated_peak_additional', {})
-        if not isinstance(budgets, dict) or set(budgets) - set(ROLES) or any(type(value) is not int or value < MINIMUM_REVIEWED_FORECAST for value in budgets.values()):
-            raise ValueError('reviewed per-image forecasts must be at least 4 GiB')
-        self.forecast = budgets.get(args.name, DEFAULT_FORECAST)
+        self.forecast = image_forecast(args.name, budgets)
         self.package = self.path / 'package'
         if self.package.is_symlink() or not self.package.is_dir():
             raise ValueError('owned regular package directory required')
@@ -184,6 +196,7 @@ class Packager:
                        'run_id': self.candidate['run_id'], 'build_id': args.build, 'image_role': args.name, 'status': 'preparing',
                        'owner': {'name': name, 'volume': self.volume, 'labels': self.labels},
                        'backend_image': IMAGE, 'backend_image_id': IMAGE_ID, 'frontend': FRONTEND,
+                       'configured_snapshotter': 'native',
                        'config_sha256': hashlib.sha256(CONFIG.encode()).hexdigest(), 'public_ca_sha256': sha256(args.ca),
                        'endpoint': 'docker-container://' + name + '?context=default',
                        'resource_policy': {'additional_forecast_bytes': self.forecast, 'reserve_bytes': RESERVE, 'memory_bytes': 2 * GIB, 'cpus': 2, 'concurrent_images': 1},
@@ -403,6 +416,9 @@ class Packager:
         self.inspect_owned()
         self.docker('create-remote', 'buildx', 'create', '--name', self.name, '--driver', 'remote', self.record['endpoint'])
         self.docker('bootstrap-remote', 'buildx', 'inspect', '--bootstrap', self.name, timeout=180)
+        self.record['worker_diagnostics'] = verify_worker(self.docker('effective-worker', 'exec', self.container_id,
+            'buildctl', 'debug', 'workers', '--format', '{{json .}}'))
+        self.write()
         self.record['status'] = 'packaging'
         dockerfile = ROLES[self.args.name]
         self.docker('export-image', 'buildx', 'build', '--builder', self.name, '--no-cache', '--platform', 'linux/amd64',

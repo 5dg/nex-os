@@ -89,12 +89,24 @@ def second_admission(candidate, first, first_digest, policy, current_docker):
             "minimum_free": {filesystem: estimate + 2 * GIB for filesystem, estimate in estimates.items()}}
 
 
+IMAGE_ROLES = {'control', 'guard', 'fixtures', 'workspace', 'postgres'}
+
+
+def image_forecast(role, budgets):
+    """Apply the source floor even to explicitly reviewed/inherited plans."""
+    if role not in IMAGE_ROLES or not isinstance(budgets, dict) or set(budgets) - IMAGE_ROLES:
+        raise ValueError('known per-image forecast roles required')
+    for name, value in budgets.items():
+        floor = (8 if name == 'postgres' else 4) * GIB
+        if type(value) is not int or value < floor:
+            raise ValueError('reviewed per-image forecasts require PostgreSQL >= 8 GiB and other roles >= 4 GiB')
+    return budgets.get(role, (8 if role == 'postgres' else 6) * GIB)
+
+
 def phase_settings(plan):
-    roles = {'control', 'guard', 'fixtures', 'workspace', 'postgres'}
     budgets = plan.get('packaging_image_estimated_peak_additional', {})
     evictions = plan.get('compiler_cache_evictions', [])
-    if not isinstance(budgets, dict) or set(budgets) - roles or any(type(value) is not int or value < 4 * GIB for value in budgets.values()):
-        raise ValueError('reviewed per-image forecasts must be at least 4 GiB')
+    image_forecast('postgres', budgets)
     if not isinstance(evictions, list) or any(not isinstance(value, dict) or set(value) != {'after', 'requested', 'image_id'} for value in evictions):
         raise ValueError('exact compiler eviction whitelist required')
     return {'packaging_image_estimated_peak_additional': dict(budgets),

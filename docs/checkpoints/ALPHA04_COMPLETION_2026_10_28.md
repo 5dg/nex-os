@@ -548,3 +548,63 @@ next download stage has a separate documented 32 MiB limit. A roughly 400 MiB
 compressed subject would still exceed that stage; no such large second-stage
 attempt or successful full retrieval is claimed. No compression, chunking,
 external release service or alternative trust mechanism was added for this.
+
+## Hosted workflow acceptance and cross-environment follow-up
+
+Hosted `4f27015bf042890f5b99fa473c630fa46f0c9fc2`, run `40793940587`, candidate
+`98e474b7f9e0`, completed all functional gates and both fresh-build comparisons.
+The source-input digest was
+`baf59d7a7d456849313e2a2a3efc873fb621eb2c61146657411b24ca9dd4c422`.
+Independent F/G reviews verified 315 source hashes, twenty retrieved artifact
+hashes, gate commands/image bindings and the actual ordered wrapper's rotation
+and restore completion. The browser passed twelve DOM, five operator and three
+revocation assertions: one automatic cycle maximum, zero healthy-delay errors,
+1,519 ms drain, signed-read growth three within the predeclared five, and 151
+signed records / 136,689 bytes across five stable pages with exact prefix
+preservation. All three engine trust hashes matched the public projection.
+
+The local first build completed all six images, including PostgreSQL with a
+6,438,526,976-byte phase peak. The second build was blocked before any compiler
+command: unchanged measured admission required 12,428,763,136 bytes and only
+11,460,579,328 were available. Its sealed record was preserved, without a floor
+waiver, metadata-only retry or reuse of failed outputs. This remains separate
+from the completed hosted cohort.
+
+Additional cross-environment comparison found differences that the passing
+hosted pair cannot resolve: all twelve native binaries and four complete image
+archives/configurations/layers/payloads matched across environments. PostgreSQL's
+merged payload matched while its OCI bytes differed; workspace payload and OCI
+bytes differed. The old hosted payload path maps were unavailable in the large
+subject, so no blanket equivalence or causal attribution was claimed. Local
+scans retained 793 findings with exact image applicability; they cannot stand
+in for a different hosted workspace image.
+
+Investigation found an unbound frontend resource setting: pinned Next derives
+its default worker count from host CPUs and serializes it into runtime config.
+The actual local image contained four in both server and required-files config.
+An actual framework-loader regression confirmed defaults of four and sixteen
+under simulated five- and seventeen-CPU hosts. Explicitly selecting two now
+produces identical complete serialized configurations while preserving headers
+and build-ID validation. The builder also explicitly selects and verifies the
+native snapshotter instead of leaving filesystem selection automatic.
+
+The real pinned-daemon probe verified one OCI/native worker, BuildKit v0.34.1
+revision `f5b59a1f2fb25a0cb7072c398cab9aed7835da4e`, disabled CDI and the copied
+configuration hash. It built no product image and performed no application work;
+its exact owned resources were normally removed. Evidence is in
+`native-worker-probe-results-1/`. PostgreSQL's default and reviewed minimum
+forecast are now 8 GiB because the earlier successful 6 GiB run left only
+3,923,968 bytes below its phase cap. The reserve and measured second-build
+formula remain unchanged.
+
+Four exact public payload maps are added to the separate diagnostic artifact,
+with a pre-upload raw/ZIP size and file-safety budget below the tool's 32 MiB
+download limit. Current projected metadata is approximately 8.83 MB. This does
+not replace the complete signed subject or relax its verification. Ten workspace
+tests and fourteen workflow tests passed; independent source review accepted
+the resource/metadata changes, and all 226 offline release tests passed in
+29.381 seconds (log SHA-256
+`65c0a2a212bba41b383e3dca84cb99e36da19de8ae2550e8d9a0126766b82a76`).
+The changes require new publication, capture and an actual cross-environment
+comparison. Existing mismatches, vendor findings, TUF denial and full-artifact
+retrieval limits remain retained and unresolved at this checkpoint.

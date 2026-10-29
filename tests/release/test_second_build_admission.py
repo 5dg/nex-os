@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[2] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
-from resource_admission import GIB, load_policy, second_admission, summarize_measurements, phase_settings, phase_record_digest, inherit_phase_settings
+from resource_admission import GIB, load_policy, second_admission, summarize_measurements, phase_settings, phase_record_digest, inherit_phase_settings, image_forecast
 spec = importlib.util.spec_from_file_location('second_admission_builder', SCRIPTS / 'canonical-build.py')
 compiler = importlib.util.module_from_spec(spec); spec.loader.exec_module(compiler)
 
@@ -56,7 +56,7 @@ class SecondBuildAdmissionTests(unittest.TestCase):
         plan = {'schema_version': 1, 'strategy': 'pinned-containers-bind-outputs',
                 'source_input_sha256': 'a'*64, 'docker_driver': 'vfs', 'lead_review': 'approved',
                 'docker_minimum_free': 12*GIB, 'temporary_minimum_free': 12*GIB,
-                'packaging_image_estimated_peak_additional': {'workspace': 4*GIB, 'postgres': 5*GIB},
+                'packaging_image_estimated_peak_additional': {'workspace': 4*GIB, 'postgres': 8*GIB},
                 'compiler_cache_evictions': [{'after': 'rust', 'requested': compiler.COMPILERS['rust'], 'image_id': 'sha256:'+'c'*64}]}
         self.first['resource_budget']['reviewed_plan'] = {'sha256': hashlib.sha256(json.dumps(plan, indent=2).encode()).hexdigest(),
                                                         'record_sha256': phase_record_digest(plan), 'record': plan}
@@ -97,6 +97,26 @@ class SecondBuildAdmissionTests(unittest.TestCase):
     def test_unreviewed_phase_budget_below_floor_rejected(self):
         with self.assertRaises(ValueError):
             phase_settings({'packaging_image_estimated_peak_additional': {'workspace': 4*GIB-1}})
+
+    def test_postgres_default_and_reviewed_floor_eight_other_roles_unchanged(self):
+        self.assertEqual(image_forecast('postgres', {}), 8*GIB)
+        self.assertEqual(image_forecast('postgres', {'postgres': 9*GIB}), 9*GIB)
+        for role in ('control', 'guard', 'fixtures', 'workspace'):
+            self.assertEqual(image_forecast(role, {}), 6*GIB)
+            self.assertEqual(image_forecast(role, {role: 4*GIB}), 4*GIB)
+        for budget in (4*GIB, 6*GIB, 8*GIB-1, True):
+            with self.subTest(budget=budget), self.assertRaisesRegex(ValueError, 'PostgreSQL >= 8 GiB'):
+                phase_settings({'packaging_image_estimated_peak_additional': {'postgres': budget}})
+
+    def test_bound_first_plan_cannot_inherit_previous_postgres_six_gib_floor(self):
+        plan = self.first_phase_plan()
+        plan['packaging_image_estimated_peak_additional']['postgres'] = 6*GIB
+        original = self.first['resource_budget']['reviewed_plan']
+        original['record_sha256'] = phase_record_digest(plan)
+        original['sha256'] = hashlib.sha256(json.dumps(plan).encode()).hexdigest()
+        self.first['resource_budget']['phase_settings']['packaging_image_estimated_peak_additional']['postgres'] = 6*GIB
+        with self.assertRaisesRegex(ValueError, 'PostgreSQL >= 8 GiB'):
+            inherit_phase_settings(self.candidate, self.first, 'b'*64, self.docker)
 
     def test_exact_predeclared_policy_is_hashed_from_same_bytes(self):
         self.assertEqual(self.bound['record'], self.policy)

@@ -110,6 +110,27 @@ identity, counts, timings and fixed failure codes. They exclude browser profiles
 Chromium logs, cookies, tokens, receipts and private fixture state. Preserve their
 exact bytes and check available hashes against the candidate and release manifest;
 they provide diagnostics when the full subject exceeds a download client's limit.
+Four exact additional paths retain `builds/one/workspace-payload.json`,
+`builds/two/workspace-payload.json`, `builds/one/postgres-payload.json` and
+`builds/two/postgres-payload.json`. These sealed public maps contain runtime path,
+type, ownership, mode, content-hash and link metadata; they contain no image or
+application data bytes. Compare their exact hashes against the sealed manifest
+before using them to locate cross-host differences. No other payload-map glob,
+image archive, private directory or source worktree is included.
+Before upload, the same explicit allowlist must pass a size check: at most
+1,024 regular files, no symlink files or ancestors, relative names at most 512
+UTF-8 bytes, and at most 24 MiB total file bytes. A conservative ZIP header
+allowance must also keep the total below 30 MiB. Upload stores the files without
+compression, leaving margin below the materializer's declared 32 MiB limit.
+If that check fails, this diagnostic upload is blocked; it does not trim evidence
+or claim successful retrieval. The full signed subject and its gates are unchanged.
+The workspace explicitly sets Next `experimental.cpus` to `2`, matching the
+admitted compiler CPU quota. Next 16.4.3 otherwise derives this serialized build
+input from the host CPU count. The configuration regression loads the actual
+pinned framework under two simulated host CPU counts and compares the complete
+serialized configuration, with security headers and build-identity checks intact.
+This corrects a demonstrated input difference; fresh build comparison is still
+required and the earlier `4f27015` cross-host images are not declared equivalent.
 Five additional explicit paths retain `evidence/browser-*/fixture-inputs.json`,
 `evidence/browser-*/fixture-trust-input.json`, and each of the `dom`, `operator`
 and `revocation` directories' `browser-engine.json`. These contain the immutable

@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  // Match the admitted compiler quota instead of serializing host CPU count.
+  experimental: { cpus: 2 },
   async generateBuildId() {
     // Canonical builders provide the verified compiler-input identity. This is
     // build metadata only; it never conveys user or workload authority.

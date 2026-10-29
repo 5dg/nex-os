@@ -510,3 +510,39 @@ pass; the final suite does not erase that earlier record. No tests were run by
 the cleanup owner. I's corrected tiny-image probe remains pending at this entry;
 no probe success, fresh candidate success or full qualification is claimed.
 Ledger frozen and released; publication binding follows the approved checkpoint.
+
+### Native worker, shared forecast and bounded metadata audit — 2026-10-29
+
+Reviewed the frozen D four-path and E five-path batches against published
+`4f27015bf042890f5b99fa473c630fa46f0c9fc2`. D scope is canonical image/resource
+admission and their regressions; E scope is Next configuration and its new
+framework-loader test, workflow, trigger regression and candidate runbook.
+Matched D's four content hashes in `native-worker-source-freeze.json`.
+
+`image_forecast` is consumed by both `phase_settings` and the packager
+constructor, with inherited policies reaching the same validation. D removed
+the superseded duplicate validation and forecast constants. `verify_worker`
+consumes actual daemon worker JSON before image export; its return value is
+retained as `worker_diagnostics`, separately from stable tool identity. Both
+helpers have direct regression consumers. No further executable deletion
+justified.
+
+Next's loader consumes the explicit CPU setting. The existing npm test glob
+discovers `next-config.test.mjs`, whose fresh subprocesses load the pinned
+framework and compare complete serialized configuration. The workflow's new
+metadata budget step consumes the same exact paths as upload, and its outcome
+gates that upload. Four retained payload maps are produced by existing image
+evidence generation and documented for comparison. Trigger tests execute the
+budget script and verify path exclusions; no helper or output is unused.
+
+Only this ledger changed during cleanup review. The D/root combined log
+`release-tests-native-worker-final.log` was read and hash-checked: 226 tests
+passed in 29.381 seconds, SHA256
+`65c0a2a212bba41b383e3dca84cb99e36da19de8ae2550e8d9a0126766b82a76`.
+E's reported 10 npm/loader and 14 workflow tests, D's 22 backend and 18 admission
+tests, and G's acceptance remain separately attributed. I's accepted native
+worker receipt binds plan `55c9ce76...` and config `670077cd...`; it is a daemon
+and schema probe with no product image build or application qualification.
+The freeze record's earlier pending-probe state is historical. Prior `4f27015`
+cohort acceptance, cross-host mismatch and failed-attempt history are preserved;
+no new candidate or cross-host equivalence is claimed. Ledger frozen for publication.

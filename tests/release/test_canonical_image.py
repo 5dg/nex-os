@@ -14,6 +14,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import tomllib
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -110,6 +111,57 @@ class CanonicalImageTests(unittest.TestCase):
                 packaging.verify_container(altered, expected)
         altered = copy.deepcopy(info); altered['Mounts'].append({'Type': 'bind', 'Source': '/var/run/docker.sock'})
         with self.assertRaises(ValueError): packaging.verify_container(altered, expected)
+
+    def test_native_config_preserves_bounded_zero_entitlement_worker(self):
+        config = tomllib.loads(packaging.CONFIG)
+        self.assertEqual(config['worker']['oci'], {'enabled': True, 'snapshotter': 'native',
+            'max-parallelism': 1, 'networkMode': 'bridge', 'gc': True})
+        self.assertFalse(config['worker']['containerd']['enabled'])
+        self.assertEqual(config['insecure-entitlements'], [])
+        self.assertTrue(config['cdi']['disabled'])
+        expected, actual = container_fixture()
+        packaging.verify_container(actual, expected)
+        self.assertEqual(actual['HostConfig']['Memory'], 2 * packaging.GIB)
+        self.assertEqual(actual['HostConfig']['NanoCpus'], 2_000_000_000)
+
+    def test_effective_worker_requires_single_native_oci_and_retains_diagnostic_identity(self):
+        worker = {'id': 'random-owned-worker-id', 'labels': {
+            'org.mobyproject.buildkit.worker.executor': 'oci',
+            'org.mobyproject.buildkit.worker.snapshotter': 'native'},
+            'buildkitVersion': {'version': 'v0.34.1'}}
+        self.assertEqual(packaging.verify_worker(json.dumps([worker])), worker)
+        other = copy.deepcopy(worker); other['id'] = 'different-fresh-owner'
+        self.assertEqual(packaging.verify_worker(json.dumps([other])), other)
+        invalid = [[], [worker, worker], {}, [{}]]
+        for key, value in [('org.mobyproject.buildkit.worker.executor', 'containerd'),
+                           ('org.mobyproject.buildkit.worker.snapshotter', 'overlayfs'),
+                           ('org.mobyproject.buildkit.worker.snapshotter', None)]:
+            altered = copy.deepcopy(worker); altered['labels'][key] = value
+            invalid.append([altered])
+        for workers in invalid:
+            with self.subTest(workers=workers), self.assertRaises(ValueError):
+                packaging.verify_worker(json.dumps(workers))
+
+    def test_postgres_eight_gib_forecast_keeps_two_gib_reserve_before_tools_or_backend(self):
+        packager = packaging.Packager.__new__(packaging.Packager)
+        packager.record = {}; packager.forecast = packaging.image_forecast('postgres', {})
+        packager.initial_free = {'output': {'free': 10 * packaging.GIB - 1},
+                                'docker': {'free': 10 * packaging.GIB - 1}}
+        packager.sample = lambda: None
+        calls = []
+        def docker(label, *args, **kwargs):
+            calls.append(label)
+            if label == 'docker-info': return json.dumps({'DockerRootDir': str(self.root)}).encode()
+            raise AssertionError(label)
+        packager.docker = docker
+        with self.assertRaisesRegex(ValueError, 'forecast plus 2 GiB reserve'):
+            packager.execute()
+        self.assertEqual(calls, ['docker-info'])
+        self.assertEqual(packager.forecast, 8 * packaging.GIB)
+        for value in packager.initial_free.values(): value['free'] += 1
+        # Exactly 10 GiB passes capacity admission and proceeds to tool metadata.
+        with self.assertRaisesRegex(KeyError, 'ServerVersion'):
+            packager.execute()
 
     def test_selected_proxy_values_remain_in_memory_and_endpoint_selection_is_exact(self):
         config = self.root / 'config.json'

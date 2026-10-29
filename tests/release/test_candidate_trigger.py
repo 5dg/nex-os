@@ -173,8 +173,12 @@ class ExecutionMetadataRetentionTests(unittest.TestCase):
         for outcome in ('success', 'failure', 'skipped', 'cancelled', None):
             for succeeded in (False, True):
                 with self.subTest(outcome=outcome, succeeded=succeeded):
-                    self.assertEqual(evaluate_condition(expression, {'steps.trusted_main.outcome': outcome},
+                    self.assertEqual(evaluate_condition(expression, {'steps.trusted_main.outcome': outcome,
+                        'steps.metadata_budget.outcome': 'success'},
                         preceding_steps_succeeded=succeeded), outcome == 'success')
+        for budget in ('failure', 'skipped', 'cancelled', None):
+            self.assertFalse(evaluate_condition(expression, {'steps.trusted_main.outcome': 'success',
+                'steps.metadata_budget.outcome': budget}, preceding_steps_succeeded=False))
         self.assertFalse(selected('canonical-candidate', event='pull_request'))
         self.assertFalse(selected('canonical-candidate', message='Routine checkpoint'))
         self.assertFalse(selected('canonical-candidate', ref='refs/heads/feature'))
@@ -196,12 +200,18 @@ class ExecutionMetadataRetentionTests(unittest.TestCase):
                     'evidence/browser-*/revocation/browser-engine.json',
                     'evidence/browser-dependency-preflight/startup-result.json',
                     'evidence/browser-dependency-preflight/browser-engine.json',
-                    'evidence/browser-dependency-preflight/browser-image-id', 'builds/*/manifest.json']
+                    'evidence/browser-dependency-preflight/browser-image-id', 'builds/*/manifest.json',
+                    'builds/one/workspace-payload.json', 'builds/two/workspace-payload.json',
+                    'builds/one/postgres-payload.json', 'builds/two/postgres-payload.json']
         self.assertEqual(actual, ['/tmp/nex-ci-candidate/' + path for path in relative])
         self.assertIn('          name: alpha04-candidate-execution-metadata\n', retained)
         self.assertIn('          if-no-files-found: error\n', retained)
         self.assertNotIn('**', paths)
         self.assertNotIn('include-hidden-files:', retained)
+        self.assertIn('          compression-level: 0\n', retained)
+        shell = step_shell('canonical-candidate', 'Bound public execution metadata size')
+        budget_patterns = ast.literal_eval(re.search(r'^patterns = (.+)$', shell, re.MULTILINE).group(1))
+        self.assertEqual(budget_patterns, relative, 'budget and upload must cover identical files')
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             expected = {'candidate.json', 'release-manifest.json', 'pipeline.log', 'reproducibility.json',
@@ -218,8 +228,12 @@ class ExecutionMetadataRetentionTests(unittest.TestCase):
                         'evidence/browser-dependency-preflight/startup-result.json',
                         'evidence/browser-dependency-preflight/browser-engine.json',
                         'evidence/browser-dependency-preflight/browser-image-id',
-                        'builds/one/manifest.json', 'builds/two/manifest.json'}
-            excluded = {'private/tls.key', 'backups/database.sql', 'source/go.mod', 'builds/one/bin/control',
+                        'builds/one/manifest.json', 'builds/two/manifest.json',
+                        'builds/one/workspace-payload.json', 'builds/two/workspace-payload.json',
+                        'builds/one/postgres-payload.json', 'builds/two/postgres-payload.json'}
+            excluded = {'builds/one/control-payload.json', 'builds/three/workspace-payload.json',
+                        'builds/one/images/workspace.tar', 'builds/one/private/postgres-payload.json',
+                        'private/tls.key', 'backups/database.sql', 'source/go.mod', 'builds/one/bin/control',
                         'evidence/private/secret-admission.json', 'candidate-bundle.tar.gz',
                         'evidence/other-gate-123.log', 'evidence/private/dom-browser-123.log',
                         'evidence/browser-abc/dom/chromium.log', 'evidence/browser-abc/private/browser-engine.json',
@@ -237,6 +251,43 @@ class ExecutionMetadataRetentionTests(unittest.TestCase):
                 path.write_text('fixture')
             matched = {str(path.relative_to(base)) for pattern in relative for path in base.glob(pattern)}
             self.assertEqual(matched, expected)
+
+
+    def test_metadata_budget_accepts_bounded_files_and_rejects_unsafe_or_oversize_inputs(self):
+        shell = step_shell('canonical-candidate', 'Bound public execution metadata size')
+        workflow = job_block('canonical-candidate')
+        self.assertLess(workflow.index('name: Bound public execution metadata size'),
+                        workflow.index('name: Retain non-secret candidate execution metadata'))
+        self.assertIn("id: metadata_budget\n        if: always() && steps.trusted_main.outcome == 'success'", workflow)
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            def run():
+                return subprocess.run(['bash', '-c', shell.replace('/tmp/nex-ci-candidate', str(base))],
+                    capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(run().returncode, 0, 'empty metadata cannot claim retention')
+            candidate = base / 'candidate.json'
+            candidate.write_text('{}')
+            self.assertEqual(run().returncode, 0)
+            payload = base / 'builds/one/workspace-payload.json'
+            payload.parent.mkdir(parents=True)
+            with payload.open('wb') as stream:
+                stream.truncate(24 * 1024 * 1024)
+            self.assertNotEqual(run().returncode, 0, 'combined raw byte budget must be enforced')
+            payload.unlink()
+            payload.symlink_to(candidate)
+            self.assertNotEqual(run().returncode, 0, 'symlink files must be refused')
+            payload.unlink()
+            payload.mkdir()
+            self.assertNotEqual(run().returncode, 0, 'matched directories must be refused')
+            payload.rmdir()
+            payload.parent.rmdir()
+            (base / 'workspace-payload.json').write_text('{}')
+            (base / 'builds/one').symlink_to(base, target_is_directory=True)
+            self.assertNotEqual(run().returncode, 0, 'symlink ancestors must be refused')
+            (base / 'builds/one').unlink()
+            for index in range(1024):
+                (base / f'{index}-admission.json').write_text('{}')
+            self.assertNotEqual(run().returncode, 0, 'file-count/header budget must be enforced')
 
 
 class BrowserDependencyPreflightTests(unittest.TestCase):

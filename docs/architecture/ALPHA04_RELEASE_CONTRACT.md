@@ -51,6 +51,11 @@ builds provide the verified input-map digest as build-only
 `NEX_SOURCE_INPUT_SHA256`, which A's deterministic Next build-ID hook consumes.
 Normal developer builds may omit it. A owns the small
 workspace configuration hook. No build identifier grants runtime authority.
+Next's experimental worker count is explicitly two, matching the admitted CPU
+quota. Its default derives from host CPU count and enters the serialized runtime
+configuration. Record and compare the actual payload; preserve every config
+field. The pinned framework loader regression requires the full serialized
+configuration to match under different simulated host CPU counts.
 Framework-generated private randomness must be measured and reported; never use a
 public source hash as an encryption/signing key to force byte equality.
 
@@ -101,6 +106,10 @@ PID/IPC namespaces are private, and CPU/memory are bounded. All insecure
 entitlements and CDI are disabled. It has no application state, Docker socket,
 home or custody mounts. Public proxy trust is copied and hash-verified before
 startup, while normal proxy and TLS validation remain enabled.
+The OCI worker snapshotter is explicitly `native`. Before exporting, query the
+pinned `buildctl` JSON and require exactly one OCI worker reporting that
+snapshotter. Retain the effective worker data separately; its random ID is
+diagnostic and is not part of the stable client/tool identity.
 
 Buildx connects over the inspected local Docker container's stdio endpoint with
 an explicit default context; redirected endpoint/context/TLS selectors are
@@ -213,7 +222,12 @@ the process is communicating through selector-backed pipes.
 
 Packaging also has a declared per-image peak addition and an admission floor
 equal to that peak plus the unchanged 2 GiB reserve. Samples cover the builder,
-cache, export, loaded image and retained archive. Stop on a forecast or reserve
+cache, export, loaded image and retained archive. PostgreSQL defaults to and
+requires at least 8 GiB forecast addition; other images default to 6 GiB and
+require at least 4 GiB in an explicitly reviewed plan. Direct and inherited
+settings enforce the same floors. These role bounds do not lower whole-build
+or second-build admission.
+Stop on a forecast or reserve
 violation. Before advancing, successful packaging normally removes only the
 exact inspected owned builder, unused cache volume and remote client profile;
 retained image/archive/proof/log bytes remain. Failure stops the owned daemon
@@ -362,6 +376,15 @@ Hosted CI/artifact publication is claimed only after a recorded run succeeds and
 the retained artifact can be retrieved and verified. Local `/tmp` logs alone do
 not satisfy durable release evidence. H publishes reviewed source checkpoints to
 `main` throughout; source publication does not waive release eligibility gates.
+
+The separate public diagnostic artifact includes only its explicit allowlist,
+including both workspace/PostgreSQL payload maps. Before upload, reject links
+and nonregular files and bound file count, UTF-8 path lengths, raw bytes and ZIP
+overhead: at most 1,024 files, 512 bytes per name, 24 MiB raw and less than 30 MiB
+estimated ZIP bytes. Upload requires successful admission, stores bytes without
+additional compression and preserves the existing trusted-main restriction.
+This artifact does not replace retrieval or verification of the complete signed
+candidate subject.
 
 Canonical hosted execution may be selected by manual dispatch or an explicit
 `[qualify-candidate]` marker in the pushed head commit. Both canonical and origin

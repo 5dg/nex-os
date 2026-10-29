@@ -204,11 +204,42 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
-      - name: Retain non-secret candidate execution metadata
+      - name: Bound public execution metadata size
+        id: metadata_budget
         if: always() && steps.trusted_main.outcome == 'success'
+        run: |
+          python3 - <<'PYCODE'
+          import pathlib, stat
+          root = pathlib.Path('/tmp/nex-ci-candidate')
+          patterns = ['candidate.json', 'release-manifest.json', 'pipeline.log', 'reproducibility.json', '*admission*.json', 'evidence/*admission*.json', 'evidence/dom-browser-*.log', 'evidence/qualification-*.log', 'evidence/browser-*/dom/browser-results.json', 'evidence/browser-*/operator/browser-results.json', 'evidence/browser-*/revocation/browser-results.json', 'evidence/browser-*/fixture-inputs.json', 'evidence/browser-*/fixture-trust-input.json', 'evidence/browser-*/dom/browser-engine.json', 'evidence/browser-*/operator/browser-engine.json', 'evidence/browser-*/revocation/browser-engine.json', 'evidence/browser-dependency-preflight/startup-result.json', 'evidence/browser-dependency-preflight/browser-engine.json', 'evidence/browser-dependency-preflight/browser-image-id', 'builds/*/manifest.json', 'builds/one/workspace-payload.json', 'builds/two/workspace-payload.json', 'builds/one/postgres-payload.json', 'builds/two/postgres-payload.json']
+          paths = sorted({path for pattern in patterns for path in root.glob(pattern)})
+          if not paths or len(paths) > 1024:
+              raise SystemExit('Public metadata file-count budget exceeded or no files exist')
+          total = 0
+          zip_overhead = 65536
+          for path in paths:
+              relative = path.relative_to(root)
+              if len(relative.as_posix().encode('utf-8')) > 512:
+                  raise SystemExit('Public metadata path-length budget exceeded')
+              if any(parent.is_symlink() for parent in [path, *path.parents]):
+                  raise SystemExit('Public metadata symlink refused')
+              info = path.stat()
+              if not stat.S_ISREG(info.st_mode):
+                  raise SystemExit('Public metadata must be regular files')
+              total += info.st_size
+              zip_overhead += 2 * len(relative.as_posix().encode('utf-8')) + 256
+          # Store without compression; reserve ZIP headers, Unicode fields and
+          # another 2 MiB below the materializer's declared 32 MiB maximum.
+          if total > 24 * 1024 * 1024 or total + zip_overhead > 30 * 1024 * 1024:
+              raise SystemExit('Public metadata byte budget exceeded; upload blocked')
+          print(f'Public metadata budget passed: {len(paths)} files, {total} bytes, {zip_overhead} ZIP overhead allowance')
+          PYCODE
+      - name: Retain non-secret candidate execution metadata
+        if: always() && steps.trusted_main.outcome == 'success' && steps.metadata_budget.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: alpha04-candidate-execution-metadata
+          compression-level: 0
           path: |
             /tmp/nex-ci-candidate/candidate.json
             /tmp/nex-ci-candidate/release-manifest.json
@@ -230,6 +261,10 @@ jobs:
             /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/browser-engine.json
             /tmp/nex-ci-candidate/evidence/browser-dependency-preflight/browser-image-id
             /tmp/nex-ci-candidate/builds/*/manifest.json
+            /tmp/nex-ci-candidate/builds/one/workspace-payload.json
+            /tmp/nex-ci-candidate/builds/two/workspace-payload.json
+            /tmp/nex-ci-candidate/builds/one/postgres-payload.json
+            /tmp/nex-ci-candidate/builds/two/postgres-payload.json
           if-no-files-found: error
           retention-days: 30
 
