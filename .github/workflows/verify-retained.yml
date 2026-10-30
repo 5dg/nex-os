@@ -1,0 +1,203 @@
+name: Verify retained candidate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      producer_run_id:
+        description: Completed trusted-main canonical producer run ID
+        required: true
+        type: string
+      artifact_id:
+        description: Retained alpha04-candidate-subject artifact ID
+        required: true
+        type: string
+      source_revision:
+        description: Full producer source commit SHA
+        required: true
+        type: string
+      subject_sha256:
+        description: Full candidate-bundle.tar.gz SHA256
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+
+jobs:
+  retained-consumer:
+    if: github.repository == '5dg/nex-os' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[verify-retained]')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEX_TOOLS_DIR: /tmp/nex-retained-tools
+      XDG_CACHE_HOME: /tmp/nex-retained-cache
+      PYTHONDONTWRITEBYTECODE: '1'
+      INPUT_RUN_ID: ${{ inputs.producer_run_id }}
+      INPUT_ARTIFACT_ID: ${{ inputs.artifact_id }}
+      INPUT_SOURCE_REVISION: ${{ inputs.source_revision }}
+      INPUT_SUBJECT_SHA256: ${{ inputs.subject_sha256 }}
+      EVENT_HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+    steps:
+      - name: Require exact trusted main and bounded identifiers
+        id: trusted_main
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          if os.environ['GITHUB_REPOSITORY'] != '5dg/nex-os' or os.environ['GITHUB_REF'] != 'refs/heads/main':
+              raise SystemExit('Trusted repository and main ref required')
+          fields = {'producer_run_id': 'INPUT_RUN_ID', 'artifact_id': 'INPUT_ARTIFACT_ID',
+                    'source_revision': 'INPUT_SOURCE_REVISION', 'subject_sha256': 'INPUT_SUBJECT_SHA256'}
+          event = os.environ['GITHUB_EVENT_NAME']
+          if event == 'workflow_dispatch':
+              values = {name: os.environ.get(variable, '') for name, variable in fields.items()}
+          elif event == 'push':
+              message = os.environ.get('EVENT_HEAD_MESSAGE', '')
+              if message.count('[verify-retained]') != 1:
+                  raise SystemExit('Exactly one verification marker required')
+              lines = message.splitlines()
+              values = {}
+              for name in fields:
+                  matches = [line[len(name) + 1:] for line in lines if line.startswith(name + '=')]
+                  if len(matches) != 1:
+                      raise SystemExit('Each verification input must appear exactly once')
+                  values[name] = matches[0]
+          else:
+              raise SystemExit('Unsupported verification event')
+          if (not re.fullmatch(r'[1-9][0-9]{0,18}', values['producer_run_id']) or
+              not re.fullmatch(r'[1-9][0-9]{0,18}', values['artifact_id']) or
+              not re.fullmatch(r'[0-9a-f]{40}', values['source_revision']) or
+              not re.fullmatch(r'[0-9a-f]{64}', values['subject_sha256'])):
+              raise SystemExit('Invalid verification input')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              for name, variable in fields.items():
+                  output.write(variable + '=' + values[name] + '\n')
+          PY
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install checksum-pinned attestation verifier
+        run: ./scripts/install-gh-attestation.sh
+      - name: Retrieve and strictly verify the completed producer subject
+        id: verify
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B scripts/verify-retained-candidate.py \
+            --run-id "$INPUT_RUN_ID" --artifact-id "$INPUT_ARTIFACT_ID" \
+            --source-revision "$INPUT_SOURCE_REVISION" --subject-sha256 "$INPUT_SUBJECT_SHA256" \
+            --output /tmp/nex-retained-receipt
+      - name: Bound and retain non-secret verification receipts
+        id: receipt_budget
+        if: always() && steps.trusted_main.outcome == 'success'
+        shell: bash
+        env:
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, stat
+          root = pathlib.Path('/tmp/nex-retained-receipt')
+          public = pathlib.Path('/tmp/nex-retained-public')
+          public.mkdir(mode=0o700)
+          summary = {'schema_version': 1, 'verification_step': os.environ['VERIFY_OUTCOME'],
+                     'repository': '5dg/nex-os', 'workflow_run_id': int(os.environ['INPUT_RUN_ID']),
+                     'artifact_id': int(os.environ['INPUT_ARTIFACT_ID']),
+                     'source_revision': os.environ['INPUT_SOURCE_REVISION'],
+                     'subject_sha256': os.environ['INPUT_SUBJECT_SHA256'], 'release_approval': False}
+          # Whitelist fields; never publish API responses, errors, tokens or URLs.
+          receipt = root / 'completed-run-receipt.json'
+          origin = root / 'origin.json'
+          if os.environ['VERIFY_OUTCOME'] == 'success' and not (receipt.exists() and origin.exists()):
+              raise SystemExit('Successful verification requires complete receipts')
+          if receipt.exists() and origin.exists():
+              for path in (receipt, origin):
+                  if path.is_symlink() or not stat.S_ISREG(path.stat().st_mode) or path.stat().st_size > 1024 * 1024:
+                      raise SystemExit('Invalid receipt file')
+              record = json.loads(receipt.read_text())
+              proof = json.loads(origin.read_text())
+              if record.get('release_approval') is not False or record.get('origin_verification') != proof.get('origin_verification'):
+                  raise SystemExit('Conflicting verification receipts')
+              verifier = proof.get('verifier')
+              if (type(record.get('workflow_run_id')) is not int or type(record.get('artifact_id')) is not int or
+                  record.get('repository') != '5dg/nex-os' or
+                  record.get('workflow_run_id') != int(os.environ['INPUT_RUN_ID']) or
+                  record.get('artifact_id') != int(os.environ['INPUT_ARTIFACT_ID']) or
+                  record.get('source_revision') != os.environ['INPUT_SOURCE_REVISION'] or
+                  record.get('subject_sha256') != os.environ['INPUT_SUBJECT_SHA256'] or
+                  proof.get('repository') != '5dg/nex-os' or
+                  proof.get('workflow') != '5dg/nex-os/.github/workflows/ci.yml' or
+                  proof.get('source_ref') != 'refs/heads/main' or
+                  not isinstance(verifier, dict) or verifier.get('version') != '2.103.3' or
+                  verifier.get('binary_sha256') != 'b768184570b12536be4ac1528893f6340d1c6a7b40b56ad45bca9cd0e87ad34d' or
+                  proof.get('source_revision') != os.environ['INPUT_SOURCE_REVISION'] or
+                  proof.get('subject_sha256') != os.environ['INPUT_SUBJECT_SHA256'] or
+                  not re.fullmatch(r'[0-9a-f]{64}', record.get('retained_archive_sha256', ''))):
+                  raise SystemExit('Receipt input binding mismatch')
+              gates = ('qualification', 'proof-parity', 'shutdown', 'packaged-shutdown',
+                       'history-pagination', 'dom-browser', 'vulnerability-scans', 'reproducibility')
+              checks = record.get('internal_checks')
+              if not isinstance(checks, dict):
+                  raise SystemExit('Invalid recorded gates')
+              allowed = {'passed', 'failed', 'blocked', 'not_run'}
+              selected = {key: checks.get(key, 'not_run') for key in gates}
+              if any(not isinstance(value, str) or value not in allowed for value in selected.values()):
+                  raise SystemExit('Invalid recorded gate status')
+              if (record.get('hosted_ci') not in ('passed', 'failed') or
+                  record.get('durable_retention') != 'passed' or
+                  record.get('origin_verification') != 'passed' or
+                  record.get('synthetic_qualification_gate') not in ('qualified', 'blocked') or
+                  type(proof.get('exit_code')) is not int or proof.get('exit_code') != 0 or
+                  proof.get('self_hosted_runners_denied') is not True):
+                  raise SystemExit('Invalid verification status')
+              qualified = record['hosted_ci'] == 'passed' and all(value == 'passed' for value in selected.values())
+              if (record['synthetic_qualification_gate'] == 'qualified') != qualified or (os.environ['VERIFY_OUTCOME'] == 'success') != qualified:
+                  raise SystemExit('Conflicting qualification outcome')
+              summary['completed_run'] = {
+                  'repository': '5dg/nex-os', 'workflow_run_id': int(os.environ['INPUT_RUN_ID']),
+                  'artifact_id': int(os.environ['INPUT_ARTIFACT_ID']),
+                  'source_revision': os.environ['INPUT_SOURCE_REVISION'],
+                  'subject_sha256': os.environ['INPUT_SUBJECT_SHA256'],
+                  'retained_archive_sha256': record['retained_archive_sha256'],
+                  'hosted_ci': record['hosted_ci'], 'durable_retention': 'passed',
+                  'origin_verification': 'passed', 'release_approval': False,
+                  'verifier': {'version': verifier['version'], 'binary_sha256': verifier['binary_sha256']},
+                  'internal_checks': selected,
+                  'synthetic_qualification_gate': record['synthetic_qualification_gate']}
+              verified = root / 'origin.verified.json'
+              if proof.get('origin_verification') == 'passed' and not verified.exists():
+                  raise SystemExit('Successful origin requires its verified statements')
+              if verified.exists():
+                  if verified.is_symlink() or not stat.S_ISREG(verified.stat().st_mode) or verified.stat().st_size > 8 * 1024 * 1024:
+                      raise SystemExit('Invalid verification statement')
+                  with verified.open('rb') as stream:
+                      digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                  if digest != proof.get('verified_statements_sha256'):
+                      raise SystemExit('Verification statement does not match origin receipt')
+                  summary['verified_statements_sha256'] = digest
+          (public / 'summary.json').write_text(json.dumps(summary, sort_keys=True, indent=2) + '\n')
+          PY
+      - name: Retain the bounded verification receipt
+        id: retain
+        if: always() && steps.trusted_main.outcome == 'success' && steps.receipt_budget.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: alpha04-retained-verification-${{ github.run_id }}
+          path: /tmp/nex-retained-public
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce verification outcome
+        if: always() && steps.trusted_main.outcome == 'success'
+        shell: bash
+        env:
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          RETAIN_OUTCOME: ${{ steps.retain.outcome }}
+        run: |
+          set -euo pipefail
+          [[ "$VERIFY_OUTCOME" == success && "$RETAIN_OUTCOME" == success ]]

@@ -94,6 +94,22 @@ class RetainedConsumerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'expected candidate bundle'):
                 consumer.verify(self.args)
 
+    def test_disk_reserve_is_enforced_before_writing_download(self):
+        usage = SimpleNamespace(free=consumer.DISK_RESERVE)
+        with patch.object(consumer,'metadata',side_effect=[self.run,self.artifact]), patch.object(consumer,'request',return_value=io.BytesIO(self.archive)), patch.object(consumer.shutil,'disk_usage',return_value=usage):
+            with self.assertRaisesRegex(ValueError,'filesystem reserve'):
+                consumer.verify(self.args)
+        self.assertEqual((self.args.output/'retained.zip').stat().st_size, 0)
+        self.assertFalse((self.args.output/'completed-run-receipt.json').exists())
+
+    def test_disk_reserve_is_enforced_again_before_subject_expansion(self):
+        usage = [SimpleNamespace(free=consumer.DISK_RESERVE+len(self.archive)), SimpleNamespace(free=consumer.DISK_RESERVE)]
+        with patch.object(consumer,'metadata',side_effect=[self.run,self.artifact]), patch.object(consumer,'request',return_value=io.BytesIO(self.archive)), patch.object(consumer.shutil,'disk_usage',side_effect=usage):
+            with self.assertRaisesRegex(ValueError,'filesystem reserve'):
+                consumer.verify(self.args)
+        self.assertEqual((self.args.output/'candidate-bundle.tar.gz').stat().st_size, 0)
+        self.assertFalse((self.args.output/'completed-run-receipt.json').exists())
+
     def test_failed_hosted_run_is_not_upgraded_by_mock_origin_success(self):
         self.run['conclusion']='failure'
         self.assertEqual(self.verify_mock_origin(),1)
@@ -101,6 +117,13 @@ class RetainedConsumerTests(unittest.TestCase):
         self.assertEqual(receipt['hosted_ci'],'failed')
         self.assertEqual(receipt['durable_retention'],'passed')
         self.assertFalse(receipt['release_approval'])
+
+    def test_failed_origin_never_interprets_subject_or_writes_completed_receipt(self):
+        module = SimpleNamespace(verify=lambda args: 1)
+        fake_spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda module: None))
+        with patch.object(consumer, 'metadata', side_effect=[self.run, self.artifact]), patch.object(consumer, 'request', return_value=io.BytesIO(self.archive)), patch.object(consumer.importlib.util, 'spec_from_file_location', return_value=fake_spec), patch.object(consumer.importlib.util, 'module_from_spec', return_value=module), patch.object(consumer.tarfile, 'open', side_effect=AssertionError('unverified subject interpreted')):
+            self.assertEqual(consumer.verify(self.args), 1)
+        self.assertFalse((self.args.output/'completed-run-receipt.json').exists())
 
     def test_missing_or_stale_release_manifest_is_rejected(self):
         for kind in ('missing','stale'):
@@ -160,6 +183,23 @@ class RetainedConsumerTests(unittest.TestCase):
         self.artifact['digest']='sha256:'+hashlib.sha256(self.archive).hexdigest()
         with self.assertRaisesRegex(ValueError,'bounded regular release manifest'):
             self.verify_mock_origin()
+
+    def test_extended_header_cannot_decompress_past_manifest_stream_budget(self):
+        member = tarfile.TarInfo('pax')
+        member.type = tarfile.XHDTYPE
+        member.size = consumer.MAX_MANIFEST_STREAM + 1024 * 1024
+        # Small compressed input expands to a PAX extension larger than the
+        # entire first-manifest stream budget. The signature is a logic mock.
+        self.subject = gzip.compress(member.tobuf() + b'0' * member.size)
+        zipped_bytes = io.BytesIO()
+        with zipfile.ZipFile(zipped_bytes, 'w') as zipped:
+            zipped.writestr('candidate-bundle.tar.gz', self.subject)
+        self.archive = zipped_bytes.getvalue()
+        self.args.subject_sha256 = hashlib.sha256(self.subject).hexdigest()
+        self.artifact['digest'] = 'sha256:' + hashlib.sha256(self.archive).hexdigest()
+        with self.assertRaisesRegex(ValueError, 'decompression budget'):
+            self.verify_mock_origin()
+        self.assertFalse((self.args.output/'completed-run-receipt.json').exists())
 
     def test_redirects_strip_api_authorization_and_reject_http(self):
         redirect=consumer.SafeRedirect()

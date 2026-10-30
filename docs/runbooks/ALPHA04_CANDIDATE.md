@@ -224,6 +224,39 @@ unexpired artifact producer, the GitHub-retained archive SHA256 and expected bun
 SHA256. It invokes the checksum-pinned `gh` verifier with repository, workflow,
 source commit, main ref and GitHub issuer constraints, denying self-hosted runners.
 Redirects never forward the GitHub bearer credential to artifact storage.
+The streaming download and subject extraction each preserve a 2 GiB filesystem
+reserve. Subject interpretation starts only after successful strict origin
+verification, and the decompressed first-manifest stream has a 5 MiB cap.
+
+For an independent GitHub-hosted consumer, dispatch the **Verify retained
+candidate** workflow on `main` after the producer run has completed. Supply the
+exact producer run ID, subject artifact ID, producer source commit and subject
+SHA256. The workflow retrieves the full artifact directly from GitHub and uses
+the same pinned verifier, default trust roots and source/workflow/issuer rules.
+It retains a bounded `alpha04-retained-verification-<run-id>` summary containing
+validated identities, gate statuses and the verified-statements hash; raw API
+metadata, errors and verified statements are not uploaded. Retrieve and review
+that summary and the workflow result. A failed producer or failed release gate
+still fails the verification workflow even when origin and retention pass.
+Workflow code and receipts alone do not establish that this path has run.
+
+An explicitly reviewed normal push to `main` may also start this independent
+workflow. Include `[verify-retained]` exactly once in the commit message and
+include each of these exact single-line fields once, replacing the placeholders
+with the completed producer's numeric IDs and lowercase full hashes:
+
+```text
+[verify-retained]
+
+producer_run_id=RUN_ID
+artifact_id=ARTIFACT_ID
+source_revision=FULL_COMMIT
+subject_sha256=BUNDLE_SHA256
+```
+
+The workflow parses those fields as data, validates them before use and still
+independently verifies the completed producer's metadata and origin. Unmarked
+pushes do not invoke the retained consumer.
 
 The completed-run receipt is outside the attested subject, avoiding a circular
 claim that an unfinished bundle contains its own future CI success. It separately

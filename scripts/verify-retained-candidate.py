@@ -5,12 +5,14 @@ Receipts live outside the attested bundle: a workflow cannot attest its own
 unfinished success. Failed runs can have valid retained evidence and origin.
 """
 import argparse
+import gzip
 import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 import tarfile
 import urllib.request
@@ -21,6 +23,35 @@ from source_record import atomic_json, sha256
 REPOSITORY = "5dg/nex-os"
 API = "https://api.github.com/repos/" + REPOSITORY
 MAX_DOWNLOAD = 16 * 1024**3
+DISK_RESERVE = 2 * 1024**3
+# Manifest, PAX/header overhead and tar stream buffering. This cap applies
+# before tarfile can allocate or decompress an extended-header payload.
+MAX_MANIFEST_STREAM = 5 * 1024**2
+
+
+class BoundedReader:
+    def __init__(self, source, limit):
+        self.source = source
+        self.remaining = limit
+
+    def read(self, size=-1):
+        if size < 0 or size > self.remaining:
+            raise ValueError("candidate manifest stream exceeds decompression budget")
+        data = self.source.read(size)
+        self.remaining -= len(data)
+        return data
+
+
+def copy_bounded(source, output, directory, limit, error):
+    """Stream untrusted bytes with an independent filesystem reserve."""
+    size = 0
+    while block := source.read(1024**2):
+        size += len(block)
+        if size > limit:
+            raise ValueError(error)
+        if shutil.disk_usage(directory).free < DISK_RESERVE + len(block):
+            raise ValueError("retained verification filesystem reserve would be exceeded")
+        output.write(block)
 
 
 class SafeRedirect(urllib.request.HTTPRedirectHandler):
@@ -80,13 +111,9 @@ def verify(args):
     expected_archive = validate_metadata(run, artifact, args)
     args.output.mkdir(parents=True, mode=0o700)
     archive = args.output / "retained.zip"
-    downloaded = 0
     with request(f"/actions/artifacts/{args.artifact_id}/zip") as response, archive.open("xb") as output:
-        while block := response.read(1024**2):
-            downloaded += len(block)
-            if downloaded > MAX_DOWNLOAD:
-                raise ValueError("retained archive exceeds admitted download budget")
-            output.write(block)
+        copy_bounded(response, output, args.output, MAX_DOWNLOAD,
+                     "retained archive exceeds admitted download budget")
     if sha256(archive) != expected_archive:
         raise ValueError("downloaded artifact differs from GitHub's retained digest")
     subject = args.output / "candidate-bundle.tar.gz"
@@ -95,12 +122,8 @@ def verify(args):
         if len(entries) != 1 or entries[0].filename != subject.name or entries[0].file_size > MAX_DOWNLOAD:
             raise ValueError("retained artifact must contain one bounded candidate subject")
         with zipped.open(entries[0]) as source, subject.open("xb") as output:
-            size = 0
-            while block := source.read(1024**2):
-                size += len(block)
-                if size > MAX_DOWNLOAD:
-                    raise ValueError("candidate subject exceeds admitted expansion budget")
-                output.write(block)
+            copy_bounded(source, output, args.output, MAX_DOWNLOAD,
+                         "candidate subject exceeds admitted expansion budget")
     if sha256(subject) != args.subject_sha256:
         raise ValueError("retrieved subject differs from expected candidate bundle")
     spec = importlib.util.spec_from_file_location("verify_provenance", Path(__file__).with_name("verify-provenance.py"))
@@ -109,16 +132,21 @@ def verify(args):
     origin = provenance.verify(argparse.Namespace(subject=subject, subject_sha256=args.subject_sha256,
         source_revision=args.source_revision, tool_root=args.tool_root, output=args.output / "origin.json",
         attestation_bundle=None))
+    if origin != 0:
+        # Failed origin cannot authorize interpretation of the subject or a
+        # completed-run receipt. The separate origin failure remains on disk.
+        return 1
     release = None
     # New candidate subjects put the manifest FIRST. Never scan/decompress an
     # arbitrary tar payload looking for it: a tiny gzip could declare huge files.
     # Signature verification precedes interpretation, and the first member still
     # has a strict size/type bound. No extraction, archive paths or links execute.
-    with tarfile.open(subject, "r|gz") as candidate_bundle:
-        member = candidate_bundle.next()
-        if not member or member.name != "release-manifest.json" or not member.isfile() or member.size > 4 * 1024**2:
-            raise ValueError("first subject member must be a bounded regular release manifest")
-        release = json.load(candidate_bundle.extractfile(member))
+    with gzip.open(subject, 'rb') as decompressed:
+        with tarfile.open(fileobj=BoundedReader(decompressed, MAX_MANIFEST_STREAM), mode="r|") as candidate_bundle:
+            member = candidate_bundle.next()
+            if not member or member.name != "release-manifest.json" or not member.isfile() or member.size > 4 * 1024**2:
+                raise ValueError("first subject member must be a bounded regular release manifest")
+            release = json.load(candidate_bundle.extractfile(member))
     if not isinstance(release, dict) or release.get("source", {}).get("revision") != args.source_revision:
         raise ValueError("retained release manifest/source mismatch")
     required_local = ("qualification", "proof-parity", "shutdown", "packaged-shutdown", "history-pagination", "dom-browser", "vulnerability-scans", "reproducibility")
