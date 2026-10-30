@@ -38,6 +38,8 @@ type S3ExportPolicy struct {
 	STSEndpoint, CallerRoleName                               string
 	DestinationID, Prefix                                     string
 	RequestTimeout                                            time.Duration
+	HistoricalKMSKeyARNs                                      []string
+	LegacyReceiptKMSKeyARN                                    string
 }
 
 type s3ExportReceipt struct {
@@ -45,6 +47,7 @@ type s3ExportReceipt struct {
 	ContentDigest string `json:"content_digest"`
 	ObjectKey     string `json:"object_key"`
 	VersionID     string `json:"version_id"`
+	KMSKeyARN     string `json:"kms_key_arn"`
 }
 
 // The exported methods accept the concrete reviewed PostgreSQL store; this
@@ -86,8 +89,17 @@ func validS3Policy(p S3ExportPolicy) bool {
 		(p.Partition == "aws" && strings.HasPrefix(p.Region, "us-gov-")) || (p.Partition != "aws" && p.Partition != "aws-us-gov") {
 		return false
 	}
-	prefix := "arn:" + p.Partition + ":kms:" + p.Region + ":" + p.AccountID + ":key/"
-	if !strings.HasPrefix(p.KMSKeyARN, prefix) || !keyPattern.MatchString(strings.TrimPrefix(p.KMSKeyARN, prefix)) {
+	if !validS3KMSKey(p, p.KMSKeyARN) || len(p.HistoricalKMSKeyARNs) > 32 {
+		return false
+	}
+	seen := map[string]bool{p.KMSKeyARN: true}
+	for _, key := range p.HistoricalKMSKeyARNs {
+		if !validS3KMSKey(p, key) || seen[key] {
+			return false
+		}
+		seen[key] = true
+	}
+	if p.LegacyReceiptKMSKeyARN != "" && !seen[p.LegacyReceiptKMSKeyARN] {
 		return false
 	}
 	if p.Prefix == "" || len(p.Prefix) > 128 || strings.HasPrefix(p.Prefix, "/") || !strings.HasSuffix(p.Prefix, "/") || strings.Contains(p.Prefix, "//") {
@@ -99,6 +111,23 @@ func validS3Policy(p S3ExportPolicy) bool {
 		}
 	}
 	return true
+}
+
+func validS3KMSKey(p S3ExportPolicy, key string) bool {
+	prefix := "arn:" + p.Partition + ":kms:" + p.Region + ":" + p.AccountID + ":key/"
+	return strings.HasPrefix(key, prefix) && keyPattern.MatchString(strings.TrimPrefix(key, prefix))
+}
+
+func (s *S3ExportStore) approvedReceiptKey(key string) bool {
+	if key == s.policy.KMSKeyARN {
+		return true
+	}
+	for _, historical := range s.policy.HistoricalKMSKeyARNs {
+		if key == historical {
+			return true
+		}
+	}
+	return false
 }
 
 type pinnedS3Endpoint struct {
@@ -242,6 +271,7 @@ func newS3ExportStore(ctx context.Context, policy S3ExportPolicy, cfg aws.Config
 	if ctx == nil || !validS3Policy(policy) || cfg.Region != policy.Region || cfg.Credentials == nil || cfg.EndpointResolver != nil || cfg.EndpointResolverWithOptions != nil {
 		return nil, invalidExport
 	}
+	policy.HistoricalKMSKeyARNs = append([]string(nil), policy.HistoricalKMSKeyARNs...)
 	resolver, err := approvedS3Endpoint(ctx, policy)
 	if err != nil {
 		return nil, invalidExport
@@ -414,7 +444,7 @@ func (s *S3ExportStore) execute(ctx context.Context, in contracts.Export, digest
 			aws.ToString(out.SSEKMSKeyId) != s.policy.KMSKeyARN || aws.ToString(out.ChecksumSHA256) != base64.StdEncoding.EncodeToString(checksum[:]) {
 			return nil, broker.ErrUnknown
 		}
-		rec := s3ExportReceipt{ArtifactID: in.OperationID, ContentDigest: contentDigest, ObjectKey: key, VersionID: aws.ToString(out.VersionId)}
+		rec := s3ExportReceipt{ArtifactID: in.OperationID, ContentDigest: contentDigest, ObjectKey: key, VersionID: aws.ToString(out.VersionId), KMSKeyARN: s.policy.KMSKeyARN}
 		if _, err := s.readExact(effectCtx, verified, in, digest, rec); err != nil {
 			return nil, broker.ErrUnknown
 		}
@@ -423,7 +453,7 @@ func (s *S3ExportStore) execute(ctx context.Context, in contracts.Export, digest
 	if err != nil {
 		return empty, err
 	}
-	rec, err := decodeS3Receipt(raw, in.OperationID, key, contentDigest)
+	rec, err := s.decodeS3Receipt(raw, in.OperationID, key, contentDigest)
 	if err != nil {
 		return empty, invalidExport
 	}
@@ -442,7 +472,7 @@ func (s *S3ExportStore) execute(ctx context.Context, in contracts.Export, digest
 	return contracts.ExportResult{ArtifactID: rec.ArtifactID, ContentDigest: rec.ContentDigest}, nil
 }
 
-func decodeS3Receipt(raw json.RawMessage, operationID, key, digest string) (s3ExportReceipt, error) {
+func (s *S3ExportStore) decodeS3Receipt(raw json.RawMessage, operationID, key, digest string) (s3ExportReceipt, error) {
 	var rec s3ExportReceipt
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	first, err := decoder.Token()
@@ -456,7 +486,7 @@ func decodeS3Receipt(raw json.RawMessage, operationID, key, digest string) (s3Ex
 			return rec, invalidExport
 		}
 		name, ok := token.(string)
-		if !ok || (name != "artifact_id" && name != "content_digest" && name != "object_key" && name != "version_id") {
+		if !ok || (name != "artifact_id" && name != "content_digest" && name != "object_key" && name != "version_id" && name != "kms_key_arn") {
 			return rec, invalidExport
 		}
 		if _, exists := values[name]; exists {
@@ -469,11 +499,15 @@ func decodeS3Receipt(raw json.RawMessage, operationID, key, digest string) (s3Ex
 		values[name] = value
 	}
 	last, err := decoder.Token()
-	if err != nil || last != json.Delim('}') || decoder.Decode(new(any)) != io.EOF || len(values) != 4 {
+	if err != nil || last != json.Delim('}') || decoder.Decode(new(any)) != io.EOF || (len(values) != 4 && len(values) != 5) {
 		return rec, invalidExport
 	}
-	rec = s3ExportReceipt{ArtifactID: values["artifact_id"], ContentDigest: values["content_digest"], ObjectKey: values["object_key"], VersionID: values["version_id"]}
-	if rec.ArtifactID != operationID || rec.ObjectKey != key || rec.ContentDigest != digest || !validVersion(rec.VersionID) {
+	keyARN, present := values["kms_key_arn"]
+	if !present {
+		keyARN = s.policy.LegacyReceiptKMSKeyARN
+	}
+	rec = s3ExportReceipt{ArtifactID: values["artifact_id"], ContentDigest: values["content_digest"], ObjectKey: values["object_key"], VersionID: values["version_id"], KMSKeyARN: keyARN}
+	if rec.ArtifactID != operationID || rec.ObjectKey != key || rec.ContentDigest != digest || !validVersion(rec.VersionID) || !s.approvedReceiptKey(rec.KMSKeyARN) {
 		return rec, invalidExport
 	}
 	return rec, nil
@@ -502,7 +536,7 @@ func (s *S3ExportStore) retrieve(ctx context.Context, in contracts.Export, diges
 	if err != nil {
 		return nil, err
 	}
-	rec, err := decodeS3Receipt(raw, in.OperationID, key, contentDigest)
+	rec, err := s.decodeS3Receipt(raw, in.OperationID, key, contentDigest)
 	if err != nil {
 		return nil, invalidExport
 	}
@@ -529,7 +563,7 @@ func (s *S3ExportStore) readExact(ctx context.Context, client *s3.Client, in con
 		return nil, invalidExport
 	}
 	defer out.Body.Close()
-	if aws.ToString(out.VersionId) != rec.VersionID || out.ServerSideEncryption != types.ServerSideEncryptionAwsKms || aws.ToString(out.SSEKMSKeyId) != s.policy.KMSKeyARN ||
+	if aws.ToString(out.VersionId) != rec.VersionID || out.ServerSideEncryption != types.ServerSideEncryptionAwsKms || aws.ToString(out.SSEKMSKeyId) != rec.KMSKeyARN ||
 		out.Metadata["nex-execution-sha256"] != digest || out.Metadata["nex-content-sha256"] != rec.ContentDigest {
 		return nil, invalidExport
 	}

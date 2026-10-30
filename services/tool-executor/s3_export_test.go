@@ -345,7 +345,7 @@ func TestManagedExportRejectsTamperedVersionedObjectAndMalformedReceipt(t *testi
 		t.Fatal(err)
 	}
 	bad := fmt.Sprintf(`{"artifact_id":%q,"artifact_id":%q,"object_key":%q,"content_digest":%q,"version_id":"v1"}`, in.OperationID, in.OperationID, key, contentDigest)
-	if _, err := decodeS3Receipt(json.RawMessage(bad), in.OperationID, key, contentDigest); err == nil {
+	if _, err := store.decodeS3Receipt(json.RawMessage(bad), in.OperationID, key, contentDigest); err == nil {
 		t.Fatal("duplicate receipt field accepted")
 	}
 	if _, _, err := store.validate(in, strings.Repeat("0", 64)); err == nil {
@@ -355,6 +355,115 @@ func TestManagedExportRejectsTamperedVersionedObjectAndMalformedReceipt(t *testi
 	wrongTenant.TenantID = "other-tenant"
 	if _, _, err := store.validate(wrongTenant, digest); err == nil {
 		t.Fatal("tenant change accepted")
+	}
+}
+
+func TestManagedExportRetainsReceiptKeyAcrossRotation(t *testing.T) {
+	store, f := newS3Fixture(t)
+	in, receipts := fixtureExport(), &fakeReceiptStore{}
+	digest := contracts.ExecutionDigest(in)
+	access := func(context.Context, string, string) error { return nil }
+	authorize := func(context.Context) error { return nil }
+	if _, err := store.execute(context.Background(), in, digest, receipts, access, authorize); err != nil {
+		t.Fatal(err)
+	}
+	oldKey := store.policy.KMSKeyARN
+	newKey := "arn:aws-us-gov:kms:us-gov-west-1:123456789012:key/22222222-2222-2222-2222-222222222222"
+	p := store.policy
+	p.KMSKeyARN = newKey
+	p.HistoricalKMSKeyARNs = []string{oldKey}
+	rotated, err := newS3ExportStore(context.Background(), p, store.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Configured key lists must not remain mutable by the caller.
+	p.HistoricalKMSKeyARNs[0] = newKey
+	if body, err := rotated.retrieve(context.Background(), in, digest, receipts, access); err != nil || string(body) != in.Content {
+		t.Fatalf("historical receipt not readable after rotation: %q %v", body, err)
+	}
+	f.mu.Lock()
+	requestsBeforeDenial := len(f.requests)
+	f.mu.Unlock()
+	denied := func(context.Context, string, string) error { return errors.New("revoked") }
+	if _, err := rotated.retrieve(context.Background(), in, digest, receipts, denied); err == nil {
+		t.Fatal("revoked actor retrieved a historical export")
+	}
+	f.mu.Lock()
+	requestsAfterDenial := len(f.requests)
+	f.mu.Unlock()
+	if requestsAfterDenial != requestsBeforeDenial {
+		t.Fatal("denied historical read reached remote services")
+	}
+	if _, err := rotated.execute(context.Background(), in, digest, receipts, access, authorize); err != nil {
+		t.Fatalf("historical receipt replay failed: %v", err)
+	}
+	var fields map[string]string
+	if err := json.Unmarshal(receipts.result, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["kms_key_arn"] != oldKey {
+		t.Fatal("receipt did not bind original key")
+	}
+	fields["kms_key_arn"] = newKey
+	forged, _ := json.Marshal(fields)
+	if _, err := rotated.retrieve(context.Background(), in, digest, &fakeReceiptStore{result: forged}, access); err == nil {
+		t.Fatal("receipt with incorrect approved key accepted")
+	}
+	delete(fields, "kms_key_arn")
+	legacy, _ := json.Marshal(fields)
+	if _, err := rotated.retrieve(context.Background(), in, digest, &fakeReceiptStore{result: legacy}, access); err == nil {
+		t.Fatal("legacy receipt accepted without explicit legacy key")
+	}
+	p.HistoricalKMSKeyARNs[0] = oldKey
+	p.LegacyReceiptKMSKeyARN = oldKey
+	legacyStore, err := newS3ExportStore(context.Background(), p, store.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body, err := legacyStore.retrieve(context.Background(), in, digest, &fakeReceiptStore{result: legacy}, access); err != nil || string(body) != in.Content {
+		t.Fatalf("explicit legacy mapping failed: %q %v", body, err)
+	}
+	p.LegacyReceiptKMSKeyARN = ""
+	p.HistoricalKMSKeyARNs = nil
+	unapproved, err := newS3ExportStore(context.Background(), p, store.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unapproved.retrieve(context.Background(), in, digest, receipts, access); err == nil {
+		t.Fatal("removed historical key accepted")
+	}
+	f.mu.Lock()
+	f.policy.KMSKeyARN = newKey
+	f.mu.Unlock()
+	newIn := in
+	newIn.OperationID = "operation-456"
+	newReceipt := &fakeReceiptStore{}
+	if _, err := rotated.execute(context.Background(), newIn, contracts.ExecutionDigest(newIn), newReceipt, access, authorize); err != nil {
+		t.Fatalf("new write under rotated key failed: %v", err)
+	}
+	if err := json.Unmarshal(newReceipt.result, &fields); err != nil || fields["kms_key_arn"] != newKey {
+		t.Fatal("new receipt did not bind rotated key")
+	}
+}
+
+func TestManagedExportRejectsUnsafeHistoricalKeys(t *testing.T) {
+	store, _ := newS3Fixture(t)
+	for _, keys := range [][]string{
+		{store.policy.KMSKeyARN},
+		{"arn:aws-us-gov:kms:us-gov-west-1:999999999999:key/22222222-2222-2222-2222-222222222222"},
+		{"arn:aws-us-gov:kms:us-gov-east-1:123456789012:key/22222222-2222-2222-2222-222222222222"},
+		make([]string, 33),
+	} {
+		p := store.policy
+		p.HistoricalKMSKeyARNs = keys
+		if validS3Policy(p) {
+			t.Fatal("unsafe historical key set accepted")
+		}
+	}
+	p := store.policy
+	p.LegacyReceiptKMSKeyARN = "arn:aws-us-gov:kms:us-gov-west-1:123456789012:key/22222222-2222-2222-2222-222222222222"
+	if validS3Policy(p) {
+		t.Fatal("legacy key outside approved set accepted")
 	}
 }
 

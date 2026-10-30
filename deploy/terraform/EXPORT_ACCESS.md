@@ -25,15 +25,21 @@ Existing object versions retain their original encryption context and can have
 per-object bucket-key overrides. Inventory and test the actual bucket-key mode
 and KMS key for every retained version, including after re-encryption or key
 rotation. A default-setting change can make historical versions unreadable
-under a single-context policy. The current adapter requires every returned KMS
-key ARN to equal its single configured ARN. Granting access to an old key alone
-does not make old-key versions readable after changing that configured ARN.
-Keep the old configured key ARN, or implement and independently review an
-adapter/receipt key-binding migration before changing it. KMS backing-key
+under a single-context policy. New adapter receipts bind the exact write-key
+ARN, and reads require that ARN to be explicitly approved as the current key or
+an historical key and to match the key returned by S3. Older receipts without
+a key require an explicit, trusted legacy-key mapping to an approved key;
+without it those reads fail closed. New writes use only the configured current
+key. Granting old-key IAM access alone does not configure the adapter's approved
+keys or legacy mapping.
+
+The optional historical access policy in `EXPORT_HISTORY_ACCESS.md` grants
+decrypt only for explicitly configured key and bucket-key-mode pairs. Review
+those pairs, the adapter configuration, retained key material and actual object
+versions together before changing keys or bucket-key modes. KMS backing-key
 rotation under the same ARN also requires retained key material and tested
-historical reads. Mixed bucket-key modes under one key need a separately
-reviewed context policy or a verified migration before the current narrow
-single-context policy changes. Stop admission and reconcile where required.
+historical reads. Mixed bucket-key modes need the matching historical context
+grant or a verified migration. Stop admission and reconcile where required.
 S3 bucket-key caching can skip subsequent KMS policy
 re-evaluation, so immediate revocation must not rely on a KMS policy change
 alone. Restrict effective S3/bucket/endpoint permissions, stop admission and
