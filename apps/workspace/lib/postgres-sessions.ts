@@ -1,5 +1,6 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
+import { SessionKeyring } from "./session-keyring.ts";
 import { equalSecret, IDLE_MILLISECONDS, TOTAL_MILLISECONDS, type Actor, type Login, type Session, type SessionAssurance } from "./sessions.ts";
 
 const LOGIN_MILLISECONDS = 5 * 60_000;
@@ -28,12 +29,11 @@ function aad(kind: Kind, hash: string, hard: number, idle: number): Buffer {
 // Production profile selection remains closed until its startup checks and
 // deployment integration are independently qualified.
 export class PostgresSessionStore {
-  private readonly key: Buffer;
+  private readonly keyring: SessionKeyring;
   private readonly pool: Pool;
-  constructor(pool: Pool, key: Uint8Array) {
-    if (key.length !== 32 || key.every(value => value === 0)) throw new Error("Session encryption key invalid");
+  constructor(pool: Pool, key: Uint8Array, previousKey?: Uint8Array) {
+    this.keyring = new SessionKeyring(key, previousKey);
     this.pool = pool;
-    this.key = Buffer.from(key);
   }
   async readiness(): Promise<void> {
     try {
@@ -73,17 +73,15 @@ export class PostgresSessionStore {
   }
   private seal(kind: Kind, hash: string, hard: number, idle: number, state: State): Buffer {
     const plaintext = Buffer.from(JSON.stringify(state), "utf8");
-    if (plaintext.length > MAX_PAYLOAD_BYTES) throw new Error("Session payload exceeds limit");
-    const nonce = randomBytes(12), cipher = createCipheriv("aes-256-gcm", this.key, nonce);
-    cipher.setAAD(aad(kind, hash, hard, idle));
-    return Buffer.concat([nonce, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]);
+    try { return this.keyring.seal(plaintext, aad(kind, hash, hard, idle)); }
+    finally { plaintext.fill(0); }
   }
   private unseal(kind: Kind, hash: string, hard: number, idle: number, sealed: Buffer): State {
     if (!Buffer.isBuffer(sealed) || sealed.length < 28 || sealed.length > MAX_PAYLOAD_BYTES + 28) throw new Error("Session record invalid");
-    const decipher = createDecipheriv("aes-256-gcm", this.key, sealed.subarray(0, 12));
-    decipher.setAAD(aad(kind, hash, hard, idle));
-    decipher.setAuthTag(sealed.subarray(sealed.length - 16));
-    const data: unknown = JSON.parse(Buffer.concat([decipher.update(sealed.subarray(12, -16)), decipher.final()]).toString("utf8"));
+    const plaintext = this.keyring.unseal(sealed, aad(kind, hash, hard, idle));
+    let data: unknown;
+    try { data = JSON.parse(plaintext.toString("utf8")); }
+    finally { plaintext.fill(0); }
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Session record invalid");
     return data as State;
   }

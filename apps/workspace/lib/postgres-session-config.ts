@@ -62,14 +62,16 @@ export function createPostgresSessionStore(): PostgresSessionStore {
     const ca = publicCA(caPath);
     tls.createSecureContext({ ca, minVersion: "TLSv1.2" });
     const key = privateFile("NEX_SESSION_ENCRYPTION_KEY_FILE", 32);
+    let previousKey: Buffer | undefined;
     try {
       if (key.length !== 32 || key.every(value => value === 0)) throw new Error("invalid");
+      if (process.env.NEX_SESSION_PREVIOUS_ENCRYPTION_KEY_FILE !== undefined) previousKey = privateFile("NEX_SESSION_PREVIOUS_ENCRYPTION_KEY_FILE", 32);
       const pool = new pg.Pool({ host: target.hostname, port: target.port ? Number(target.port) : 5432, database, user, password,
         ssl: { ca, servername: target.hostname, rejectUnauthorized: true, minVersion: "TLSv1.2" },
         options: "-c search_path=pg_catalog",
         max: 4, connectionTimeoutMillis: 3000, idleTimeoutMillis: 30_000,
         statement_timeout: 3000, lock_timeout: 2000, idle_in_transaction_session_timeout: 10_000 });
-      return new PostgresSessionStore(pool, key);
-    } finally { key.fill(0); }
+      return new PostgresSessionStore(pool, key, previousKey);
+    } finally { key.fill(0); previousKey?.fill(0); }
   } catch { throw new Error("Session configuration invalid"); }
 }
