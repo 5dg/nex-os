@@ -396,7 +396,7 @@ class ImageDiagnosticTests(unittest.TestCase):
             self.assertEqual(m.scan_exception_category(bad_hash.exception),'scanner_identity')
 
     def test_role_scan_admission_keeps_reserve_and_uses_exact_budgets(self):
-        self.assertEqual(m.SCAN_FORECAST,{'postgres':2*1024**3,'workspace':1024**3,'guard':1024**3})
+        self.assertEqual(m.SCAN_FORECAST,{'postgres':3*1024**3,'workspace':1024**3,'guard':1024**3})
         for role,budget in m.SCAN_FORECAST.items():
             floor=budget+m.RESERVE
             with self.subTest(role=role),patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=floor-1)):
@@ -404,12 +404,20 @@ class ImageDiagnosticTests(unittest.TestCase):
             with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=floor)):
                 self.assertEqual(m.admit_scan('/tmp','/tmp',role)['output_free'],floor)
 
+    def test_postgres_scan_requires_five_gib_on_both_filesystems(self):
+        floor=5*1024**3
+        for output_free,docker_free in ((floor-1,floor),(floor,floor-1)):
+            with self.subTest(output_free=output_free,docker_free=docker_free), \
+                 patch.object(m.shutil,'disk_usage',side_effect=[SimpleNamespace(free=output_free),SimpleNamespace(free=docker_free)]):
+                with self.assertRaisesRegex(ValueError,'scan forecast'):m.admit_scan('/output','/docker','postgres')
+        self.assertEqual(m.RESERVE,2*1024**3)
+
     def test_postgres_budget_still_stops_on_actual_growth(self):
         initial={'output_free':8*1024**3,'docker_free':8*1024**3}
         with tempfile.TemporaryDirectory() as d:
-            with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=8*1024**3-1024**3-1)):
-                self.assertEqual(m.invoke([sys.executable,'-c','pass'],Path(d)/'allowed',d,d,10,initial,m.SCAN_FORECAST['postgres']),0)
             with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=8*1024**3-2*1024**3-1)):
+                self.assertEqual(m.invoke([sys.executable,'-c','pass'],Path(d)/'allowed',d,d,10,initial,m.SCAN_FORECAST['postgres']),0)
+            with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=8*1024**3-3*1024**3-1)):
                 with self.assertRaises(m.ForecastExceeded):
                     m.invoke([sys.executable,'-c','import time;time.sleep(60)'],Path(d)/'stopped',d,d,10,initial,m.SCAN_FORECAST['postgres'])
 
@@ -436,7 +444,7 @@ class ImageDiagnosticTests(unittest.TestCase):
                  patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=100*m.RESERVE)), \
                  patch.object(m,'invoke',side_effect=invoke),patch.object(m.owned_smoke,'reconcile'):
                 self.assertEqual(m.main(),0)
-            self.assertEqual(budgets,[2*1024**3,1024**3,1024**3])
+            self.assertEqual(budgets,[3*1024**3,1024**3,1024**3])
 
     def test_telemetry_reports_only_recognized_files_and_ignores_links(self):
         import os
