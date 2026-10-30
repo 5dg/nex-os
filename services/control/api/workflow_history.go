@@ -59,9 +59,29 @@ type historyPage struct {
 
 var errHistoryCursor = errors.New("invalid or expired history cursor")
 
+// SetHistoryCursorKey configures a separately provisioned 32-byte cursor key
+// before this server handles requests. Replicas sharing the key can validate
+// each other's cursors. Changing it invalidates existing cursors. The caller
+// must provision a cryptographically random key, independent of evidence and
+// service capability keys. Once the signer has been initialized it is immutable.
+func (s *Server) SetHistoryCursorKey(key []byte) error {
+	if len(key) != 32 || hmac.Equal(key, make([]byte, 32)) {
+		return errors.New("nonzero 32-byte history cursor key required")
+	}
+	configured := false
+	s.historySecretOnce.Do(func() {
+		copy(s.historySecret[:], key)
+		configured = true
+	})
+	if !configured {
+		return errors.New("history cursor signer already initialized")
+	}
+	return nil
+}
+
 func (s *Server) historyMAC(payload []byte) []byte {
-	// Process-local secrets deliberately invalidate cursors on restart. They are
-	// separate from service/evidence keys, never exported and never grant access.
+	// Without an explicitly provisioned shared key, use a process-local secret.
+	// Cursors never grant access; each page still rechecks current authority.
 	s.historySecretOnce.Do(func() { _, _ = rand.Read(s.historySecret[:]) })
 	m := hmac.New(sha256.New, s.historySecret[:])
 	_, _ = m.Write([]byte("nex-history-cursor-v2\x00"))

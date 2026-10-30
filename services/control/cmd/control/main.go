@@ -162,6 +162,11 @@ func main() {
 	}
 	defer policy.Close()
 	server := &api.Server{DB: db, Auth: verifier, Policy: policy, Model: adapter, Environment: environment, Profile: profile, Trust: identity}
+	if path, present := os.LookupEnv("NEX_HISTORY_CURSOR_KEY_FILE"); present {
+		if err := configureHistoryCursorKey(server, path); err != nil {
+			log.Fatal("history cursor key invalid")
+		}
+	}
 	if profile == trust.Qualification || os.Getenv("MODEL_URL") != "" {
 		modelKey, e := broker.Key(required("MODEL_KEY_FILE"))
 		if e != nil {

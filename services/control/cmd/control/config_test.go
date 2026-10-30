@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"os"
 	"path/filepath"
@@ -8,8 +9,82 @@ import (
 	"time"
 
 	"github.com/5dg/nex-os/packages/trust"
+	"github.com/5dg/nex-os/services/control/api"
 	"github.com/5dg/nex-os/tests/qualification/fixtures/pki"
 )
+
+func TestHistoryCursorKeyRequiresPrivateOwnedRegularFile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "cursor.key")
+	valid := bytes.Repeat([]byte{0x53}, 32)
+	if err := configureHistoryCursorKey(&api.Server{}, path); err == nil {
+		t.Fatal("missing key accepted")
+	}
+	if err := os.WriteFile(path, valid, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureHistoryCursorKey(&api.Server{}, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0400); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureHistoryCursorKey(&api.Server{}, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureHistoryCursorKey(&api.Server{}, link); err == nil {
+		t.Fatal("symlink key accepted")
+	}
+	if err := configureHistoryCursorKey(&api.Server{}, dir); err == nil {
+		t.Fatal("directory key accepted")
+	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureHistoryCursorKey(&api.Server{}, path); err == nil {
+		t.Fatal("public key permissions accepted")
+	}
+	for _, mode := range []os.FileMode{0000, 0200} {
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := configureHistoryCursorKey(&api.Server{}, path); err == nil {
+			t.Fatalf("owner-unreadable key mode %04o accepted", mode)
+		}
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][]byte{make([]byte, 31), make([]byte, 32), make([]byte, 33)} {
+		if err := os.WriteFile(path, bad, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := configureHistoryCursorKey(&api.Server{}, path); err == nil {
+			t.Fatal("malformed key accepted")
+		}
+	}
+	if os.Geteuid() == 0 {
+		if err := os.WriteFile(path, valid, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chown(path, 65534, -1); err != nil {
+			t.Fatal(err)
+		}
+		if err := configureHistoryCursorKey(&api.Server{}, path); err == nil {
+			t.Fatal("wrong owner accepted")
+		}
+	}
+}
 
 func TestQualificationDatabaseRequiresVerifiedBoundedMinimalIdentity(t *testing.T) {
 	ca, e := pki.NewAuthority("database-test")

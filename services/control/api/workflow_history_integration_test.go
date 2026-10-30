@@ -167,21 +167,44 @@ func TestHistoryPaginationIntegration(t *testing.T) {
 	signer := httptest.NewServer(evidence.Handler(journal, writerKey, make([]byte, 32)))
 	defer signer.Close()
 	s := &Server{DB: db, Auth: verifier, Policy: guard.New(policyURL), Environment: "development", EvidenceRPC: broker.NewClient(signer.URL+"/append/control", "evidence.append.control", writerKey), EvidencePublic: public}
+	cursorKey := make([]byte, 32)
+	if _, err = rand.Read(cursorKey); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SetHistoryCursorKey(cursorKey); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(s.Handler())
 	defer server.Close()
-	request := func(subject, method, path string, body any, want int) []byte {
+	newReplica := func(key []byte) *httptest.Server {
+		t.Helper()
+		replica := &Server{DB: db, Auth: verifier, Policy: guard.New(policyURL), Environment: "development", EvidenceRPC: broker.NewClient(signer.URL+"/append/control", "evidence.append.control", writerKey), EvidencePublic: public}
+		if err := replica.SetHistoryCursorKey(key); err != nil {
+			t.Fatal(err)
+		}
+		return httptest.NewServer(replica.Handler())
+	}
+	second := newReplica(cursorKey)
+	defer second.Close()
+	rotatedKey := make([]byte, 32)
+	if _, err = rand.Read(rotatedKey); err != nil {
+		t.Fatal(err)
+	}
+	rotated := newReplica(rotatedKey)
+	defer rotated.Close()
+	requestTo := func(destination *httptest.Server, subject, method, path string, body any, want int) []byte {
 		t.Helper()
 		encoded, err := json.Marshal(body)
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := http.NewRequestWithContext(ctx, method, server.URL+path, bytes.NewReader(encoded))
+		r, err := http.NewRequestWithContext(ctx, method, destination.URL+path, bytes.NewReader(encoded))
 		if err != nil {
 			t.Fatal(err)
 		}
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Authorization", "Bearer "+tokens[subject])
-		response, err := server.Client().Do(r)
+		response, err := destination.Client().Do(r)
 		if err != nil {
 			t.Fatal("history API request unavailable")
 		}
@@ -194,6 +217,10 @@ func TestHistoryPaginationIntegration(t *testing.T) {
 			t.Fatalf("history API status %d, want %d: %s", response.StatusCode, want, raw)
 		}
 		return raw
+	}
+	request := func(subject, method, path string, body any, want int) []byte {
+		t.Helper()
+		return requestTo(server, subject, method, path, body, want)
 	}
 	create := func() string {
 		t.Helper()
@@ -317,6 +344,19 @@ func TestHistoryPaginationIntegration(t *testing.T) {
 	if !reflect.DeepEqual(replayed.Events, all[len(firstPage.Events):len(firstPage.Events)+len(replayed.Events)]) {
 		t.Fatal("cursor replay changed immutable snapshot bytes")
 	}
+	query := path + "/events?page=1&cursor=" + url.QueryEscape(firstPage.Cursor)
+	rawReplica := requestTo(second, "alice", "GET", query, nil, 200)
+	var replicaPage historyWirePage
+	if json.Unmarshal(rawReplica, &replicaPage) != nil || !reflect.DeepEqual(replicaPage.Events, replayed.Events) {
+		t.Fatal("replica continuation changed the signed snapshot")
+	}
+	rawRotated := requestTo(rotated, "alice", "GET", query, nil, 400)
+	var denied struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(rawRotated, &denied) != nil || denied.Code != "INVALID_HISTORY_CURSOR" {
+		t.Fatal("replica with a different key accepted cursor")
+	}
 	fresh := page("")
 	freshIDs := []string{}
 	for freshPages := 0; ; freshPages++ {
@@ -371,6 +411,13 @@ func TestHistoryPaginationIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertCode("alice", path+"/events", firstPage.Cursor, "DENIED_BY_POLICY", 403)
+		raw := requestTo(second, "alice", "GET", query, nil, 403)
+		var denied struct {
+			Code string `json:"code"`
+		}
+		if json.Unmarshal(raw, &denied) != nil || denied.Code != "DENIED_BY_POLICY" {
+			t.Fatal("shared cursor key bypassed current permission on another replica")
+		}
 		if _, err := db.Exec(ctx, `UPDATE users SET permissions=array_append(permissions,'document.read') WHERE id='alice'`); err != nil {
 			t.Fatal(err)
 		}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
@@ -17,6 +18,63 @@ import (
 
 func cursorFixture(now time.Time) historyCursor {
 	return historyCursor{Version: 2, Tenant: "tenant-a", Actor: "alice", Job: "job-a", Snapshot: "100:110:101,102", SnapshotXID: "109", ThroughTime: now, ThroughID: "z", AfterTime: now.Add(-time.Second), AfterID: "a", Expires: now.Add(historyCursorLifetime).Unix()}
+}
+
+func TestConfiguredHistoryCursorKeyAcrossReplicas(t *testing.T) {
+	now := time.Unix(1800000000, 0).UTC()
+	key := bytes.Repeat([]byte{0x57}, 32)
+	a, b, rotated := &Server{}, &Server{}, &Server{}
+	if err := a.SetHistoryCursorKey(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetHistoryCursorKey(key); err != nil {
+		t.Fatal(err)
+	}
+	if err := rotated.SetHistoryCursorKey(bytes.Repeat([]byte{0x31}, 32)); err != nil {
+		t.Fatal(err)
+	}
+	// Mutating a caller's buffer after initialization must not change the key.
+	key[0] ^= 0xff
+	c := cursorFixture(now)
+	token, err := a.encodeHistoryCursor(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.decodeHistoryCursor(token, c.Tenant, c.Actor, c.Job, now); err != nil {
+		t.Fatalf("shared key rejected: %v", err)
+	}
+	if _, err = rotated.decodeHistoryCursor(token, c.Tenant, c.Actor, c.Job, now); err == nil {
+		t.Fatal("rotated key accepted prior cursor")
+	}
+	if _, err = b.decodeHistoryCursor(token, c.Tenant, "another-actor", c.Job, now); err == nil {
+		t.Fatal("shared key bypassed actor scope")
+	}
+	if _, err = b.decodeHistoryCursor(token, c.Tenant, c.Actor, c.Job, now.Add(historyCursorLifetime)); err == nil {
+		t.Fatal("shared key bypassed cursor expiry")
+	}
+	if err = b.SetHistoryCursorKey(key); err == nil {
+		t.Fatal("initialized signer accepted replacement key")
+	}
+}
+
+func TestHistoryCursorKeyConfigurationFailsClosed(t *testing.T) {
+	s := &Server{}
+	for _, key := range [][]byte{nil, make([]byte, 31), make([]byte, 32), make([]byte, 33)} {
+		if err := s.SetHistoryCursorKey(key); err == nil {
+			t.Fatal("invalid key accepted")
+		}
+	}
+	if err := s.SetHistoryCursorKey(bytes.Repeat([]byte{0x01}, 32)); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Server{}).SetHistoryCursorKey(bytes.Repeat([]byte{0x01}, 32)); err != nil {
+		t.Fatal(err)
+	}
+	ephemeral := &Server{}
+	_ = ephemeral.historyMAC([]byte("initialize"))
+	if err := ephemeral.SetHistoryCursorKey(bytes.Repeat([]byte{0x01}, 32)); err == nil {
+		t.Fatal("initialized ephemeral signer accepted replacement key")
+	}
 }
 
 func TestHistoryCursorScopeIntegrityAndLifetime(t *testing.T) {

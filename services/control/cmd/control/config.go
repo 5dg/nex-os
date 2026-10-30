@@ -4,13 +4,41 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"net/url"
 	"os"
+	"syscall"
 	"time"
 
 	"github.com/5dg/nex-os/packages/trust"
+	"github.com/5dg/nex-os/services/control/api"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+func configureHistoryCursorKey(server *api.Server, path string) error {
+	// Check the opened object, not only its name. O_NONBLOCK prevents a
+	// misconfigured FIFO from hanging startup; O_NOFOLLOW rejects a symlink.
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return errors.New("history cursor key unavailable")
+	}
+	f := os.NewFile(uintptr(fd), "history cursor key")
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() || (info.Mode().Perm() != 0400 && info.Mode().Perm() != 0600) || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
+		return errors.New("private history cursor key required")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != uint32(os.Geteuid()) {
+		return errors.New("private history cursor key owner required")
+	}
+	key, err := io.ReadAll(io.LimitReader(f, 33))
+	if err != nil || len(key) != 32 {
+		return errors.New("history cursor key unavailable")
+	}
+	defer clear(key)
+	return server.SetHistoryCursorKey(key)
+}
 
 func poolConfig(raw string, profile trust.Profile, command string) (*pgxpool.Config, error) {
 	cfg, e := pgxpool.ParseConfig(raw)
