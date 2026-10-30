@@ -25,16 +25,16 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git merge-base --is-ancestor cf5c9fcc81dd65e725ba0e25755eb3b874dc9ba2 "$GITHUB_SHA"
-          git diff --name-only cf5c9fcc81dd65e725ba0e25755eb3b874dc9ba2 "$GITHUB_SHA" | LC_ALL=C sort > /tmp/nex-diagnostic-changed
+          git merge-base --is-ancestor 5014df721907e10c3173bd36fcbba1d6e9c7376c "$GITHUB_SHA"
+          git diff --name-only 5014df721907e10c3173bd36fcbba1d6e9c7376c "$GITHUB_SHA" | LC_ALL=C sort > /tmp/nex-diagnostic-changed
           printf '%s\n' '.github/workflows/image-base-diagnostic.yml' 'diagnostics/image-bases/image_diagnostic.py' 'diagnostics/image-bases/test_image_diagnostic.py' | LC_ALL=C sort > /tmp/nex-diagnostic-allowed
           diff -u /tmp/nex-diagnostic-allowed /tmp/nex-diagnostic-changed
           sha256sum -c <<'EOF'
           212b67881653b89c3182d6e481a5f819613009bfd88c2a61b08cb521fa21d0d6  diagnostics/image-bases/guard.Dockerfile
-          55297d54838bfbab8d1b888952db38577e81c28139a7dc257dd937c780d92c22  diagnostics/image-bases/image_diagnostic.py
+          11f5b9683213ebb2ef806b23bfbbcbe675169065973abe6a45cc1db19ed4408c  diagnostics/image-bases/image_diagnostic.py
           959c545c9531f8664dd6f4c63bdcc44a695e8ea149e81a8c99fc047e74b9f1d0  diagnostics/image-bases/postgres.Dockerfile
           ef333e834c872f7912dce0338eeca47761e13d82dffbc20684cc53ea92cb9993  diagnostics/image-bases/smoke.py
-          6fff0a0193298e5a4b5e7bd1f4ffeab99202fef1be3d1fb999fee480e22a5f42  diagnostics/image-bases/test_image_diagnostic.py
+          40d298df9e46d50fe016028b8af1ee1ba5ae33a3851b25065d84c1cbd79ba0df  diagnostics/image-bases/test_image_diagnostic.py
           bc5d88c9357c27d6cffdfda1c80e8eb4640b3012c4d81de16e2b2f9ca47c39c7  diagnostics/image-bases/workspace.Dockerfile
           EOF
           python3 -m unittest discover -s diagnostics/image-bases -p 'test_image_diagnostic.py' -v

@@ -360,13 +360,40 @@ class ImageDiagnosticTests(unittest.TestCase):
     def test_structured_scan_categories_are_explicit_and_allowlisted(self):
         with tempfile.TemporaryDirectory() as d:
             item={'status':'incomplete','scan_exit':None}
-            for category in ('timeout','output_limit','resource_or_other','process_error','interrupted'):
+            for category in ('timeout','output_limit','reserve','forecast','scanner_identity','other','process_error','interrupted'):
                 item['scan_error_category']=category
                 self.assertEqual(m.phase_summary('postgres',item,d)['scan_error_category'],category)
             item['scan_error_category']='unexpected diagnostic text'
             self.assertEqual(m.phase_summary('postgres',item,d)['scan_error_category'],'none')
             self.assertEqual(m.stderr_hint(b'HTTP 429 rate limit; secret-value',1),'possible_rate_limit')
             self.assertEqual(m.stderr_hint(b'',1),'nonzero_without_stderr')
+
+    def test_typed_scan_error_categories_do_not_echo_exception_text(self):
+        mapping=[(TimeoutError('secret'),'timeout'),(m.OutputLimit('secret'),'output_limit'),
+                 (m.ReserveReached('secret'),'reserve'),(m.ForecastExceeded('secret'),'forecast'),
+                 (m.ScannerIdentityError('secret'),'scanner_identity'),(ValueError('secret'),'other')]
+        for error,expected in mapping:self.assertEqual(m.scan_exception_category(error),expected)
+
+    def test_supervisor_distinguishes_reserve_from_forecast(self):
+        cases=[(m.RESERVE-1,m.ReserveReached,'reserve'),
+               (5*1024**3-1024**3-1,m.ForecastExceeded,'forecast')]
+        for free,error_type,category in cases:
+            with self.subTest(category=category),tempfile.TemporaryDirectory() as d:
+                with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=free)):
+                    with self.assertRaises(error_type) as raised:
+                        m.invoke([sys.executable,'-u','-c','import time; time.sleep(60)'],
+                                 Path(d)/'out',d,d,10,{'output_free':5*1024**3,'docker_free':5*1024**3},1024**3)
+                self.assertEqual(m.scan_exception_category(raised.exception),category)
+
+    def test_scanner_identity_errors_are_typed(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'scanner';p.write_bytes(b'not the pinned scanner')
+            with self.assertRaises(m.ScannerIdentityError) as bad_path:
+                m.validate_scanner_identity(p,Path(d)/'other')
+            self.assertEqual(m.scan_exception_category(bad_path.exception),'scanner_identity')
+            with self.assertRaises(m.ScannerIdentityError) as bad_hash:
+                m.validate_scanner_identity(p,p)
+            self.assertEqual(m.scan_exception_category(bad_hash.exception),'scanner_identity')
 
     def test_command_captures_stdout_and_stderr_separately(self):
         with tempfile.TemporaryDirectory() as d:

@@ -47,6 +47,18 @@ class OutputLimit(ValueError):
     pass
 
 
+class ReserveReached(ValueError):
+    pass
+
+
+class ForecastExceeded(ValueError):
+    pass
+
+
+class ScannerIdentityError(ValueError):
+    pass
+
+
 class DiagnosticInterrupted(BaseException):
     pass
 
@@ -95,9 +107,9 @@ def invoke(argv, log, output, docker_root, timeout, initial=None, forecast=None,
                 while selector.get_map() or process.poll() is None:
                     now = {'output_free': shutil.disk_usage(output).free,
                            'docker_free': shutil.disk_usage(docker_root).free}
-                    if min(now.values()) < RESERVE: raise ValueError('filesystem reserve reached')
+                    if min(now.values()) < RESERVE: raise ReserveReached('filesystem reserve reached')
                     if initial is not None and any(initial[k] - now[k] > forecast for k in now):
-                        raise ValueError('reviewed role forecast exceeded')
+                        raise ForecastExceeded('reviewed role forecast exceeded')
                     if time.monotonic() - started > timeout: raise TimeoutError('bounded diagnostic command timed out')
                     for key, _ in selector.select(timeout=0.1):
                         kind, target, limit = key.data
@@ -149,8 +161,8 @@ def probe(argv, path, output, docker_root, limit=65536):
 
 def validate_scanner_identity(path, expected_path):
     if path.is_symlink() or path.resolve() != expected_path.resolve() or not path.is_file():
-        raise ValueError('scanner resolved outside reviewed installation')
-    if sha(path) != SCANNER_SHA256: raise ValueError('scanner binary SHA mismatch')
+        raise ScannerIdentityError('scanner resolved outside reviewed installation')
+    if sha(path) != SCANNER_SHA256: raise ScannerIdentityError('scanner binary SHA mismatch')
 
 
 def validate_scanner(path, expected_path, version_bytes):
@@ -189,6 +201,15 @@ def outcome(scan_exit, smoke_exit, summary):
             else 'findings-or-incomplete')
 
 
+def scan_exception_category(error):
+    if isinstance(error,TimeoutError): return 'timeout'
+    if isinstance(error,OutputLimit): return 'output_limit'
+    if isinstance(error,ReserveReached): return 'reserve'
+    if isinstance(error,ForecastExceeded): return 'forecast'
+    if isinstance(error,ScannerIdentityError): return 'scanner_identity'
+    return 'other'
+
+
 def phase_exit(value):
     if type(value) is not int or value < -255 or value > 255:
         return {'status':'unavailable','exit_code':None}
@@ -215,7 +236,7 @@ def phase_summary(role, item, output):
     status=item.get('status')
     result['status']=status if status in ('completed','findings-or-incomplete','incomplete','not-run') else 'unknown'
     category=item.get('scan_error_category')
-    result['scan_error_category']=category if category in ('timeout','output_limit','resource_or_other','process_error','interrupted') else 'none'
+    result['scan_error_category']=category if category in ('timeout','output_limit','reserve','forecast','scanner_identity','other','process_error','interrupted') else 'none'
     raw_path=Path(output)/(role+'-trivy.json')
     err_path=Path(output)/(role+'-trivy.stderr')
     def details(path,maximum):
@@ -375,8 +396,7 @@ def main():
             except (TimeoutError,ValueError) as error:
                 item['scan_exit'] = None
                 item['scan_error'] = str(error) + '; raw partial output retained'
-                item['scan_error_category'] = ('timeout' if isinstance(error,TimeoutError) else
-                                               'output_limit' if isinstance(error,OutputLimit) else 'resource_or_other')
+                item['scan_error_category'] = scan_exception_category(error)
             except (OSError,subprocess.SubprocessError):
                 item['scan_error_category'] = 'process_error'
                 raise
