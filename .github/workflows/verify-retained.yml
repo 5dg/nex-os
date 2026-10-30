@@ -152,6 +152,11 @@ jobs:
               if (record.get('hosted_ci') not in ('passed', 'failed') or
                   record.get('durable_retention') != 'passed' or
                   record.get('origin_verification') != 'passed' or
+                  record.get('inner_artifacts_verified') is not True or
+                  type(record.get('inner_artifact_count')) is not int or not 1 <= record['inner_artifact_count'] <= 4096 or
+                  type(record.get('inner_artifact_bytes')) is not int or not 0 <= record['inner_artifact_bytes'] <= 32 * 1024**3 or
+                  not isinstance(record.get('artifact_map_sha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', record['artifact_map_sha256']) or
+                  not isinstance(record.get('release_manifest_sha256'), str) or not re.fullmatch(r'[0-9a-f]{64}', record['release_manifest_sha256']) or
                   record.get('synthetic_qualification_gate') not in ('qualified', 'blocked') or
                   type(proof.get('exit_code')) is not int or proof.get('exit_code') != 0 or
                   proof.get('self_hosted_runners_denied') is not True):
@@ -168,6 +173,9 @@ jobs:
                   'hosted_ci': record['hosted_ci'], 'durable_retention': 'passed',
                   'origin_verification': 'passed', 'release_approval': False,
                   'verifier': {'version': verifier['version'], 'binary_sha256': verifier['binary_sha256']},
+                  'inner_artifacts_verified': True, 'inner_artifact_count': record['inner_artifact_count'],
+                  'inner_artifact_bytes': record['inner_artifact_bytes'], 'artifact_map_sha256': record['artifact_map_sha256'],
+                  'release_manifest_sha256': record['release_manifest_sha256'],
                   'internal_checks': selected,
                   'synthetic_qualification_gate': record['synthetic_qualification_gate']}
               verified = root / 'origin.verified.json'

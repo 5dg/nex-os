@@ -227,6 +227,14 @@ Redirects never forward the GitHub bearer credential to artifact storage.
 The streaming download and subject extraction each preserve a 2 GiB filesystem
 reserve. Subject interpretation starts only after successful strict origin
 verification, and the decompressed first-manifest stream has a 5 MiB cap.
+The consumer then checks every signed manifest-listed regular member in sorted
+order, hashing its bytes without filesystem extraction. Duplicate manifest
+fields, noncanonical paths, missing/extra members, links, sparse members, digest
+mismatches, oversized metadata and nonzero trailing data fail closed. The
+consumer admits at most 4,096 members, 16 GiB per member and 32 GiB of total
+decompressed bundle stream. This verifies manifest-to-member bytes; independent
+image configuration, layer and merged-filesystem rederivation remains a separate
+claim.
 
 For an independent GitHub-hosted consumer, dispatch the **Verify retained
 candidate** workflow on `main` after the producer run has completed. Supply the
@@ -234,7 +242,8 @@ exact producer run ID, subject artifact ID, producer source commit and subject
 SHA256. The workflow retrieves the full artifact directly from GitHub and uses
 the same pinned verifier, default trust roots and source/workflow/issuer rules.
 It retains a bounded `alpha04-retained-verification-<run-id>` summary containing
-validated identities, gate statuses and the verified-statements hash; raw API
+validated identities, gate statuses, inner-member count/bytes and map digest,
+manifest digest and the verified-statements hash; raw API
 metadata, errors and verified statements are not uploaded. Retrieve and review
 that summary and the workflow result. A failed producer or failed release gate
 still fails the verification workflow even when origin and retention pass.

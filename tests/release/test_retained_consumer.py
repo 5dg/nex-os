@@ -32,7 +32,8 @@ class RetainedConsumerTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.release = {'source': {'revision': 'a'*40}, 'checks': {name:'passed' for name in ('qualification','proof-parity','shutdown','packaged-shutdown','history-pagination','dom-browser','vulnerability-scans','reproducibility')}}
+        self.payload = b'fixture artifact bytes'
+        self.release = {'source': {'revision': 'a'*40}, 'artifacts': {'evidence/example.txt': hashlib.sha256(self.payload).hexdigest()}, 'checks': {name:'passed' for name in ('qualification','proof-parity','shutdown','packaged-shutdown','history-pagination','dom-browser','vulnerability-scans','reproducibility')}}
         self.set_subject(self.release)
         self.args = argparse.Namespace(run_id=17, artifact_id=29, source_revision='a'*40,
             subject_sha256=hashlib.sha256(self.subject).hexdigest(), output=self.root/'receipt', tool_root=self.root/'tools')
@@ -43,13 +44,21 @@ class RetainedConsumerTests(unittest.TestCase):
             'workflow_run':{'id':17,'head_sha':'a'*40,'head_branch':'main'},
             'digest':'sha256:'+hashlib.sha256(self.archive).hexdigest()}
 
-    def set_subject(self, release, name='release-manifest.json'):
+    def set_subject(self, release, name='release-manifest.json', contents=None, extra=None):
         bundle = io.BytesIO()
         data = json.dumps(release).encode()
         with tarfile.open(fileobj=bundle, mode='w:gz') as archive:
             member = tarfile.TarInfo(name)
             member.size = len(data)
             archive.addfile(member, io.BytesIO(data))
+            for path, body in sorted((contents if contents is not None else {path: self.payload for path in release.get('artifacts', {})}).items()):
+                member = tarfile.TarInfo(path)
+                member.size = len(body)
+                archive.addfile(member, io.BytesIO(body))
+            for path, body in extra or []:
+                member = tarfile.TarInfo(path)
+                member.size = len(body)
+                archive.addfile(member, io.BytesIO(body))
         self.subject = bundle.getvalue()
         zipped_bytes = io.BytesIO()
         with zipfile.ZipFile(zipped_bytes, 'w') as zipped:
@@ -58,6 +67,15 @@ class RetainedConsumerTests(unittest.TestCase):
         if hasattr(self, 'args'):
             self.args.subject_sha256 = hashlib.sha256(self.subject).hexdigest()
             self.artifact['digest'] = 'sha256:' + hashlib.sha256(self.archive).hexdigest()
+
+    def set_raw_tar(self, raw):
+        self.subject = gzip.compress(raw)
+        zipped = io.BytesIO()
+        with zipfile.ZipFile(zipped, 'w') as archive:
+            archive.writestr('candidate-bundle.tar.gz', self.subject)
+        self.archive = zipped.getvalue()
+        self.args.subject_sha256 = hashlib.sha256(self.subject).hexdigest()
+        self.artifact['digest'] = 'sha256:' + hashlib.sha256(self.archive).hexdigest()
 
     def verify_mock_origin(self):
         module=SimpleNamespace(verify=lambda args:0)  # Logic fixture only, no crypto verification claim.
@@ -142,6 +160,71 @@ class RetainedConsumerTests(unittest.TestCase):
         self.assertEqual(receipt['hosted_ci'],'passed')
         self.assertEqual(receipt['synthetic_qualification_gate'],'blocked')
         self.assertFalse(receipt['release_approval'])
+
+    def test_successful_consumer_hashes_every_declared_member(self):
+        self.assertEqual(self.verify_mock_origin(), 0)
+        receipt = json.loads((self.args.output/'completed-run-receipt.json').read_text())
+        self.assertIs(receipt['inner_artifacts_verified'], True)
+        self.assertEqual(receipt['inner_artifact_count'], 1)
+        self.assertEqual(receipt['inner_artifact_bytes'], len(self.payload))
+        canonical = json.dumps(self.release['artifacts'], sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+        self.assertEqual(receipt['artifact_map_sha256'], hashlib.sha256(canonical).hexdigest())
+
+    def test_member_tamper_missing_extra_duplicate_and_unsafe_paths_fail(self):
+        cases = [
+            ('tampered', self.release, {'evidence/example.txt': b'changed'}, [], 'differs from signed manifest'),
+            ('missing', self.release, {}, [], 'missing'),
+            ('extra', self.release, None, [('extra', b'junk')], 'extra'),
+            ('duplicate', self.release, None, [('evidence/example.txt', self.payload)], 'extra'),
+            ('unsafe', {**self.release, 'artifacts': {'../escape': 'a' * 64}}, {}, [], 'artifact path'),
+        ]
+        for label, release, contents, extra, message in cases:
+            self.args.output = self.root / label
+            self.set_subject(release, contents=contents, extra=extra)
+            with self.subTest(label=label), self.assertRaisesRegex(ValueError, message):
+                self.verify_mock_origin()
+            self.assertFalse((self.args.output/'completed-run-receipt.json').exists())
+
+    def test_artifact_size_is_bounded_before_reading(self):
+        with patch.object(consumer, 'MAX_ARTIFACT_BYTES', 1):
+            with self.assertRaisesRegex(ValueError, 'nonregular bundle member'):
+                self.verify_mock_origin()
+        self.assertFalse((self.args.output/'completed-run-receipt.json').exists())
+
+    def test_nonzero_data_after_tar_end_is_rejected(self):
+        raw = gzip.decompress(self.subject) + b'hidden trailing data'
+        self.set_raw_tar(raw)
+        with self.assertRaisesRegex(ValueError, 'trailing bundle data'):
+            self.verify_mock_origin()
+
+    def test_nonregular_artifact_is_rejected(self):
+        bundle = io.BytesIO()
+        with tarfile.open(fileobj=bundle, mode='w') as archive:
+            data = json.dumps(self.release).encode()
+            manifest = tarfile.TarInfo('release-manifest.json'); manifest.size = len(data)
+            archive.addfile(manifest, io.BytesIO(data))
+            link = tarfile.TarInfo('evidence/example.txt'); link.type = tarfile.SYMTYPE; link.linkname = '/outside'
+            archive.addfile(link)
+        self.set_raw_tar(bundle.getvalue())
+        with self.assertRaisesRegex(ValueError, 'nonregular bundle member'):
+            self.verify_mock_origin()
+
+    def test_duplicate_signed_manifest_keys_are_rejected(self):
+        data = ('{"source":{"revision":"' + 'a'*40 + '"},"artifacts":{},"artifacts":{}}').encode()
+        header = tarfile.TarInfo('release-manifest.json'); header.size = len(data)
+        raw = header.tobuf() + data + b'\0' * ((-len(data)) % 512) + b'\0' * 10240
+        self.set_raw_tar(raw)
+        with self.assertRaisesRegex(ValueError, 'duplicate manifest field'):
+            self.verify_mock_origin()
+
+    def test_later_oversized_pax_header_is_rejected_before_allocation(self):
+        data = json.dumps(self.release).encode()
+        manifest = tarfile.TarInfo('release-manifest.json'); manifest.size = len(data)
+        pax = tarfile.TarInfo('pax'); pax.type = tarfile.XHDTYPE; pax.size = consumer.MAX_TAR_READ + 1024
+        raw = manifest.tobuf() + data + b'\0' * ((-len(data)) % 512) + pax.tobuf() + b'0' * pax.size
+        self.set_raw_tar(raw)
+        with self.assertRaisesRegex(ValueError, 'per-call budget'):
+            self.verify_mock_origin()
 
     def test_native_shutdown_cannot_substitute_missing_packaged_lifecycle(self):
         del self.release['checks']['packaged-shutdown']

@@ -80,6 +80,8 @@ class RetainedWorkflowTests(unittest.TestCase):
                 'source_revision': 'a' * 40, 'subject_sha256': 'b' * 64,
                 'retained_archive_sha256': 'c' * 64, 'durable_retention': 'passed',
                 'synthetic_qualification_gate': 'blocked',
+                'inner_artifacts_verified': True, 'inner_artifact_count': 1, 'inner_artifact_bytes': 22,
+                'artifact_map_sha256': 'd' * 64, 'release_manifest_sha256': 'e' * 64,
                 'internal_checks': {'qualification': 'passed', 'untrusted_extra': 'secret-fixture-marker'},
                 'run_metadata': {'potentially_sensitive': 'secret-fixture-marker'},
                 'artifact_metadata': {'potentially_sensitive': 'secret-fixture-marker'}}))
