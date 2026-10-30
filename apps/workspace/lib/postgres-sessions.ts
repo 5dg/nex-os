@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { equalSecret, IDLE_MILLISECONDS, TOTAL_MILLISECONDS, type Actor, type Login, type Session } from "./sessions.ts";
+import { equalSecret, IDLE_MILLISECONDS, TOTAL_MILLISECONDS, type Actor, type Login, type Session, type SessionAssurance } from "./sessions.ts";
 
 const LOGIN_MILLISECONDS = 5 * 60_000;
 const MAX_RECORDS = 1000;
@@ -149,11 +149,11 @@ export class PostgresSessionStore {
       return { id, state: data.state, nonce: data.nonce, verifier: data.verifier, expires: hard };
     } catch { throw new Error("Login transaction denied"); }
   }
-  async open(actor: Actor, accessToken: string, accessExpiry: number, assertionExpiry: number): Promise<Session> {
+  async open(actor: Actor, accessToken: string, accessExpiry: number, assertionExpiry: number, assurance?: SessionAssurance): Promise<Session> {
     if (!Number.isSafeInteger(accessExpiry) || !Number.isSafeInteger(assertionExpiry) || typeof accessToken !== "string" || !accessToken || accessToken.length > 8192) throw new Error("Expired login credential");
     const csrf = handle();
-    const record = await this.insert("session", { actor, accessToken, csrf }, Math.min(accessExpiry, assertionExpiry));
-    return { id: record.id, actor, accessToken, csrf, expires: record.hard, idleExpires: record.idle };
+    const record = await this.insert("session", { actor, accessToken, csrf, ...(assurance ? { assurance } : {}) }, Math.min(accessExpiry, assertionExpiry));
+    return { id: record.id, actor, accessToken, csrf, expires: record.hard, idleExpires: record.idle, ...(assurance ? { assurance } : {}) };
   }
   async get(id: string | undefined, touch = false): Promise<Session | undefined> {
     if (!id) return undefined;

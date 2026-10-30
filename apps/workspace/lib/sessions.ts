@@ -12,7 +12,8 @@ const TRANSACTION_MILLISECONDS = 5 * 60_000;
 const MAX_RECORDS = 1000;
 
 export type Actor = { issuer: string; subject: string; user_id: string; tenant_id: string; delegation_id: string; permissions: string[] };
-export type Session = { id: string; actor: Actor; accessToken: string; csrf: string; expires: number; idleExpires: number };
+export type SessionAssurance = { iss: unknown; sub: unknown; iat: unknown; exp: unknown; auth_time: unknown; acr?: unknown; amr?: unknown };
+export type Session = { id: string; actor: Actor; accessToken: string; csrf: string; expires: number; idleExpires: number; assurance?: SessionAssurance };
 export type Login = { id: string; state: string; nonce: string; verifier: string; expires: number };
 function id(): string { return randomBytes(32).toString("base64url"); }
 export function equalSecret(left: string, right: string): boolean {
@@ -56,11 +57,11 @@ export class SessionStore {
     this.logins.delete(transaction);
     if (!found || !equalSecret(found.state, state)) throw new Error("Login transaction denied"); return found;
   }
-  open(actor: Actor, accessToken: string, accessExpiry: number, assertionExpiry: number): Session {
+  open(actor: Actor, accessToken: string, accessExpiry: number, assertionExpiry: number, assurance?: SessionAssurance): Session {
     this.clean(); if (this.sessions.size >= MAX_RECORDS) throw new Error("Session capacity unavailable");
     const now = this.now(), expires = Math.min(now + TOTAL_MILLISECONDS, accessExpiry, assertionExpiry);
     if (!Number.isFinite(expires) || expires <= now || accessToken.length > 8192) throw new Error("Expired login credential");
-    const value = { id: id(), actor, accessToken, csrf: id(), expires, idleExpires: Math.min(expires, now + IDLE_MILLISECONDS) };
+    const value = { id: id(), actor, accessToken, csrf: id(), expires, idleExpires: Math.min(expires, now + IDLE_MILLISECONDS), ...(assurance ? { assurance } : {}) };
     this.sessions.set(value.id, value); return value;
   }
   get(value: string | undefined, touch = false): Session | undefined {
