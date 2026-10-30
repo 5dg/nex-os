@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 use std::time::Duration;
 use subtle::ConstantTimeEq;
 use tonic::{Request, Response, Status};
+mod candidate_outbox;
 mod evidence;
 mod evidence_v1;
 mod execution;

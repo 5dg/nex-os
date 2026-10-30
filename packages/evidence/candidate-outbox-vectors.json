@@ -1,0 +1,39 @@
+[
+  {
+    "scope": {
+      "event_id": "event-001",
+      "tenant_id": "tenant-a",
+      "actor_id": "alice",
+      "job_id": "job-0001",
+      "resource_id": "document",
+      "resource_version": "v1",
+      "delegation_id": "delegation",
+      "operation_id": "operation-001",
+      "payload_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "context_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "event": {
+      "resource_id": "document",
+      "delegation_id": "delegation",
+      "timestamp_us": 123,
+      "producer": "kernel",
+      "event_id": "event-001",
+      "tenant_id": "tenant-a",
+      "actor_id": "alice",
+      "job_id": "job-0001",
+      "action": "model.prepared",
+      "detail": {
+        "operation_id": "operation-001",
+        "document_id": "document",
+        "document_version": "v1",
+        "candidate_context_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "provenance": {
+          "payload_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "note": "雪 <>&  ",
+        "count": 9007199254740993
+      }
+    },
+    "canonical": "{\"resource_id\":\"document\",\"delegation_id\":\"delegation\",\"timestamp_us\":123,\"producer\":\"kernel\",\"event_id\":\"event-001\",\"tenant_id\":\"tenant-a\",\"actor_id\":\"alice\",\"job_id\":\"job-0001\",\"action\":\"model.prepared\",\"detail\":{\"candidate_context_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"count\":9007199254740993,\"document_id\":\"document\",\"document_version\":\"v1\",\"note\":\"雪 \\u003c\\u003e\\u0026 \\u2028\",\"operation_id\":\"operation-001\",\"provenance\":{\"payload_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}}"
+  }
+]

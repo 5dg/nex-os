@@ -40,6 +40,18 @@ pub(crate) fn head(body: &[u8], producer: &str, previous: &str) -> Result<String
     ))
 }
 
+/// Canonical Go v1 event bytes with the authenticated kernel producer.
+/// Derive these from the same envelope used for journal heads so the outbox
+/// cannot silently use a different event serialization.
+pub(crate) fn canonical_kernel_event(body: &[u8]) -> Result<Vec<u8>, ()> {
+    let envelope = canonical(body, "kernel", "")?;
+    let event = envelope
+        .strip_prefix(br#"{"event":"#)
+        .and_then(|bytes| bytes.strip_suffix(br#","previous":""}"#))
+        .ok_or(())?;
+    Ok(event.to_vec())
+}
+
 fn canonical(body: &[u8], producer: &str, previous: &str) -> Result<Vec<u8>, ()> {
     if body.len() > MAX_EVENT_BYTES || !matches!(producer, "control" | "kernel") {
         return Err(());
@@ -125,7 +137,7 @@ fn normalize(raw: &RawValue, depth: usize, out: &mut Vec<u8>) -> Result<(), ()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
     #[test]
@@ -140,6 +152,17 @@ mod tests {
             let body = vector["event_json"].as_str().unwrap().as_bytes();
             let previous = vector["previous"].as_str().unwrap();
             let expected = vector["head"].as_str().unwrap();
+            let vector_envelope = vector["canonical_json"].as_str().unwrap();
+            let previous_suffix = format!(",\"previous\":\"{previous}\"}}");
+            let expected_event = vector_envelope
+                .strip_prefix("{\"event\":")
+                .and_then(|envelope| envelope.strip_suffix(previous_suffix.as_str()))
+                .unwrap();
+            assert_eq!(
+                canonical_kernel_event(body).unwrap(),
+                expected_event.as_bytes(),
+                "{name} canonical event bytes"
+            );
             assert_eq!(
                 canonical(body, "kernel", previous).unwrap(),
                 vector["canonical_json"].as_str().unwrap().as_bytes(),
@@ -177,6 +200,8 @@ mod tests {
 
     #[test]
     fn malformed_oversized_or_unsupported_event_input_is_rejected() {
+        assert!(canonical_kernel_event(b"not JSON").is_err());
+        assert!(canonical_kernel_event(&vec![b' '; MAX_EVENT_BYTES + 1]).is_err());
         assert!(head(b"not JSON", "kernel", "").is_err());
         assert!(head(&vec![b' '; MAX_EVENT_BYTES + 1], "kernel", "").is_err());
         assert!(head(b"{}", "untrusted", "").is_err());
