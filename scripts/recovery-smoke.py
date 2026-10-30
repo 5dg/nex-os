@@ -54,5 +54,5 @@ assert sql("SELECT count(*) FROM audit_events WHERE job_id='"+job+"' AND action=
 call('alice','POST','/v1/jobs/'+job+'/reconcile',expected=409)
 events=call('alice','GET','/v1/jobs/'+job+'/events')
 assert all(event['integrity_verified'] for event in events),'Invalid recovery evidence'
-assert any(event['action']=='job.reconciled' for event in events)
+assert any(event['action']=='job.reconciliation_attempt' for event in events)
 print('Recovery workflow passed: owner/current authority, cross-tenant rejection, no client-supplied outcome, unknown retry denial, durable-result reconciliation and unchanged manifest/receipt/completion count.')

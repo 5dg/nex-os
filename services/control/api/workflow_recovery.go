@@ -96,11 +96,14 @@ func (s *Server) reconcileJob(w http.ResponseWriter, r *http.Request) {
 		e = json.Unmarshal(payload, &x)
 		in = x
 		out = &contracts.GenerationResult{}
-	} else {
+	} else if kind == "export" {
 		var x contracts.Export
 		e = json.Unmarshal(payload, &x)
 		in = x
 		out = &contracts.ExportResult{}
+	} else {
+		workflowError(w, errConflict)
+		return
 	}
 	if e != nil || rpc == nil {
 		workflowError(w, errConflict)
@@ -126,20 +129,17 @@ func (s *Server) reconcileJob(w http.ResponseWriter, r *http.Request) {
 		workflowError(w, e)
 		return
 	}
-	e = statusClient.Call(r.Context(), in, out)
+	statusErr := statusClient.Call(r.Context(), in, out)
 	if current := s.afterDispatch(r.Context()); current != nil {
 		workflowError(w, current)
 		return
 	}
+	// The receiver call may have taken long enough for the bearer token, user,
+	// delegation, or document authority to change. Revalidate before recording
+	// a successful reconciliation and lock the current authority with the job.
+	id, e := s.Auth.Verify(r)
 	if e != nil {
-		state := "unknown"
-		if errors.Is(e, broker.ErrNotStarted) {
-			state = "not_started"
-		}
-		if errors.Is(e, broker.ErrInProgress) {
-			state = "in_progress"
-		}
-		respond(w, 200, map[string]string{"state": state})
+		fail(w, 401, "UNAUTHENTICATED", "Valid bearer token required")
 		return
 	}
 	done, e := s.begin(r.Context())
@@ -148,20 +148,57 @@ func (s *Server) reconcileJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer done.Rollback(r.Context())
-	current, e := loadJob(r.Context(), done, j.ID)
+	currentActor, e := actorFor(r.Context(), done, id)
 	if e != nil {
 		workflowError(w, e)
 		return
 	}
-	var completed bool
-	e = done.QueryRow(r.Context(), `SELECT status='completed' FROM execution_operations WHERE id=$1`, j.Operation).Scan(&completed)
-	if e != nil || !completed || current.Operation != j.Operation || current.State != "failed" {
+	current, e := s.visibleJob(r.Context(), done, currentActor, j.ID)
+	if e != nil {
+		workflowError(w, e)
+		return
+	}
+	if current.Operation != j.Operation || current.State != "failed" || current.TenantID != j.TenantID {
+		workflowError(w, errConflict)
+		return
+	}
+	if statusErr != nil {
+		// The receiver status is sensitive to the original job owner too. Do
+		// not disclose it if authority expired or changed during the RPC.
+		if e = s.reconcileCurrentAuthority(r, done, current); e == nil {
+			e = done.Commit(r.Context())
+		}
+		if e != nil {
+			workflowError(w, e)
+			return
+		}
+		state := "unknown"
+		if errors.Is(statusErr, broker.ErrNotStarted) {
+			state = "not_started"
+		}
+		if errors.Is(statusErr, broker.ErrInProgress) {
+			state = "in_progress"
+		}
+		respond(w, 200, map[string]string{"state": state})
+		return
+	}
+	var status, digest string
+	var protected json.RawMessage
+	e = done.QueryRow(r.Context(), protectedResultQuery, j.Operation, j.ID, j.TenantID).Scan(&status, &digest, &protected)
+	if e != nil || status != "completed" || !validReconciledResult(current, kind, in, out, digest, protected) {
 		workflowError(w, errConflict)
 		return
 	}
 	_, e = done.Exec(r.Context(), `UPDATE jobs SET state='completed',error_code='' WHERE id=$1`, j.ID)
 	if e == nil {
-		e = s.record(r.Context(), done, current, "job.reconciled", "durable_executor_receipt")
+		// The external signer commits before this transaction, so its event
+		// describes the verified attempt rather than claiming SQL committed.
+		// An independently durable, commit-confirmed outbox is still required
+		// to produce evidence that reconciliation actually committed.
+		e = s.record(r.Context(), done, current, "job.reconciliation_attempt", "protected_result_verified")
+	}
+	if e == nil {
+		e = s.reconcileCurrentAuthority(r, done, current)
 	}
 	if e == nil {
 		e = done.Commit(r.Context())
@@ -171,6 +208,50 @@ func (s *Server) reconcileJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, 200, map[string]string{"state": "completed"})
+}
+
+// Row locks protect against concurrent revocation or identity edits, but do not
+// stop time. Recheck token and delegation freshness after all policy and
+// evidence RPCs, immediately before commit, using the database clock.
+func (s *Server) reconcileCurrentAuthority(r *http.Request, tx pgx.Tx, j storedJob) error {
+	id, e := s.Auth.Verify(r)
+	if e != nil {
+		return errForbidden
+	}
+	var current bool
+	e = tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM delegations d JOIN users u ON u.tenant_id=d.tenant_id AND u.id=d.user_id WHERE d.id=$1 AND d.tenant_id=$2 AND d.user_id=$3 AND u.issuer=$4 AND u.subject=$5 AND d.revoked_at IS NULL AND d.expires_at>clock_timestamp())`, j.Delegation, j.TenantID, j.Owner, id.Issuer, id.Subject).Scan(&current)
+	if e != nil {
+		return e
+	}
+	if !current {
+		return errForbidden
+	}
+	return nil
+}
+
+// A successful status response is only an acknowledgement. Completion must
+// match Guard's protected result and the locked job, just as the initial
+// dispatch does. Never promote an unverified or cross-operation result.
+func validReconciledResult(j storedJob, kind string, input, acknowledgement any, digest string, protected json.RawMessage) bool {
+	if digest == "" {
+		return false
+	}
+	switch kind {
+	case "model":
+		in, ok := input.(contracts.Generation)
+		out, outOK := acknowledgement.(*contracts.GenerationResult)
+		var result contracts.GenerationResult
+		return ok && outOK && out != nil && contracts.ExecutionDigest(in) == digest && j.Phase == "review" && in.OperationID == j.Operation && in.TenantID == j.TenantID &&
+			json.Unmarshal(protected, &result) == nil && result == *out && result.Text != "" && len(result.Text) <= 12000 && result.Provider != "" && j.Answer == result.Text && j.Provider == result.Provider
+	case "export":
+		in, ok := input.(contracts.Export)
+		out, outOK := acknowledgement.(*contracts.ExportResult)
+		var result contracts.ExportResult
+		return ok && outOK && out != nil && contracts.ExecutionDigest(in) == digest && j.Phase == "export" && in.OperationID == j.Operation && in.TenantID == j.TenantID &&
+			json.Unmarshal(protected, &result) == nil && result == *out && result.ArtifactID == j.Operation && result.ContentDigest == broker.Hash([]byte(in.Content)) && j.ExportID == result.ArtifactID
+	default:
+		return false
+	}
 }
 
 // Recovery has no caller-supplied result, state override, route or new payload.

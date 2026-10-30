@@ -3,18 +3,22 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +26,7 @@ import (
 	"github.com/5dg/nex-os/packages/broker"
 	"github.com/5dg/nex-os/packages/contracts"
 	pb "github.com/5dg/nex-os/packages/contracts/gen/guardv1"
+	"github.com/5dg/nex-os/packages/evidence"
 	"github.com/5dg/nex-os/services/control/auth"
 	"github.com/5dg/nex-os/services/control/devseed"
 	"github.com/5dg/nex-os/services/control/guard"
@@ -215,8 +220,9 @@ func TestPreparationFailureReleasesLease(t *testing.T) {
 				t.Fatal(e)
 			}
 			if manifest {
-				digest := broker.Hash([]byte(j.Operation))
-				payload, _ := json.Marshal(contracts.Generation{OperationID: j.Operation, TenantID: j.TenantID, RouteID: "dev-model", Classification: "confidential", Prompt: "synthetic prompt", MaxTokens: 256})
+				generation := contracts.Generation{OperationID: j.Operation, TenantID: j.TenantID, RouteID: "dev-model", Classification: "confidential", Prompt: "synthetic prompt", MaxTokens: 256}
+				digest := contracts.ExecutionDigest(generation)
+				payload, _ := json.Marshal(generation)
 				if _, e := db.Exec(ctx, `INSERT INTO execution_operations(id,tenant_id,job_id,kind,request_digest,status) VALUES($1,$2,$3,'model',$4,$5)`, j.Operation, j.TenantID, j.ID, digest, status); e != nil {
 					t.Fatal(e)
 				}
@@ -243,6 +249,9 @@ func TestPreparationFailureReleasesLease(t *testing.T) {
 		call("alice", "retry", completed.ID, "", 409)
 		calls := 0
 		complete := false
+		forgedAcknowledgement := false
+		revokeDuringCall := false
+		revokeBeforeUnknown := false
 		receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			calls++
 			if r.URL.Path != "/status" {
@@ -255,15 +264,33 @@ func TestPreparationFailureReleasesLease(t *testing.T) {
 				return
 			}
 			if !complete {
+				if revokeBeforeUnknown {
+					if _, e := db.Exec(ctx, `UPDATE delegations SET revoked_at=clock_timestamp() WHERE id='delegation-alice'`); e != nil {
+						t.Error(e)
+					}
+				}
 				broker.WriteError(w, broker.ErrUnknown)
 				return
 			}
 			// Simulate a receiver that has already reported its durable result to
 			// Rust. This handler tests Go recovery routing, not the Rust boundary.
-			if _, e := db.Exec(ctx, `UPDATE execution_operations SET status='completed' WHERE id=$1`, in.OperationID); e != nil {
+			protected := contracts.GenerationResult{Text: "synthetic result", Provider: "development", ModelID: "fixture"}
+			result, _ := json.Marshal(protected)
+			if _, e := db.Exec(ctx, `UPDATE execution_operations SET status='completed',result=$2 WHERE id=$1`, in.OperationID, result); e != nil {
 				t.Error(e)
 			}
-			json.NewEncoder(w).Encode(contracts.GenerationResult{Text: "synthetic result", Provider: "development", ModelID: "fixture"})
+			if _, e := db.Exec(ctx, `UPDATE jobs SET answer=$2,provider=$3 WHERE operation_id=$1`, in.OperationID, protected.Text, protected.Provider); e != nil {
+				t.Error(e)
+			}
+			if revokeDuringCall {
+				if _, e := db.Exec(ctx, `UPDATE delegations SET revoked_at=clock_timestamp() WHERE id='delegation-alice'`); e != nil {
+					t.Error(e)
+				}
+			}
+			if forgedAcknowledgement {
+				protected.Text = "substituted response"
+			}
+			json.NewEncoder(w).Encode(protected)
 		}))
 		defer receiver.Close()
 		s.ModelRPC = broker.NewClient(receiver.URL+"/execute", "model.execute", key)
@@ -275,15 +302,113 @@ func TestPreparationFailureReleasesLease(t *testing.T) {
 		if out["state"] != "unknown" {
 			t.Fatal(out)
 		}
+		revokeBeforeUnknown = true
+		call("alice", "reconcile", uncertain.ID, "", 403)
+		if _, e := db.Exec(ctx, `UPDATE delegations SET revoked_at=NULL WHERE id='delegation-alice'`); e != nil {
+			t.Fatal(e)
+		}
+		revokeBeforeUnknown = false
 		call("alice", "retry", uncertain.ID, "", 409)
 		complete = true
+		forgedAcknowledgement = true
+		call("alice", "reconcile", uncertain.ID, "", 409)
+		var failedState string
+		if e := db.QueryRow(ctx, `SELECT state FROM jobs WHERE id=$1`, uncertain.ID).Scan(&failedState); e != nil || failedState != "failed" {
+			t.Fatal("substituted acknowledgement changed job state", failedState, e)
+		}
+		forgedAcknowledgement = false
+		revokeDuringCall = true
+		call("alice", "reconcile", uncertain.ID, "", 403)
+		if _, e := db.Exec(ctx, `UPDATE delegations SET revoked_at=NULL WHERE id='delegation-alice'`); e != nil {
+			t.Fatal(e)
+		}
+		revokeDuringCall = false
 		out = call("alice", "reconcile", uncertain.ID, "", 200)
 		if out["state"] != "completed" {
 			t.Fatal(out)
 		}
 		call("alice", "reconcile", uncertain.ID, "", 409)
-		if calls != 2 {
+		if calls != 5 {
 			t.Fatal("unexpected receiver calls", calls)
+		}
+
+		// Hold the final evidence signing call until the delegation expires.
+		// The transaction must roll back even though policy had allowed earlier.
+		expiryJob := recoveryJob("model_OUTCOME_UNAVAILABLE_OR_UNKNOWN", "started", true)
+		public, private, e := ed25519.GenerateKey(rand.Reader)
+		if e != nil {
+			t.Fatal(e)
+		}
+		journalDir := ""
+		if retainedRoot := os.Getenv("NEX_TEST_RECONCILIATION_JOURNAL_ROOT"); retainedRoot != "" {
+			journalDir, e = os.MkdirTemp(retainedRoot, "reconciliation-attempt-")
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e = os.WriteFile(filepath.Join(journalDir, "verification-key.pub"), public, 0600); e != nil {
+				t.Fatal(e)
+			}
+			t.Log("retained synthetic signing journal:", journalDir)
+		} else {
+			journalDir = t.TempDir()
+		}
+		journal := &evidence.Journal{Directory: journalDir, Private: private}
+		handler := evidence.Handler(journal, key, make([]byte, 32))
+		signer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(io.LimitReader(r.Body, 128*1024+1))
+			if err != nil || len(body) > 128*1024 {
+				http.Error(w, "invalid fixture body", 400)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var event evidence.Event
+			if json.Unmarshal(body, &event) == nil && event.Action == "job.reconciliation_attempt" {
+				if _, err := db.Exec(ctx, `SELECT pg_sleep(greatest(0,extract(epoch FROM expires_at-clock_timestamp())+0.2)) FROM delegations WHERE id='delegation-alice'`); err != nil {
+					t.Error(err)
+					http.Error(w, "fixture wait failed", 500)
+					return
+				}
+			}
+			handler.ServeHTTP(w, r)
+		}))
+		defer signer.Close()
+		s.EvidenceRPC = broker.NewClient(signer.URL+"/append/control", "evidence.append.control", key)
+		s.EvidencePublic = public
+		defer func() { s.EvidenceRPC = nil; s.EvidencePublic = nil }()
+		if _, e := db.Exec(ctx, `UPDATE delegations SET expires_at=clock_timestamp()+interval '4 seconds' WHERE id='delegation-alice'`); e != nil {
+			t.Fatal(e)
+		}
+		call("alice", "reconcile", expiryJob.ID, "", 403)
+		var expiryState string
+		var reconciledEvents int
+		if e := db.QueryRow(ctx, `SELECT state FROM jobs WHERE id=$1`, expiryJob.ID).Scan(&expiryState); e != nil || expiryState != "failed" {
+			t.Fatal("expired delegation changed job state", expiryState, e)
+		}
+		if e := db.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE job_id=$1 AND action='job.reconciliation_attempt'`, expiryJob.ID).Scan(&reconciledEvents); e != nil || reconciledEvents != 0 {
+			t.Fatal("expired delegation committed reconciliation event", reconciledEvents, e)
+		}
+		entries, e := evidence.Verify(journal.Directory, public, nil)
+		if e != nil {
+			t.Fatal(e)
+		}
+		orphanedAttempt := false
+		for _, entry := range entries {
+			if entry.Event.JobID == expiryJob.ID && entry.Event.Action == "job.reconciled" {
+				t.Fatal("external journal falsely claimed committed reconciliation")
+			}
+			if entry.Event.JobID == expiryJob.ID && entry.Event.Action == "job.reconciliation_attempt" {
+				var detail map[string]string
+				if json.Unmarshal(entry.Event.Detail, &detail) != nil || detail["outcome"] != "protected_result_verified" {
+					t.Fatal("external attempt described an unverified outcome")
+				}
+				orphanedAttempt = true
+			}
+		}
+		if !orphanedAttempt {
+			t.Fatal("fixture did not retain the signed pre-commit attempt")
+		}
+		if _, e := db.Exec(ctx, `UPDATE delegations SET expires_at=clock_timestamp()+interval '1 day' WHERE id='delegation-alice'`); e != nil {
+			t.Fatal(e)
 		}
 	})
 
