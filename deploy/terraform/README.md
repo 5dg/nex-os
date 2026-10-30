@@ -6,11 +6,28 @@ The inline model policy grants only `bedrock:InvokeModel`, the permission used
 by the current non-streaming Converse adapter. Verify all effective attached
 role policies in the target account before claiming the same live boundary.
 
-Application task definitions, execution roles, ingress/TLS, service-to-service identity, endpoint resource policies, audit storage/signing, DNS controls, monitoring, operational recovery, and live bypass tests remain required before deployment readiness. Security groups alone do not establish full egress isolation. S3 access through its gateway endpoint still requires resource and identity controls.
+Optional execution roles, digest-pinned task revisions, zero-desired-count ECS
+services and utilization alarms are available as unactivated precursors; see
+`ECS_EXECUTION.md`, `ECS_TASK_TEMPLATES.md`, `ECS_SERVICES.md` and
+`SERVICE_ALARMS.md`. The production application profiles remain closed, and
+these definitions do not establish that any service can start or serve traffic.
+Ingress/TLS, service-to-service identity, endpoint resource policies, durable
+audit storage/signing, DNS controls, application health monitoring, operational
+recovery and live bypass tests remain required. Security groups alone do not
+establish full egress isolation. S3 access through its gateway endpoint still
+requires resource and identity controls.
 
 An opt-in PostgreSQL 17 RDS foundation is available through `production_database`. Its engine minor version, instance class, storage size and backup retention must be explicitly chosen after verifying regional availability and cost; leaving the variable null adds no database resources. The provisioned instance uses private subnets, encrypted storage, AWS-managed master credentials, TLS-required PostgreSQL settings, Multi-AZ, backups and deletion protection. Terraform's destroy guard requires an intentional reviewed change before replacement or deletion. The fixed final snapshot identifier must be reviewed for uniqueness before any approved removal.
 
-The separate database-client security group is not attached to any workload by this module. Assign it only to explicitly authorized services once their network, database roles, grants and application credentials are designed and reviewed. The managed master secret is for database administration and bootstrap, not an application credential. This foundation does not yet provision per-service SQL users, configure application connections, enforce client certificate verification, create monitoring/alerts, or establish tested backup restoration. The selected RDS CA and application `sslmode=verify-full` trust configuration remain necessary.
+The database-client security group is not attached by the database foundation
+itself. The optional zero-count service scaffold can attach it only to
+explicitly selected control, guard or workspace services when a database is
+configured. Network access does not create SQL users or grants. The managed
+master secret is for database administration and bootstrap, not an application
+credential. This foundation does not provision per-service SQL users, configure
+application connections, enforce client certificate verification, create
+database monitoring/alerts, or establish tested backup restoration. The selected
+RDS CA and application `sslmode=verify-full` trust configuration remain necessary.
 
 Use Terraform 1.17.0. Run `terraform init -backend=false`, `terraform validate`, and `terraform test` here. Tests use mocked provider data and make no claims about live IAM enforcement or service availability. `.terraform.lock.hcl` pins provider versions/checksums.
 

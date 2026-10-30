@@ -10,11 +10,12 @@ versioned reads. Duplicate pairs and the already-authorized current pair are
 rejected; the same key with a different historical bucket-key mode is allowed.
 
 This is only the IAM precursor for explicitly reviewed historical retrieval.
-The application must bind each receipt to its original key, authorize that
-exact key from a bounded approved current/historical set, and handle old
-receipts without a key only through an explicit trusted legacy mapping. The
-current adapter must not be assumed to support that migration until its code,
-proof preservation and tests have been independently accepted.
+The tested S3 adapter records the original write-key ARN in new receipts,
+accepts only a bounded approved current/historical key set, and requires an
+explicit trusted legacy-key mapping for old receipts without a key. It remains
+unwired to the production server and profile. The mapping must be supported
+by trustworthy custody records; IAM access by itself neither configures the
+adapter nor proves the retained objects or receipts can be recovered safely.
 
 Inventory each retained version's actual KMS key and bucket-key mode before
 selecting these pairs. With bucket keys the KMS context is bucket-wide, so the
@@ -28,5 +29,5 @@ The module checks the combined sizes of the two export inline policies it
 manages. Other inline policies on the same task role share IAM's role quota and
 must be inventoried in the target account. Key policies, bucket policies,
 regional endpoints and all effective role permissions require live review.
-No task, service or AWS resource is activated by this policy alone. Mocked
-Terraform results are not production IAM or recovery evidence.
+Applying this policy changes IAM permissions but does not activate any task or
+service. Mocked Terraform results are not production IAM or recovery evidence.

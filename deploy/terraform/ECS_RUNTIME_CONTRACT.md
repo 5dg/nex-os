@@ -6,13 +6,13 @@ task definition, deployment approval or production-readiness assertion.
 
 ## Task and image identity
 
-Register a separate Fargate task definition and execution identity for each
-service. Require an exact reviewed ECR image digest, the approved repository,
-valid Fargate CPU/memory combination, non-root application UID, read-only root
-filesystem and explicit ports. The execution role may pull only that service's
-repository and write only its log group. The application task role is separate
-and has only the service-specific permissions it needs. In particular, only
-the authorized model role receives the exact approved regional Bedrock action.
+The opt-in task templates register separate Fargate task revisions and execution
+identities with exact ECR image digests, constrained Fargate CPU/memory, a
+non-root application UID, read-only root filesystem and optional explicit port.
+They scope image pulls to the service and bootstrap repositories and log writes
+to the service log group. The application task role is separate from the
+execution role; its final service-specific permissions still need review. The
+model role's inline policy selects one approved regional Bedrock action.
 
 Task definitions and services must remain gated until the application profile,
 health checks, service discovery and production configuration exist and pass
@@ -24,21 +24,21 @@ and recovery model; do not scale stateful receivers using ephemeral task disks.
 
 Current services consume private files, including database URLs, workload
 credentials, TLS private keys and the shared control history-cursor key. The
-workspace session integration under review uses separate private database URL
-and 32-byte encryption-key files, plus a public CA file and exact DB hostname.
-Treat those workspace names as provisional until its code and database tests
-are reviewed. Do not inject the RDS administrator credential into applications.
+workspace PostgreSQL session precursor uses separate private database URL and
+32-byte encryption-key files, plus a CA file and exact DB hostname; its tested
+synthetic integration does not open the production profile. Do not inject the
+RDS administrator credential into applications.
 
-ECS secret environment injection does not create these files. A reviewed
-file-delivery mechanism must fetch only each task's approved secret versions,
-materialize them into a task-private shared volume with the correct application
-UID and owner-only permissions, reject symlinks/path escapes, and make the
-application mount read-only. No secret values belong in Terraform variables,
-state, task definitions, logs or public artifacts. Any bootstrap container must
-be pinned and independently reviewed, have only the permissions necessary to
-write its own task's files, and finish successfully before the application
-starts. Scope the delivery identity to exact secret ARNs and authorized KMS
-decryption; restrict task inspection and ECS Exec accordingly.
+ECS secret environment injection does not create these files. The opt-in task
+templates use a reviewed bootstrap to materialize supplied values in a
+task-private volume and gate application startup on its success. The intended
+ownership, permissions, isolation, failure behavior and image digest still
+require verification on the target Fargate platform. The bootstrap environment
+is sensitive, and containers in one task share its network and task role; this
+is not per-container IAM isolation. No secret values belong in Terraform
+variables, state, task definitions, logs or public artifacts. Scope delivery to
+exact secret ARNs and authorized KMS decryption; restrict task inspection and
+ECS Exec. See `ECS_TASK_TEMPLATES.md` and `services/secret-bootstrap/README.md`.
 
 Review TLS certificate issuance, per-service identities and SANs, trust roots,
 rotation overlap and restart behavior. Changing a single shared cursor key can
