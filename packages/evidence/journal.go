@@ -117,6 +117,25 @@ func (j *Journal) Append(event Event) (Proof, error) {
 	return j.AppendContext(context.Background(), event, nil)
 }
 func (j *Journal) AppendContext(ctx context.Context, event Event, check func() error) (Proof, error) {
+	return j.appendContext(ctx, event, check, syncJournalDirectory)
+}
+
+// Sync the directory even on an identical retry: a previous append may have
+// linked the entry but failed before the directory entry became durable.
+// This is local crash durability, not an independent nonrollback guarantee.
+func syncJournalDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	err = directory.Sync()
+	if closeErr := directory.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+func (j *Journal) appendContext(ctx context.Context, event Event, check func() error, syncDirectory func(string) error) (Proof, error) {
 	if e := j.lockContext(ctx); e != nil {
 		return Proof{}, e
 	}
@@ -155,6 +174,12 @@ func (j *Journal) AppendContext(ctx context.Context, event Event, check func() e
 			if string(old) != string(canonical) {
 				return Proof{}, errors.New("event ID/content mismatch")
 			}
+			if e := syncDirectory(j.Directory); e != nil {
+				return Proof{}, e
+			}
+			if e := ctx.Err(); e != nil {
+				return Proof{}, e
+			}
 			return entry.Proof, nil
 		}
 	}
@@ -174,20 +199,22 @@ func (j *Journal) AppendContext(ctx context.Context, event Event, check func() e
 	if _, e = temporary.Write(b); e == nil {
 		e = temporary.Sync()
 	}
-	temporary.Close()
+	if closeErr := temporary.Close(); e == nil {
+		e = closeErr
+	}
 	if e != nil {
 		return Proof{}, e
 	}
 	if e = os.Link(name, filepath.Join(j.Directory, fmt.Sprintf("%012d.json", p.Sequence))); e != nil {
 		return Proof{}, e
 	}
-	directory, e := os.Open(j.Directory)
-	if e != nil {
+	if e = syncDirectory(j.Directory); e != nil {
 		return Proof{}, e
 	}
-	e = directory.Sync()
-	directory.Close()
-	return p, e
+	if e = ctx.Err(); e != nil {
+		return Proof{}, e
+	}
+	return p, nil
 }
 
 // Journal contention must honor the caller's bounded qualification request.

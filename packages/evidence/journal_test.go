@@ -1,13 +1,48 @@
 package evidence
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestAppendRetryRequiresDurableDirectory(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := Journal{Directory: t.TempDir(), Private: private}
+	event := Event{ID: "event-durability", TenantID: "tenant-a", ActorID: "alice", Producer: "kernel", Action: "model.intent", Detail: json.RawMessage(`{"outcome":"reserved"}`)}
+	syncErr := errors.New("injected directory sync failure")
+	failSync := func(string) error { return syncErr }
+	if proof, err := j.appendContext(context.Background(), event, nil, failSync); !errors.Is(err, syncErr) || proof != (Proof{}) {
+		t.Fatal("failed initial sync returned an acknowledged proof", err)
+	}
+	entries, err := Verify(j.Directory, public, nil)
+	if err != nil || len(entries) != 1 {
+		t.Fatal("linked entry missing after injected sync failure", err)
+	}
+	if proof, err := j.appendContext(context.Background(), event, nil, failSync); !errors.Is(err, syncErr) || proof != (Proof{}) {
+		t.Fatal("retry acknowledged an unsynced directory", err)
+	}
+	syncs := 0
+	proof, err := j.appendContext(context.Background(), event, nil, func(path string) error {
+		syncs++
+		return syncJournalDirectory(path)
+	})
+	if err != nil || syncs != 1 || proof != entries[0].Proof {
+		t.Fatal("retry did not sync and return the original proof", err)
+	}
+	entries, err = Verify(j.Directory, public, &proof)
+	if err != nil || len(entries) != 1 {
+		t.Fatal("retry duplicated or damaged the journal", err)
+	}
+}
 
 func TestTamperDetectionAndRestore(t *testing.T) {
 	public, private, e := ed25519.GenerateKey(rand.Reader)
