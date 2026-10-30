@@ -2,6 +2,10 @@
 
 This is milestone-1 scaffolding, not a complete application deployment or an assessed compliance boundary. It creates private networking, optional verified interface endpoints, encrypted/versioned document storage, immutable-tag ECR repositories, an ECS cluster, and distinct task roles. Only the model role receives Bedrock permissions, bound to one explicit regional foundation-model ARN.
 
+The inline model policy grants only `bedrock:InvokeModel`, the permission used
+by the current non-streaming Converse adapter. Verify all effective attached
+role policies in the target account before claiming the same live boundary.
+
 Application task definitions, execution roles, ingress/TLS, service-to-service identity, endpoint resource policies, audit storage/signing, DNS controls, monitoring, operational recovery, and live bypass tests remain required before deployment readiness. Security groups alone do not establish full egress isolation. S3 access through its gateway endpoint still requires resource and identity controls.
 
 An opt-in PostgreSQL 17 RDS foundation is available through `production_database`. Its engine minor version, instance class, storage size and backup retention must be explicitly chosen after verifying regional availability and cost; leaving the variable null adds no database resources. The provisioned instance uses private subnets, encrypted storage, AWS-managed master credentials, TLS-required PostgreSQL settings, Multi-AZ, backups and deletion protection. Terraform's destroy guard requires an intentional reviewed change before replacement or deletion. The fixed final snapshot identifier must be reviewed for uniqueness before any approved removal.

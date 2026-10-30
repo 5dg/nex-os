@@ -34,6 +34,10 @@ run "private_foundation" {
     error_message = "Model permission must bind the exact approved model."
   }
   assert {
+    condition     = toset(jsondecode(aws_iam_role_policy.model.policy).Statement[0].Action) == toset(["bedrock:InvokeModel"])
+    error_message = "The model role must grant only the non-streaming invocation action used by the adapter."
+  }
+  assert {
     condition     = length(aws_db_instance.production) == 0 && length(aws_security_group.db_clients) == 0
     error_message = "The database must remain opt-in for existing foundation deployments."
   }

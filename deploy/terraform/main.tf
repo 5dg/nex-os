@@ -153,7 +153,7 @@ resource "aws_iam_role_policy" "model" {
   role = aws_iam_role.task["model"].id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"], Resource = var.model_arn,
+    Statement = [{ Effect = "Allow", Action = ["bedrock:InvokeModel"], Resource = var.model_arn,
       Condition = { StringEquals = { "aws:RequestedRegion" = var.region } }
     }]
   })
