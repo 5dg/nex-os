@@ -395,6 +395,49 @@ class ImageDiagnosticTests(unittest.TestCase):
                 m.validate_scanner_identity(p,p)
             self.assertEqual(m.scan_exception_category(bad_hash.exception),'scanner_identity')
 
+    def test_role_scan_admission_keeps_reserve_and_uses_exact_budgets(self):
+        self.assertEqual(m.SCAN_FORECAST,{'postgres':2*1024**3,'workspace':1024**3,'guard':1024**3})
+        for role,budget in m.SCAN_FORECAST.items():
+            floor=budget+m.RESERVE
+            with self.subTest(role=role),patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=floor-1)):
+                with self.assertRaisesRegex(ValueError,'scan forecast'):m.admit_scan('/tmp','/tmp',role)
+            with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=floor)):
+                self.assertEqual(m.admit_scan('/tmp','/tmp',role)['output_free'],floor)
+
+    def test_postgres_budget_still_stops_on_actual_growth(self):
+        initial={'output_free':8*1024**3,'docker_free':8*1024**3}
+        with tempfile.TemporaryDirectory() as d:
+            with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=8*1024**3-1024**3-1)):
+                self.assertEqual(m.invoke([sys.executable,'-c','pass'],Path(d)/'allowed',d,d,10,initial,m.SCAN_FORECAST['postgres']),0)
+            with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=8*1024**3-2*1024**3-1)):
+                with self.assertRaises(m.ForecastExceeded):
+                    m.invoke([sys.executable,'-c','import time;time.sleep(60)'],Path(d)/'stopped',d,d,10,initial,m.SCAN_FORECAST['postgres'])
+
+    def test_main_passes_correct_scan_budgets_to_supervisor(self):
+        with tempfile.TemporaryDirectory() as d:
+            envfile=Path(d)/'env';envfile.touch()
+            env={'GITHUB_REPOSITORY':'5dg/nex-os','GITHUB_REF':'refs/heads/main','GITHUB_EVENT_NAME':'push',
+                 'GITHUB_RUN_ID':'1','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':'a'*40,'RUNNER_TEMP':d,'GITHUB_ENV':str(envfile)}
+            image='sha256:'+'b'*64;budgets=[]
+            def output(argv,*args,**kwargs):
+                if argv[0]=='git':return ('a'*40+'\n').encode()
+                if 'info' in argv:return (d+'\n').encode()
+                if 'inspect' in argv:return json.dumps([{'Id':image,'RootFS':{'Layers':[]},'Os':'linux','Architecture':'amd64','Config':{'User':'','Entrypoint':[],'Cmd':[]}}]).encode()
+                return b'{}'
+            def invoke(argv,log,output_path,docker_root,timeout,initial=None,forecast=None,*args,**kwargs):
+                if 'image' in argv:
+                    budgets.append(forecast)
+                    Path(log).write_bytes(b'{"SchemaVersion":2,"ArtifactType":"container_image","Results":[]}')
+                return 0
+            def file_hash(path):return m.EXPECTED.get(Path(path).name.split('.')[0],'b'*64)
+            with patch.dict(m.os.environ,env),patch.object(m,'probe',side_effect=output), \
+                 patch.object(m,'validate_scanner'),patch.object(m,'validate_scanner_identity'), \
+                 patch.object(m.shutil,'which',return_value=sys.executable),patch.object(m,'sha',side_effect=file_hash), \
+                 patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=100*m.RESERVE)), \
+                 patch.object(m,'invoke',side_effect=invoke),patch.object(m.owned_smoke,'reconcile'):
+                self.assertEqual(m.main(),0)
+            self.assertEqual(budgets,[2*1024**3,1024**3,1024**3])
+
     def test_command_captures_stdout_and_stderr_separately(self):
         with tempfile.TemporaryDirectory() as d:
             stdout=Path(d)/'out'; stderr=Path(d)/'err'

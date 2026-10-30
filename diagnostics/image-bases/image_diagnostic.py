@@ -23,6 +23,7 @@ from image_vulnerability_summary import summarize_image_report
 SCANNER_SHA256 = 'd1dfca6ae10a1ad4540bb94e64f0510077c47008920a9b554986b39dca573d83'
 RESERVE = 2 * 1024**3
 FORECAST = {'postgres': 8 * 1024**3, 'workspace': 4 * 1024**3, 'guard': 4 * 1024**3}
+SCAN_FORECAST = {'postgres': 2 * 1024**3, 'workspace': 1024**3, 'guard': 1024**3}
 EXPECTED = {'postgres': '959c545c9531f8664dd6f4c63bdcc44a695e8ea149e81a8c99fc047e74b9f1d0',
             'workspace': 'bc5d88c9357c27d6cffdfda1c80e8eb4640b3012c4d81de16e2b2f9ca47c39c7',
             'guard': '212b67881653b89c3182d6e481a5f819613009bfd88c2a61b08cb521fa21d0d6'}
@@ -35,6 +36,16 @@ def admit(output, docker_root, role):
               'docker_free': shutil.disk_usage(docker_root).free}
     if min(values.values()) < floor:
         raise ValueError('insufficient free space for role forecast and 2 GiB reserve')
+    return values
+
+
+def admit_scan(output, docker_root, role):
+    """Apply the same 2 GiB reserve to the reviewed per-role scan budget."""
+    budget = SCAN_FORECAST[role]
+    values = {'output_free': shutil.disk_usage(output).free,
+              'docker_free': shutil.disk_usage(docker_root).free}
+    if min(values.values()) < budget + RESERVE:
+        raise ValueError('insufficient free space for scan forecast and 2 GiB reserve')
     return values
 
 
@@ -373,16 +384,15 @@ def main():
             # Scan actual immutable image identity, even when smoke fails.
             report_file = output/(role+'-trivy.json')
             scan_log = output/(role+'-trivy.stderr')
-            scan_initial = {'output_free': shutil.disk_usage(output).free,
-                            'docker_free': shutil.disk_usage(docker_root).free}
-            if min(scan_initial.values()) < RESERVE + 1024**3:
-                raise ValueError('insufficient reserve for bounded scan')
+            scan_initial = admit_scan(output,docker_root,role)
+            item['scan_admission'] = scan_initial
+            item['scan_forecast_bytes'] = SCAN_FORECAST[role]
             try:
                 validate_scanner_identity(scanner,expected_scanner)
                 item['scan_exit'] = invoke([str(scanner),'image','--db-repository','ghcr.io/aquasecurity/trivy-db:2',
                                             '--format','json','--list-all-pkgs','--exit-code','1',
                                             '--severity','UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL','--image-src','docker',image['Id']],
-                                           report_file, output, docker_root, 300, scan_initial, 1024**3, scan_log,
+                                           report_file, output, docker_root, 300, scan_initial, SCAN_FORECAST[role], scan_log,
                                            stdout_limit=16*1024**2, stderr_limit=2*1024**2)
             except DiagnosticInterrupted as error:
                 item['scan_exit'] = None
