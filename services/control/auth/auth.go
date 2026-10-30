@@ -118,7 +118,7 @@ func (v *Verifier) Verify(r *http.Request) (Identity, error) {
 	if e != nil {
 		return unauthorized()
 	}
-	if token.Subject == "" || len(token.Subject) > 256 || strings.TrimSpace(token.Subject) != token.Subject {
+	if token.Subject == "" || len(token.Subject) > 256 || strings.TrimSpace(token.Subject) != token.Subject || (v.accessProfile && !validSubject(token.Subject)) {
 		return unauthorized()
 	}
 	if v.accessProfile {
@@ -164,6 +164,21 @@ func (v *Verifier) Verify(r *http.Request) (Identity, error) {
 		}
 	}
 	return Identity{Issuer: v.issuer, Subject: token.Subject}, nil
+}
+
+// OIDC subjects are at most 255 ASCII characters. Require visible characters
+// so the same identity cannot carry control or whitespace into authorization,
+// logs, or the workspace's more restrictive identity policy.
+func validSubject(subject string) bool {
+	if len(subject) == 0 || len(subject) > 255 {
+		return false
+	}
+	for _, c := range subject {
+		if c < 0x21 || c > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func validScope(scope string) bool {

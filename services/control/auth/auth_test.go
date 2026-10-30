@@ -79,6 +79,13 @@ func TestJWTAccessProfileSeparatesCredentialsAndCurrentIdentity(t *testing.T) {
 			t.Fatalf("%+v %v", id, e)
 		}
 	})
+	t.Run("maximum-length visible ASCII subject", func(t *testing.T) {
+		subject := strings.Repeat("a", 255)
+		id, e := verify(sign(nil, map[string]any{"sub": subject}, key))
+		if e != nil || id.Subject != subject {
+			t.Fatalf("valid subject rejected: %v", e)
+		}
+	})
 	now := time.Now().Unix()
 	for _, test := range []struct {
 		name           string
@@ -108,6 +115,10 @@ func TestJWTAccessProfileSeparatesCredentialsAndCurrentIdentity(t *testing.T) {
 		{"not before beyond expiry", nil, map[string]any{"nbf": now + 300}},
 		{"missing subject", nil, map[string]any{"sub": nil}},
 		{"blank subject", nil, map[string]any{"sub": " "}},
+		{"embedded subject control", nil, map[string]any{"sub": "alice\nbob"}},
+		{"embedded subject whitespace", nil, map[string]any{"sub": "alice bob"}},
+		{"non-ASCII subject", nil, map[string]any{"sub": "alicé"}},
+		{"oversized subject", nil, map[string]any{"sub": strings.Repeat("a", 256)}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, e := verify(sign(test.header, test.claims, key)); e == nil {
