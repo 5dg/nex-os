@@ -25,17 +25,18 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git merge-base --is-ancestor 8792396f264aaf4c7fca8b18adc49f375a0b9561 "$GITHUB_SHA"
-          git diff --name-only 8792396f264aaf4c7fca8b18adc49f375a0b9561 "$GITHUB_SHA" | LC_ALL=C sort > /tmp/nex-diagnostic-changed
-          printf '%s\n' '.github/workflows/image-base-diagnostic.yml' 'diagnostics/image-bases/README.md' 'diagnostics/image-bases/image_diagnostic.py' 'diagnostics/image-bases/test_image_diagnostic.py' | LC_ALL=C sort > /tmp/nex-diagnostic-allowed
+          git merge-base --is-ancestor a526236b90121cc9e76decfd9cea4d3028059ec0 "$GITHUB_SHA"
+          git diff --name-only a526236b90121cc9e76decfd9cea4d3028059ec0 "$GITHUB_SHA" | LC_ALL=C sort > /tmp/nex-diagnostic-changed
+          printf '%s\n' '.github/workflows/image-base-diagnostic.yml' 'diagnostics/image-bases/README.md' 'diagnostics/image-bases/disk_telemetry.py' 'diagnostics/image-bases/image_diagnostic.py' 'diagnostics/image-bases/test_image_diagnostic.py' | LC_ALL=C sort > /tmp/nex-diagnostic-allowed
           diff -u /tmp/nex-diagnostic-allowed /tmp/nex-diagnostic-changed
           sha256sum -c <<'EOF'
-          3ede325374f71e108d751844396e96fae85d687caae519d716c08fa8dc6d7f8e  diagnostics/image-bases/README.md
+          ab998bfca387ff50650d009c334f70d760a402712b5e1f65a164f293c3aba2d1  diagnostics/image-bases/README.md
+          427d17649416a70b87daacf6781e61fae437c41891af11a772e18c9ff3dd7866  diagnostics/image-bases/disk_telemetry.py
           212b67881653b89c3182d6e481a5f819613009bfd88c2a61b08cb521fa21d0d6  diagnostics/image-bases/guard.Dockerfile
-          3a53fab31a30b329e6e23b40503951f49e78099af071bf2d13649b7619c26364  diagnostics/image-bases/image_diagnostic.py
+          2b2b662c6c1c0a04f2a22b5355d0cd50cd195d8d5c4a073d3f2a2f81a07df7bb  diagnostics/image-bases/image_diagnostic.py
           959c545c9531f8664dd6f4c63bdcc44a695e8ea149e81a8c99fc047e74b9f1d0  diagnostics/image-bases/postgres.Dockerfile
           ef333e834c872f7912dce0338eeca47761e13d82dffbc20684cc53ea92cb9993  diagnostics/image-bases/smoke.py
-          996961faaa9740a171ded2fc63f6737546ef3dd76088b81b1be1ae75f0eb0fc4  diagnostics/image-bases/test_image_diagnostic.py
+          c317f3608b9a7e91e138408bc4f8abbc034f6eaef81ea6f8f2df261450f2cf18  diagnostics/image-bases/test_image_diagnostic.py
           bc5d88c9357c27d6cffdfda1c80e8eb4640b3012c4d81de16e2b2f9ca47c39c7  diagnostics/image-bases/workspace.Dockerfile
           EOF
           python3 -m unittest discover -s diagnostics/image-bases -p 'test_image_diagnostic.py' -v

@@ -438,6 +438,100 @@ class ImageDiagnosticTests(unittest.TestCase):
                 self.assertEqual(m.main(),0)
             self.assertEqual(budgets,[2*1024**3,1024**3,1024**3])
 
+    def test_telemetry_reports_only_recognized_files_and_ignores_links(self):
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);scratch=root/'scratch';scratch.mkdir();cache=root/'cache';(cache/'db').mkdir(parents=True);(cache/'fanal').mkdir()
+            proc=scratch/'trivy-secret-process-name';proc.mkdir()
+            export=proc/'docker-export-secret-filename';export.write_bytes(b'x'*12345)
+            (proc/'unrecognized-secret').write_bytes(b'y'*54321)
+            (cache/'db'/'trivy.db').write_bytes(b'z'*222)
+            (cache/'fanal'/'fanal.db').write_bytes(b'a'*333)
+            initial={'output_free':10**12,'docker_free':10**12}
+            with patch.object(m.disk_telemetry.shutil,'disk_usage',return_value=SimpleNamespace(free=10**12-9)):
+                data=m.disk_telemetry.measure(scratch,cache,root,root,initial)
+            self.assertEqual(data['export_logical_bytes'],12345)
+            self.assertEqual(data['db_logical_bytes'],222)
+            self.assertEqual(data['fanal_logical_bytes'],333)
+            self.assertEqual(data['output_free_decrease_bytes'],9)
+            export.unlink();export.symlink_to(proc/'unrecognized-secret')
+            logical,allocated,partial=m.disk_telemetry.export_counts(scratch)
+            self.assertTrue(partial);self.assertEqual((logical,allocated),(0,0))
+
+    def test_telemetry_scans_only_bounded_directory_entries(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            for i in range(m.disk_telemetry.MAX_ENTRIES+1):(root/('trivy-'+str(i))).mkdir()
+            _,_,partial=m.disk_telemetry.export_counts(root)
+            self.assertTrue(partial)
+
+    def test_disk_telemetry_logging_never_echoes_paths_or_arbitrary_fields(self):
+        secret='DO_NOT_LOG_SECRET_PATH'
+        data={'status':'sampled','samples':1,'partial_samples':0,'sample_errors':0,
+              'peaks':{'export_logical_bytes':123,'secret_path':secret},'extra':secret}
+        with patch('builtins.print') as log:m.emit_disk_telemetry('postgres',data,1234)
+        text=log.call_args.args[0]
+        self.assertNotIn(secret,text)
+        self.assertIn('"export_logical_bytes":123',text)
+        self.assertIn('"image_size_bytes":1234',text)
+
+    def test_live_scanner_only_tmpdir_records_export_without_changing_parent_environment(self):
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);scratch=root/'scratch';scratch.mkdir();cache=root/'cache';cache.mkdir()
+            initial={'output_free':100*m.RESERVE,'docker_free':100*m.RESERVE}
+            sampler=m.disk_telemetry.Sampler(scratch,cache,root,root,initial,interval=0.02)
+            code="import os,time; p=os.path.join(os.environ['TMPDIR'],'trivy-fixture');os.mkdir(p);open(os.path.join(p,'docker-export-fixture'),'wb').write(b'x'*65536);time.sleep(.2)"
+            before=os.environ.get('TMPDIR')
+            with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=100*m.RESERVE)):
+                self.assertEqual(m.invoke([sys.executable,'-c',code],root/'out',root,root,10,initial,1024**3,
+                                          telemetry=sampler,scanner_tmp=scratch),0)
+            self.assertEqual(os.environ.get('TMPDIR'),before)
+            self.assertEqual(sampler.finished['status'],'sampled')
+            self.assertGreaterEqual(sampler.finished['peaks']['export_logical_bytes'],65536)
+
+    def test_unquiesced_sampler_halts_before_later_roles(self):
+        with tempfile.TemporaryDirectory() as d:
+            envfile=Path(d)/'env';envfile.touch()
+            env={'GITHUB_REPOSITORY':'5dg/nex-os','GITHUB_REF':'refs/heads/main','GITHUB_EVENT_NAME':'push',
+                 'GITHUB_RUN_ID':'1','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':'a'*40,'RUNNER_TEMP':d,'GITHUB_ENV':str(envfile),
+                 'TRIVY_CACHE_DIR':'/tmp/nex-diagnostic-trivy-cache'}
+            image='sha256:'+'b'*64
+            def output(argv,*args,**kwargs):
+                if argv[0]=='git':return ('a'*40+'\n').encode()
+                if 'info' in argv:return (d+'\n').encode()
+                if 'inspect' in argv:return json.dumps([{'Id':image,'RootFS':{'Layers':[]},'Os':'linux','Architecture':'amd64','Config':{'User':'','Entrypoint':[],'Cmd':[]}}]).encode()
+                return b'{}'
+            def invoke(argv,*args,**kwargs):
+                if 'image' in argv:kwargs['telemetry'].finished={'status':'sampler-unquiesced','samples':0,'partial_samples':0,'sample_errors':0,'peaks':{}}
+                return 0
+            def file_hash(path):return m.EXPECTED.get(Path(path).name.split('.')[0],'b'*64)
+            with patch.dict(m.os.environ,env),patch.object(m,'probe',side_effect=output), \
+                 patch.object(m,'validate_scanner'),patch.object(m,'validate_scanner_identity'), \
+                 patch.object(m.shutil,'which',return_value=sys.executable),patch.object(m,'sha',side_effect=file_hash), \
+                 patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=100*m.RESERVE)), \
+                 patch.object(m,'invoke',side_effect=invoke) as commands,patch.object(m.owned_smoke,'reconcile'):
+                self.assertEqual(m.main(),1)
+            self.assertEqual(commands.call_count,3)
+            result=json.loads((Path(d)/'nex-image-diagnostic-1-1/result.json').read_text())
+            self.assertEqual(list(result['images']),['postgres'])
+            self.assertIn('sampler did not stop',result['images']['postgres']['halt_reason'])
+
+    def test_cache_must_be_on_monitored_filesystem_and_not_symlink(self):
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);output=root/'output';output.mkdir();docker=root/'docker';docker.mkdir();cache=root/'cache'
+            m.validate_cache_filesystem(cache,output,docker)
+            cache.symlink_to(output,target_is_directory=True)
+            with self.assertRaisesRegex(ValueError,'symlink'):m.validate_cache_filesystem(cache,output,docker)
+            cache.unlink()
+            real_stat=os.stat
+            def fake(path,*args,**kwargs):
+                if Path(path)==root:return SimpleNamespace(st_dev=999999)
+                return real_stat(path,*args,**kwargs)
+            with patch.object(m.os,'stat',side_effect=fake):
+                with self.assertRaisesRegex(ValueError,'outside monitored'):m.validate_cache_filesystem(cache,output,docker)
+
     def test_command_captures_stdout_and_stderr_separately(self):
         with tempfile.TemporaryDirectory() as d:
             stdout=Path(d)/'out'; stderr=Path(d)/'err'

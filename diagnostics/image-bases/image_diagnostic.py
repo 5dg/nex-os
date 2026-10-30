@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import smoke as owned_smoke
+import disk_telemetry
 from image_vulnerability_summary import summarize_image_report
 
 SCANNER_SHA256 = 'd1dfca6ae10a1ad4540bb94e64f0510077c47008920a9b554986b39dca573d83'
@@ -87,7 +88,8 @@ def install_handlers():
 
 
 def invoke(argv, log, output, docker_root, timeout, initial=None, forecast=None,
-           stderr_path=None, stdout_limit=32*1024**2, stderr_limit=2*1024**2):
+           stderr_path=None, stdout_limit=32*1024**2, stderr_limit=2*1024**2,
+           telemetry=None, scanner_tmp=None):
     """Cap bytes before writing; monitor floors while supervising the client.
 
     A killed build client does not prove daemon quiescence; callers must halt.
@@ -101,9 +103,11 @@ def invoke(argv, log, output, docker_root, timeout, initial=None, forecast=None,
         try:
             # Children must not inherit the parent's temporary signal block.
             def child_unblock(): signal.pthread_sigmask(signal.SIG_SETMASK,saved_mask)
+            child_env = os.environ.copy()
+            if scanner_tmp is not None: child_env['TMPDIR'] = str(scanner_tmp)
             process = subprocess.Popen(argv, cwd=ROOT, stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE if error_stream else subprocess.STDOUT,
-                                       start_new_session=True, preexec_fn=child_unblock)
+                                       start_new_session=True, preexec_fn=child_unblock,env=child_env)
             try:
                 assert process.stdout is not None
                 os.set_blocking(process.stdout.fileno(),False)
@@ -113,6 +117,7 @@ def invoke(argv, log, output, docker_root, timeout, initial=None, forecast=None,
                     os.set_blocking(process.stderr.fileno(),False)
                     selector.register(process.stderr,selectors.EVENT_READ,('stderr',error_stream,stderr_limit))
                 counts={'stdout':0,'stderr':0}
+                if telemetry is not None: telemetry.start()
                 # Pending signals are delivered only after cleanup owns process.
                 signal.pthread_sigmask(signal.SIG_SETMASK,saved_mask)
                 while selector.get_map() or process.poll() is None:
@@ -147,6 +152,7 @@ def invoke(argv, log, output, docker_root, timeout, initial=None, forecast=None,
                     process.wait(timeout=5)
                 raise
             finally:
+                if telemetry is not None: telemetry.finished=telemetry.stop()
                 for key in list(selector.get_map().values()):
                     selector.unregister(key.fileobj)
                     key.fileobj.close()
@@ -291,6 +297,34 @@ def emit_phase_summary(role,item,output):
         except (OSError,ValueError): pass
 
 
+def validate_cache_filesystem(cache,output,docker_root):
+    if cache.is_symlink():raise ValueError('diagnostic cache cannot be a symlink')
+    existing=cache if cache.exists() else cache.parent
+    if os.stat(existing).st_dev not in (os.stat(output).st_dev,os.stat(docker_root).st_dev):
+        raise ValueError('diagnostic cache filesystem is outside monitored filesystems')
+
+
+def emit_disk_telemetry(role, data, image_size):
+    """Only fixed names and validated nonnegative numeric aggregates go to logs."""
+    allowed=('export_logical_bytes','export_allocated_bytes','db_logical_bytes','db_allocated_bytes',
+             'fanal_logical_bytes','fanal_allocated_bytes','output_free_decrease_bytes','docker_free_decrease_bytes')
+    integer=lambda x: x if type(x) is int and 0 <= x < 2**63 else None
+    try:
+        status=data.get('status') if data.get('status') in ('sampled','unavailable','sampler-unquiesced') else 'unavailable'
+        peaks=data.get('peaks') if isinstance(data.get('peaks'),dict) else {}
+        public={'role':role if role in ROLES else 'unknown','scope':'diagnostic-only','status':status,
+                'samples':integer(data.get('samples')),'partial_samples':integer(data.get('partial_samples')),
+                'sample_errors':integer(data.get('sample_errors')),'image_size_bytes':integer(image_size),
+                'peaks':{key:integer(peaks.get(key)) for key in allowed}}
+        payload=json.dumps(public,ensure_ascii=True,separators=(',',':'))
+        if len(payload)>2048:raise ValueError('telemetry oversized')
+        print('diagnostic-only disk-telemetry '+payload,flush=True)
+    except DiagnosticInterrupted:raise
+    except Exception:
+        try:print('diagnostic-only disk-telemetry {"status":"unavailable"}',flush=True)
+        except (OSError,ValueError):pass
+
+
 def main():
     install_handlers()
     if (os.environ.get('GITHUB_REPOSITORY') != '5dg/nex-os' or os.environ.get('GITHUB_REF') != 'refs/heads/main' or
@@ -346,7 +380,8 @@ def main():
                                      output/(role+'-image-inspect.json'),output,docker_root,1024**2))[0]
             item['image'] = {'id': image['Id'], 'layers': image['RootFS']['Layers'], 'os': image['Os'],
                              'architecture': image['Architecture'], 'user': image['Config']['User'],
-                             'entrypoint': image['Config']['Entrypoint'], 'cmd': image['Config']['Cmd']}
+                             'entrypoint': image['Config']['Entrypoint'], 'cmd': image['Config']['Cmd'],
+                             'size_bytes': image.get('Size') if type(image.get('Size')) is int and 0 <= image['Size'] < 2**63 else None}
             if item['image']['architecture'] != 'amd64': raise ValueError('wrong diagnostic architecture')
             owner = secrets.token_hex(16)
             item['smoke_owner'] = owner
@@ -387,29 +422,46 @@ def main():
             scan_initial = admit_scan(output,docker_root,role)
             item['scan_admission'] = scan_initial
             item['scan_forecast_bytes'] = SCAN_FORECAST[role]
+            scratch=output/(role+'-scanner-tmp')
+            scratch.mkdir(mode=0o700)
+            cache=Path('/tmp/nex-diagnostic-trivy-cache')
+            if os.environ.get('TRIVY_CACHE_DIR',str(cache))!=str(cache):raise ValueError('unexpected diagnostic scanner cache')
+            os.environ['TRIVY_CACHE_DIR']=str(cache)
+            validate_cache_filesystem(cache,output,docker_root)
+            telemetry=disk_telemetry.Sampler(scratch,cache,output,docker_root,scan_initial)
+            interrupted_scan=False
+            process_error=None
             try:
                 validate_scanner_identity(scanner,expected_scanner)
                 item['scan_exit'] = invoke([str(scanner),'image','--db-repository','ghcr.io/aquasecurity/trivy-db:2',
                                             '--format','json','--list-all-pkgs','--exit-code','1',
                                             '--severity','UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL','--image-src','docker',image['Id']],
                                            report_file, output, docker_root, 300, scan_initial, SCAN_FORECAST[role], scan_log,
-                                           stdout_limit=16*1024**2, stderr_limit=2*1024**2)
+                                           stdout_limit=16*1024**2, stderr_limit=2*1024**2,
+                                           telemetry=telemetry, scanner_tmp=scratch)
             except DiagnosticInterrupted as error:
                 item['scan_exit'] = None
                 item['scan_error'] = str(error) + '; raw partial output retained'
                 item['scan_error_category'] = 'interrupted'
-                item['status'] = 'incomplete'
-                item['halt_reason'] = 'interrupted during scan; no later phases started'
-                save()
-                emit_phase_summary(role,item,output)
-                break
+                interrupted_scan=True
             except (TimeoutError,ValueError) as error:
                 item['scan_exit'] = None
                 item['scan_error'] = str(error) + '; raw partial output retained'
                 item['scan_error_category'] = scan_exception_category(error)
-            except (OSError,subprocess.SubprocessError):
+            except (OSError,subprocess.SubprocessError) as error:
                 item['scan_error_category'] = 'process_error'
-                raise
+                process_error=error
+            finally:
+                item['disk_telemetry'] = telemetry.finished or {'status':'unavailable','samples':0,'partial_samples':0,'sample_errors':0,'peaks':{}}
+                emit_disk_telemetry(role,item['disk_telemetry'],item['image']['size_bytes'])
+            if interrupted_scan or item['disk_telemetry']['status']=='sampler-unquiesced':
+                item['status']='incomplete'
+                item['halt_reason']=('interrupted during scan; no later phases started' if interrupted_scan else
+                                     'telemetry sampler did not stop; no later phases started')
+                save()
+                emit_phase_summary(role,item,output)
+                break
+            if process_error is not None:raise process_error
             item['scan_sha256'] = sha(report_file)
             if report_file.stat().st_size > 8*1024**2:
                 summary = {'status':'unavailable','reason':'oversized-report','truncated':True}
