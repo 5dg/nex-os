@@ -18,20 +18,54 @@ import (
 
 func TestBedrockPreservesSDKTimeoutAndRejectsUnsafeClients(t *testing.T) {
 	sdk := awshttp.NewBuildableClient().WithTimeout(2 * time.Second).WithReadTimeout(100 * time.Millisecond)
-	transport, timeout, err := configuredBedrockTransport(sdk)
+	transport, timeout, err := configuredBedrockTransport(sdk, "example.invalid")
 	if err != nil || timeout != 2*time.Second || transport.DialContext == nil {
 		t.Fatalf("configured timeouts not preserved: %v", err)
 	}
 	if bedrockHTTPClient("example.invalid", transport, timeout).Timeout != 2*time.Second {
 		t.Fatal("SDK client timeout was lost")
 	}
-	if _, _, err := configuredBedrockTransport(&http.Client{}); err == nil {
+	if _, _, err := configuredBedrockTransport(&http.Client{}, "example.invalid"); err == nil {
 		t.Fatal("unsupported client accepted")
 	}
 	// This fixture never connects; it proves insecure TLS settings are rejected.
 	insecure := sdk.WithTransportOptions(func(tr *http.Transport) { tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} })
-	if _, _, err := configuredBedrockTransport(insecure); err == nil {
+	if _, _, err := configuredBedrockTransport(insecure, "example.invalid"); err == nil {
 		t.Fatal("insecure TLS client accepted")
+	}
+}
+
+func TestBedrockTLSNameMustMatchApprovedHost(t *testing.T) {
+	const host = "bedrock-runtime.us-gov-west-1.amazonaws.com"
+	_, root, _ := fixtureCertificate(t, host)
+	roots := x509.NewCertPool()
+	roots.AddCert(root)
+	for _, tc := range []struct {
+		name    string
+		allowed bool
+	}{
+		{"", true},
+		{host, true},
+		{"other.example.invalid", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sdk := awshttp.NewBuildableClient().WithTransportOptions(func(tr *http.Transport) {
+				tr.TLSClientConfig = &tls.Config{RootCAs: roots, ServerName: tc.name, MinVersion: tls.VersionTLS12}
+			})
+			transport, _, err := configuredBedrockTransport(sdk, host)
+			if !tc.allowed {
+				if err == nil {
+					t.Fatal("alternate TLS identity accepted")
+				}
+				return
+			}
+			if err != nil || transport.TLSClientConfig.RootCAs != roots || transport.TLSClientConfig.ServerName != tc.name {
+				t.Fatalf("valid TLS configuration was not retained: %v", err)
+			}
+		})
+	}
+	if _, _, err := configuredBedrockTransport(awshttp.NewBuildableClient(), ""); err == nil {
+		t.Fatal("empty approved TLS identity accepted")
 	}
 }
 
@@ -44,7 +78,7 @@ func TestBedrockPreservesSDKConfiguredTransportDialer(t *testing.T) {
 			return nil, want
 		}
 	})
-	transport, _, err := configuredBedrockTransport(sdk)
+	transport, _, err := configuredBedrockTransport(sdk, "example.invalid")
 	if err != nil {
 		t.Fatal(err)
 	}

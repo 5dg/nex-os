@@ -72,7 +72,7 @@ func NewBedrock(ctx context.Context, region, arn string, endpoint ...string) (*B
 		(configured.EndpointOptions.UseFIPSEndpoint == aws.FIPSEndpointStateDisabled && resolver.fips) {
 		return nil, errors.New("ambient endpoint configuration conflicts with approved route")
 	}
-	transport, timeout, err := configuredBedrockTransport(configured.HTTPClient)
+	transport, timeout, err := configuredBedrockTransport(configured.HTTPClient, resolver.host)
 	if err != nil {
 		return nil, err
 	}

@@ -96,7 +96,7 @@ func bedrockConfiguredDial(client *awshttp.BuildableClient, dial func(context.Co
 	return dial
 }
 
-func configuredBedrockTransport(client bedrockruntime.HTTPClient) (*http.Transport, time.Duration, error) {
+func configuredBedrockTransport(client bedrockruntime.HTTPClient, host string) (*http.Transport, time.Duration, error) {
 	sdkHTTP, ok := client.(*awshttp.BuildableClient)
 	if !ok || sdkHTTP == nil {
 		return nil, 0, errors.New("unsupported SDK HTTP client")
@@ -104,6 +104,9 @@ func configuredBedrockTransport(client bedrockruntime.HTTPClient) (*http.Transpo
 	transport := sdkHTTP.GetTransport()
 	if transport.TLSClientConfig != nil && transport.TLSClientConfig.InsecureSkipVerify {
 		return nil, 0, errors.New("insecure SDK TLS configuration denied")
+	}
+	if host == "" || (transport.TLSClientConfig != nil && transport.TLSClientConfig.ServerName != "" && transport.TLSClientConfig.ServerName != host) {
+		return nil, 0, errors.New("SDK TLS server name differs from approved route")
 	}
 	if transport.DialTLSContext != nil || transport.DialTLS != nil {
 		return nil, 0, errors.New("unsupported SDK TLS dialer")
