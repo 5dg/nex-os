@@ -178,6 +178,27 @@ class CanonicalImageTests(unittest.TestCase):
             packaging.selected_proxies({'DOCKER_CONFIG': str(self.root), 'HTTP_PROXY': 'http://user:secret@proxy:80'})
         self.assertNotIn('secret', str(result.exception))
 
+    def assert_process_gone_or_zombie(self, status):
+        try:
+            stat = status.read_text()
+        except FileNotFoundError:
+            # The process may exit and be reaped immediately before this read.
+            return
+        self.assertEqual(stat.split()[2], 'Z')
+
+    def test_proc_status_allows_reaped_process_but_rejects_live_process(self):
+        status = Path('/proc/fixture/stat')
+        with patch.object(Path, 'read_text', side_effect=FileNotFoundError):
+            self.assert_process_gone_or_zombie(status)
+        with patch.object(Path, 'read_text', return_value='123 (fixture) Z 1'):
+            self.assert_process_gone_or_zombie(status)
+        with patch.object(Path, 'read_text', return_value='123 (fixture) S 1'):
+            with self.assertRaises(AssertionError):
+                self.assert_process_gone_or_zombie(status)
+        with patch.object(Path, 'read_text', side_effect=PermissionError):
+            with self.assertRaises(PermissionError):
+                self.assert_process_gone_or_zombie(status)
+
     def test_command_cancellation_kills_owned_descendants_holding_stdout(self):
         helper = self.root / 'hold-pipe.py'
         helper.write_text("import os,pathlib,subprocess,sys,time\nchild=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\npathlib.Path(sys.argv[1]).write_text(str(child.pid))\ntime.sleep(60)\n")
@@ -191,8 +212,7 @@ class CanonicalImageTests(unittest.TestCase):
         self.assertLess(time.monotonic() - start, 4)
         pid = int((self.root / 'grandchild.pid').read_text())
         status = Path('/proc') / str(pid) / 'stat'
-        if status.exists():
-            self.assertEqual(status.read_text().split()[2], 'Z')
+        self.assert_process_gone_or_zombie(status)
 
     def test_parent_grace_exceeds_full_bounded_stop_path(self):
         grace = inspect.signature(builder.supervise_packager).parameters['grace'].default
