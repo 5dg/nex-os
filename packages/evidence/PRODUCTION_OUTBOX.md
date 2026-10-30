@@ -21,6 +21,15 @@ boundary. Injected authorities, verifiers and appenders must honor deadlines.
 The synthetic fixture exercises a subsequent read after a successful commit;
 it does not inject a lost PostgreSQL commit response or prove failover recovery.
 
+`PinnedOutboxProofVerifier` is an optional verifier for the existing Ed25519
+evidence-v1 proof format. It copies an explicitly supplied public key, rejects
+ambiguous proof fields and noncanonical event bytes, and checks the signature
+and event binding. The caller must provision the correct independently trusted
+key and handle key rotation. A valid signature does not prove journal continuity,
+independent key custody, nonrollback storage, or the health of an external
+anchor. This verifier is not wired into production and does not select a
+deployment cryptographic or custody policy.
+
 These checks do not make the SQL transaction atomic with the evidence service or
 provide a distributed fence. Automatic retry of a possibly completed append is
 safe only if the deployment proves that the journal cannot lose or fork an
