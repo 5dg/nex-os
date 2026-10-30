@@ -21,19 +21,21 @@ import (
 )
 
 type Server struct {
-	Profile           trust.Profile
-	Trust             *trust.Config
-	DB                *pgxpool.Pool
-	Auth              *auth.Verifier
-	Policy            *guard.Client
-	Model             model.Adapter
-	Environment       string
-	WorkerKey         []byte
-	ModelRPC, ToolRPC *broker.Client
-	EvidenceRPC       *broker.Client
-	EvidencePublic    []byte
-	historySecretOnce sync.Once
-	historySecret     [32]byte
+	Profile            trust.Profile
+	Trust              *trust.Config
+	DB                 *pgxpool.Pool
+	Auth               *auth.Verifier
+	Policy             *guard.Client
+	Model              model.Adapter
+	Environment        string
+	WorkerKey          []byte
+	ModelRPC, ToolRPC  *broker.Client
+	EvidenceRPC        *broker.Client
+	EvidencePublic     []byte
+	historySecretOnce  sync.Once
+	historySecret      [32]byte
+	historyPrevious    [32]byte
+	historyHasPrevious bool
 }
 
 var errMembership = errors.New("registered tenant membership required")

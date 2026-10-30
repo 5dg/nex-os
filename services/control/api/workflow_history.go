@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -59,18 +60,25 @@ type historyPage struct {
 
 var errHistoryCursor = errors.New("invalid or expired history cursor")
 
-// SetHistoryCursorKey configures a separately provisioned 32-byte cursor key
-// before this server handles requests. Replicas sharing the key can validate
-// each other's cursors. Changing it invalidates existing cursors. The caller
-// must provision a cryptographically random key, independent of evidence and
-// service capability keys. Once the signer has been initialized it is immutable.
+// SetHistoryCursorKey retains the single-key configuration contract.
 func (s *Server) SetHistoryCursorKey(key []byte) error {
-	if len(key) != 32 || hmac.Equal(key, make([]byte, 32)) {
+	return s.SetHistoryCursorKeys(key, nil)
+}
+
+// SetHistoryCursorKeys configures current and optional previous independently
+// random keys before serving. New cursors use current; either key may validate
+// an unexpired cursor. Keys are copied and the signer cannot be reconfigured.
+func (s *Server) SetHistoryCursorKeys(current, previous []byte) error {
+	if len(current) != 32 || hmac.Equal(current, make([]byte, 32)) || (previous != nil && (len(previous) != 32 || hmac.Equal(previous, make([]byte, 32)) || hmac.Equal(current, previous))) {
 		return errors.New("nonzero 32-byte history cursor key required")
 	}
 	configured := false
 	s.historySecretOnce.Do(func() {
-		copy(s.historySecret[:], key)
+		copy(s.historySecret[:], current)
+		if previous != nil {
+			copy(s.historyPrevious[:], previous)
+			s.historyHasPrevious = true
+		}
 		configured = true
 	})
 	if !configured {
@@ -79,14 +87,26 @@ func (s *Server) SetHistoryCursorKey(key []byte) error {
 	return nil
 }
 
+func historyMACForKey(key, payload []byte) []byte {
+	m := hmac.New(sha256.New, key)
+	_, _ = m.Write([]byte("nex-history-cursor-v2\x00"))
+	_, _ = m.Write(payload)
+	return m.Sum(nil)
+}
+
 func (s *Server) historyMAC(payload []byte) []byte {
 	// Without an explicitly provisioned shared key, use a process-local secret.
 	// Cursors never grant access; each page still rechecks current authority.
 	s.historySecretOnce.Do(func() { _, _ = rand.Read(s.historySecret[:]) })
-	m := hmac.New(sha256.New, s.historySecret[:])
-	_, _ = m.Write([]byte("nex-history-cursor-v2\x00"))
-	_, _ = m.Write(payload)
-	return m.Sum(nil)
+	return historyMACForKey(s.historySecret[:], payload)
+}
+
+func (s *Server) validHistoryMAC(payload, signature []byte) bool {
+	valid := subtle.ConstantTimeCompare(signature, s.historyMAC(payload))
+	if s.historyHasPrevious {
+		valid |= subtle.ConstantTimeCompare(signature, historyMACForKey(s.historyPrevious[:], payload))
+	}
+	return valid == 1
 }
 
 func (s *Server) encodeHistoryCursor(c historyCursor) (string, error) {
@@ -115,7 +135,7 @@ func (s *Server) decodeHistoryCursor(encoded, tenant, actor, job string, now tim
 		return c, errHistoryCursor
 	}
 	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil || base64.RawURLEncoding.EncodeToString(signature) != parts[1] || !hmac.Equal(signature, s.historyMAC(payload)) {
+	if err != nil || base64.RawURLEncoding.EncodeToString(signature) != parts[1] || !s.validHistoryMAC(payload, signature) {
 		return c, errHistoryCursor
 	}
 	if json.Unmarshal(payload, &c) != nil || c.Version != 2 || c.Tenant != tenant || c.Actor != actor || c.Job != job || c.Expires <= now.Unix() || c.Expires > now.Add(historyCursorLifetime).Unix() || c.Snapshot == "" || c.SnapshotXID == "" || c.ThroughID == "" || c.AfterID == "" || c.AfterSequence < 0 || c.ThroughSequence < 0 || c.AfterSequence > c.ThroughSequence || (c.AfterSequence == c.ThroughSequence && (c.AfterTime.After(c.ThroughTime) || (c.AfterTime.Equal(c.ThroughTime) && c.AfterID > c.ThroughID))) {

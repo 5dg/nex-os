@@ -57,6 +57,67 @@ func TestConfiguredHistoryCursorKeyAcrossReplicas(t *testing.T) {
 	}
 }
 
+func TestHistoryCursorKeyringPhasedRotationAndImmediateRevocation(t *testing.T) {
+	oldKey := bytes.Repeat([]byte{0x11}, 32)
+	newKey := bytes.Repeat([]byte{0x22}, 32)
+	oldOnly, prepared, rotated, retired := &Server{}, &Server{}, &Server{}, &Server{}
+	if err := oldOnly.SetHistoryCursorKey(oldKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := prepared.SetHistoryCursorKeys(oldKey, newKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := rotated.SetHistoryCursorKeys(newKey, oldKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := retired.SetHistoryCursorKey(newKey); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1800000000, 0).UTC()
+	c := cursorFixture(now)
+	oldToken, err := oldOnly.encodeHistoryCursor(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newToken, err := rotated.encodeHistoryCursor(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, replica := range map[string]*Server{"prepared": prepared, "rotated": rotated} {
+		for _, token := range []string{oldToken, newToken} {
+			if _, err := replica.decodeHistoryCursor(token, c.Tenant, c.Actor, c.Job, now); err != nil {
+				t.Fatalf("%s rejected overlap cursor: %v", name, err)
+			}
+		}
+	}
+	if _, err := oldOnly.decodeHistoryCursor(newToken, c.Tenant, c.Actor, c.Job, now); err == nil {
+		t.Fatal("unprepared old replica accepted new key")
+	}
+	if _, err := retired.decodeHistoryCursor(oldToken, c.Tenant, c.Actor, c.Job, now); err == nil {
+		t.Fatal("retired key remained valid")
+	}
+	if _, err := retired.decodeHistoryCursor(newToken, c.Tenant, c.Actor, c.Job, now); err != nil {
+		t.Fatal("current key rejected")
+	}
+	if _, err := rotated.decodeHistoryCursor(oldToken, c.Tenant, "other", c.Job, now); err == nil {
+		t.Fatal("previous key bypassed actor scope")
+	}
+	if _, err := rotated.decodeHistoryCursor(oldToken, c.Tenant, c.Actor, c.Job, now.Add(historyCursorLifetime)); err == nil {
+		t.Fatal("previous key bypassed expiry")
+	}
+	if _, err := rotated.decodeHistoryCursor(oldToken+"x", c.Tenant, c.Actor, c.Job, now); err == nil {
+		t.Fatal("tampered previous-key cursor accepted")
+	}
+	for _, pair := range [][2][]byte{{oldKey, oldKey}, {oldKey, {}}, {oldKey, make([]byte, 32)}, {oldKey, make([]byte, 31)}, {nil, newKey}} {
+		if err := (&Server{}).SetHistoryCursorKeys(pair[0], pair[1]); err == nil {
+			t.Fatal("invalid keyring accepted")
+		}
+	}
+	if err := rotated.SetHistoryCursorKeys(oldKey, newKey); err == nil {
+		t.Fatal("initialized keyring changed")
+	}
+}
+
 func TestHistoryCursorKeyConfigurationFailsClosed(t *testing.T) {
 	s := &Server{}
 	for _, key := range [][]byte{nil, make([]byte, 31), make([]byte, 32), make([]byte, 33)} {

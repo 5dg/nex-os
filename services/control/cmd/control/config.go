@@ -15,29 +15,65 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func configureHistoryCursorKey(server *api.Server, path string) error {
+func readHistoryCursorKey(path string) ([]byte, error) {
 	// Check the opened object, not only its name. O_NONBLOCK prevents a
 	// misconfigured FIFO from hanging startup; O_NOFOLLOW rejects a symlink.
 	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
-		return errors.New("history cursor key unavailable")
+		return nil, errors.New("history cursor key unavailable")
 	}
 	f := os.NewFile(uintptr(fd), "history cursor key")
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil || !info.Mode().IsRegular() || (info.Mode().Perm() != 0400 && info.Mode().Perm() != 0600) || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
-		return errors.New("private history cursor key required")
+		return nil, errors.New("private history cursor key required")
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || stat.Uid != uint32(os.Geteuid()) {
-		return errors.New("private history cursor key owner required")
+		return nil, errors.New("private history cursor key owner required")
 	}
 	key, err := io.ReadAll(io.LimitReader(f, 33))
 	if err != nil || len(key) != 32 {
-		return errors.New("history cursor key unavailable")
+		clear(key)
+		return nil, errors.New("history cursor key unavailable")
+	}
+	return key, nil
+}
+
+func configureHistoryCursorKeys(server *api.Server, path string, previousPath *string) error {
+	key, err := readHistoryCursorKey(path)
+	if err != nil {
+		return err
 	}
 	defer clear(key)
-	return server.SetHistoryCursorKey(key)
+	var previous []byte
+	if previousPath != nil {
+		previous, err = readHistoryCursorKey(*previousPath)
+		if err != nil {
+			return err
+		}
+		defer clear(previous)
+	}
+	return server.SetHistoryCursorKeys(key, previous)
+}
+
+func configureHistoryCursorKey(server *api.Server, path string) error {
+	return configureHistoryCursorKeys(server, path, nil)
+}
+
+func configureHistoryCursorEnvironment(server *api.Server) error {
+	path, present := os.LookupEnv("NEX_HISTORY_CURSOR_KEY_FILE")
+	previous, hasPrevious := os.LookupEnv("NEX_HISTORY_CURSOR_PREVIOUS_KEY_FILE")
+	if hasPrevious && !present {
+		return errors.New("current history cursor key required")
+	}
+	if !present {
+		return nil
+	}
+	if hasPrevious {
+		return configureHistoryCursorKeys(server, path, &previous)
+	}
+	return configureHistoryCursorKey(server, path)
 }
 
 func poolConfig(raw string, profile trust.Profile, command string) (*pgxpool.Config, error) {

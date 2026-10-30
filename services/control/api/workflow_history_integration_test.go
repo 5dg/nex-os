@@ -171,26 +171,26 @@ func TestHistoryPaginationIntegration(t *testing.T) {
 	if _, err = rand.Read(cursorKey); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.SetHistoryCursorKey(cursorKey); err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(s.Handler())
-	defer server.Close()
-	newReplica := func(key []byte) *httptest.Server {
-		t.Helper()
-		replica := &Server{DB: db, Auth: verifier, Policy: guard.New(policyURL), Environment: "development", EvidenceRPC: broker.NewClient(signer.URL+"/append/control", "evidence.append.control", writerKey), EvidencePublic: public}
-		if err := replica.SetHistoryCursorKey(key); err != nil {
-			t.Fatal(err)
-		}
-		return httptest.NewServer(replica.Handler())
-	}
-	second := newReplica(cursorKey)
-	defer second.Close()
 	rotatedKey := make([]byte, 32)
 	if _, err = rand.Read(rotatedKey); err != nil {
 		t.Fatal(err)
 	}
-	rotated := newReplica(rotatedKey)
+	if err = s.SetHistoryCursorKeys(cursorKey, rotatedKey); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(s.Handler())
+	defer server.Close()
+	newReplica := func(key, previous []byte) *httptest.Server {
+		t.Helper()
+		replica := &Server{DB: db, Auth: verifier, Policy: guard.New(policyURL), Environment: "development", EvidenceRPC: broker.NewClient(signer.URL+"/append/control", "evidence.append.control", writerKey), EvidencePublic: public}
+		if err := replica.SetHistoryCursorKeys(key, previous); err != nil {
+			t.Fatal(err)
+		}
+		return httptest.NewServer(replica.Handler())
+	}
+	second := newReplica(rotatedKey, cursorKey)
+	defer second.Close()
+	rotated := newReplica(rotatedKey, nil)
 	defer rotated.Close()
 	requestTo := func(destination *httptest.Server, subject, method, path string, body any, want int) []byte {
 		t.Helper()
@@ -349,6 +349,16 @@ func TestHistoryPaginationIntegration(t *testing.T) {
 	var replicaPage historyWirePage
 	if json.Unmarshal(rawReplica, &replicaPage) != nil || !reflect.DeepEqual(replicaPage.Events, replayed.Events) {
 		t.Fatal("replica continuation changed the signed snapshot")
+	}
+	newFirst := requestTo(second, "alice", "GET", path+"/events?page=1", nil, 200)
+	var newPage historyWirePage
+	if json.Unmarshal(newFirst, &newPage) != nil || newPage.Cursor == "" {
+		t.Fatal("new-key replica must issue a continuation")
+	}
+	newContinuation := requestTo(server, "alice", "GET", path+"/events?page=1&cursor="+url.QueryEscape(newPage.Cursor), nil, 200)
+	var newNext historyWirePage
+	if json.Unmarshal(newContinuation, &newNext) != nil || len(newNext.Events) == 0 {
+		t.Fatal("prepared old-key replica rejected the new-key continuation")
 	}
 	rawRotated := requestTo(rotated, "alice", "GET", query, nil, 400)
 	var denied struct {

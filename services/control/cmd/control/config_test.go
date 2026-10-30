@@ -86,6 +86,63 @@ func TestHistoryCursorKeyRequiresPrivateOwnedRegularFile(t *testing.T) {
 	}
 }
 
+func TestHistoryCursorKeyringEnvironmentRequiresBothPrivateDistinctFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "private-ring")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	current, previous := filepath.Join(dir, "current"), filepath.Join(dir, "previous")
+	if err := os.WriteFile(current, bytes.Repeat([]byte{0x13}, 32), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(previous, bytes.Repeat([]byte{0x24}, 32), 0400); err != nil {
+		t.Fatal(err)
+	}
+	old, wasSet := os.LookupEnv("NEX_HISTORY_CURSOR_KEY_FILE")
+	if err := os.Unsetenv("NEX_HISTORY_CURSOR_KEY_FILE"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if wasSet {
+			_ = os.Setenv("NEX_HISTORY_CURSOR_KEY_FILE", old)
+		} else {
+			_ = os.Unsetenv("NEX_HISTORY_CURSOR_KEY_FILE")
+		}
+	})
+	t.Setenv("NEX_HISTORY_CURSOR_PREVIOUS_KEY_FILE", previous)
+	if err := configureHistoryCursorEnvironment(&api.Server{}); err == nil {
+		t.Fatal("previous key without current accepted")
+	}
+	t.Setenv("NEX_HISTORY_CURSOR_KEY_FILE", current)
+	if err := configureHistoryCursorEnvironment(&api.Server{}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NEX_HISTORY_CURSOR_PREVIOUS_KEY_FILE", current)
+	if err := configureHistoryCursorEnvironment(&api.Server{}); err == nil {
+		t.Fatal("duplicate keys accepted")
+	}
+	t.Setenv("NEX_HISTORY_CURSOR_PREVIOUS_KEY_FILE", "")
+	if err := configureHistoryCursorEnvironment(&api.Server{}); err == nil {
+		t.Fatal("empty previous key path accepted")
+	}
+	if err := os.Chmod(previous, 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NEX_HISTORY_CURSOR_PREVIOUS_KEY_FILE", previous)
+	if err := configureHistoryCursorEnvironment(&api.Server{}); err == nil {
+		t.Fatal("public previous key accepted")
+	}
+	if err := os.Chmod(previous, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(previous, bytes.Repeat([]byte{0x24}, 31), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureHistoryCursorEnvironment(&api.Server{}); err == nil {
+		t.Fatal("short previous key accepted")
+	}
+}
+
 func TestQualificationDatabaseRequiresVerifiedBoundedMinimalIdentity(t *testing.T) {
 	ca, e := pki.NewAuthority("database-test")
 	if e != nil {
