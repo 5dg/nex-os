@@ -51,6 +51,35 @@ async function authorizedSession(request: Request, mutate: boolean, enforceAssur
       if (!value.assurance) throw new Error("Production identity denied");
       validateVerifiedProductionIdentity(policy, value.assurance as Record<string, unknown>, value.actor, Math.floor(Date.now() / 1000));
     }
+    // The login snapshot binds this browser session to one identity. The
+    // resource server is authoritative for current membership, delegation and
+    // permissions; never present or use a stale snapshot as current authority.
+    let current: Response;
+    try {
+      current = await verifiedRequest(new URL("/v1/me", workspaceConfig().control), "control", {
+        headers: { Accept: "application/json", Authorization: "Bearer " + value.accessToken }, signal: AbortSignal.timeout(10_000),
+      });
+    }
+    catch { throw new Error("Current identity unavailable"); }
+    if (current.status === 401 || current.status === 403) {
+      await sessions().close(value.id);
+      throw new Error("Session required");
+    }
+    if (current.status !== 200) throw new Error("Current identity unavailable");
+    let actor: Actor;
+    try { actor = await current.json() as Actor; }
+    catch { throw new Error("Current identity unavailable"); }
+    const bounded = (item: unknown, allowEmpty = false): item is string => typeof item === "string" && item.length <= 1024 && (allowEmpty || item.length > 0);
+    if (!actor || !bounded(actor.issuer) || !bounded(actor.subject) || !bounded(actor.user_id) || !bounded(actor.tenant_id) || !bounded(actor.delegation_id, true) || !Array.isArray(actor.permissions) || actor.permissions.length > 256 || !actor.permissions.every(item => bounded(item))) throw new Error("Current identity unavailable");
+    if (actor.issuer !== value.actor.issuer || actor.subject !== value.actor.subject || actor.user_id !== value.actor.user_id || actor.tenant_id !== value.actor.tenant_id) {
+      await sessions().close(value.id);
+      throw new Error("Session required");
+    }
+    // Control can be slow. A completed logout or expiry during that request
+    // must not leave the earlier session snapshot usable afterward.
+    if (!(await sessions().get(value.id))) throw new Error("Session required");
+    if (policy && value.assurance) validateVerifiedProductionIdentity(policy, value.assurance as Record<string, unknown>, actor, Math.floor(Date.now() / 1000));
+    return { ...value, actor: { issuer: actor.issuer, subject: actor.subject, user_id: actor.user_id, tenant_id: actor.tenant_id, delegation_id: actor.delegation_id, permissions: [...actor.permissions] } };
   }
   return value;
 }
@@ -121,7 +150,7 @@ export async function sessionView(request: Request): Promise<Response> {
     const value = await requireSession(request, false);
     return noStore({ profile: "synthetic-qualification", authenticated: true, subject: value.actor.subject, user_id: value.actor.user_id, can_request_review: Boolean(value.actor.delegation_id), can_approve: value.actor.permissions.includes("approval.decide"), csrf_token: value.csrf, expires_at: new Date(value.expires).toISOString() });
   } catch (error) {
-    if (error instanceof Error && (error.message === "Session store unavailable" || error.message.startsWith("Session configuration") || error.message.startsWith("Identity policy configuration"))) return noStore({ code: "AUTHENTICATION_UNAVAILABLE" }, 503);
+    if (error instanceof Error && (error.message === "Session store unavailable" || error.message === "Current identity unavailable" || error.message.startsWith("Session configuration") || error.message.startsWith("Identity policy configuration"))) return noStore({ code: "AUTHENTICATION_UNAVAILABLE" }, 503);
     return noStore({ profile: "synthetic-qualification", authenticated: false }, 401);
   }
 }

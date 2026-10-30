@@ -11,6 +11,7 @@ import { SessionStore, sessions, cookie, cookieHeader, SESSION_COOKIE, LOGIN_COO
 import { requireSession, sessionView, logout } from '../lib/auth.ts';
 import { qualificationWorkflow } from '../lib/workflow.ts';
 import { profile } from '../lib/profile.ts';
+import { startControlFixture } from './control-fixture.mjs';
 
 const actor = { issuer: 'https://issuer.nex.test:9444', subject: 'alice', user_id: 'alice', tenant_id: 'tenant-a', delegation_id: 'delegation-alice', permissions: ['document.read', 'model.invoke'] };
 
@@ -89,8 +90,9 @@ test('qualification sessions enforce origin/CSRF, omit tokens and cannot select 
   const privateDER = Buffer.from(await crypto.subtle.exportKey('pkcs8', ownKeys.privateKey));
   const keyPEM = `-----BEGIN PRIVATE KEY-----\n${privateDER.toString('base64').match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----`;
   const put = (name, content) => { const path = join(directory, name); writeFileSync(path, content, { mode: 0o600 }); return path; };
+  const control = await startControlFixture(t, root, rootKeys, actor, 'PRIVATE_ACCESS_TOKEN_NOT_FOR_BROWSER');
   const previous = { ...process.env };
-  const values = { APP_ENV: 'development', NEX_PROFILE: 'synthetic-qualification', WORKSPACE_ORIGIN: 'https://workspace.nex.test:9443', OIDC_ISSUER: actor.issuer, OIDC_AUDIENCE: 'nex-api', OIDC_CLIENT_ID: 'nex-workspace', OIDC_REQUIRED_SCOPE: 'nex:access', OIDC_REDIRECT_URI: 'https://workspace.nex.test:9443/auth/callback', CONTROL_URL: 'https://control:8443', NEX_TLS_CA_FILE: put('ca.pem', root.toString('pem')), NEX_TLS_CERT_FILE: put('cert.pem', own.toString('pem')), NEX_TLS_KEY_FILE: put('key.pem', keyPEM), OIDC_CLIENT_SECRET_FILE: put('client-secret', 'synthetic-confidential-client-secret') };
+  const values = { APP_ENV: 'development', NEX_PROFILE: 'synthetic-qualification', WORKSPACE_ORIGIN: 'https://workspace.nex.test:9443', OIDC_ISSUER: actor.issuer, OIDC_AUDIENCE: 'nex-api', OIDC_CLIENT_ID: 'nex-workspace', OIDC_REQUIRED_SCOPE: 'nex:access', OIDC_REDIRECT_URI: 'https://workspace.nex.test:9443/auth/callback', CONTROL_URL: control.url, NEX_TLS_CA_FILE: put('ca.pem', root.toString('pem')), NEX_TLS_CERT_FILE: put('cert.pem', own.toString('pem')), NEX_TLS_KEY_FILE: put('key.pem', keyPEM), OIDC_CLIENT_SECRET_FILE: put('client-secret', 'synthetic-confidential-client-secret') };
   Object.assign(process.env, values); t.after(() => { for (const key of Object.keys(values)) { if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key]; } });
   assert.ok(workspaceConfig());
   const value = sessions().open(actor, 'PRIVATE_ACCESS_TOKEN_NOT_FOR_BROWSER', Date.now() + 120_000, Date.now() + 120_000);

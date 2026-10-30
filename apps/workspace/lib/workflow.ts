@@ -22,7 +22,7 @@ async function boundedJSON(request: Request): Promise<Record<string, unknown>> {
 export async function qualificationWorkflow(request: Request): Promise<Response> {
   let session;
   try { session = await requireSession(request, true); } catch (error) {
-    if (error instanceof Error && (error.message === "Session store unavailable" || error.message.startsWith("Session configuration") || error.message.startsWith("Identity policy configuration"))) return noStore({ code: "AUTHENTICATION_UNAVAILABLE" }, 503);
+    if (error instanceof Error && (error.message === "Session store unavailable" || error.message === "Current identity unavailable" || error.message.startsWith("Session configuration") || error.message.startsWith("Identity policy configuration"))) return noStore({ code: "AUTHENTICATION_UNAVAILABLE" }, 503);
     return noStore({ code: error instanceof Error && error.message === "Session required" ? "UNAUTHENTICATED" : "SESSION_OR_CSRF_DENIED" }, error instanceof Error && error.message === "Session required" ? 401 : 403);
   }
   let input: Record<string, unknown>;
