@@ -410,8 +410,16 @@ fn payload_digest(payload: &serde_json::Value, kind: &str) -> Result<String, Sta
 // Result access is only offered for v3 manifests. Unlike the historical
 // digest function above, this boundary must not accept a v2 or unversioned
 // payload even when its own digest is internally consistent.
-fn result_v3_payload_matches(payload: &serde_json::Value, kind: &str, digest: &str) -> bool {
+fn result_v3_payload_matches(
+    payload: &serde_json::Value,
+    kind: &str,
+    digest: &str,
+    operation: &str,
+    tenant: &str,
+) -> bool {
     payload.get("manifest_version").and_then(|v| v.as_u64()) == Some(3)
+        && payload.get("operation_id").and_then(|v| v.as_str()) == Some(operation)
+        && payload.get("tenant_id").and_then(|v| v.as_str()) == Some(tenant)
         && payload_digest(payload, kind).is_ok_and(|computed| computed == digest)
 }
 fn field_digest(domain: &[u8], fields: &[String]) -> String {
@@ -886,7 +894,13 @@ pub async fn result_access(
         || manifest.get("kind").and_then(|v| v.as_str()) != Some(kind)
         || manifest.get("payload_digest").and_then(|v| v.as_str())
             != Some(r.request_digest.as_str())
-        || !result_v3_payload_matches(&payload, kind, &r.request_digest)
+        || !result_v3_payload_matches(
+            &payload,
+            kind,
+            &r.request_digest,
+            &r.operation_id,
+            &claims.tenant_id,
+        )
         || context_digest(&manifest) != op.get::<_, String>("context_digest")
         || source.get("job_id").and_then(|v| v.as_str()) != Some(j.get::<_, String>("id").as_str())
         || source.get("tenant_id").and_then(|v| v.as_str()) != Some(claims.tenant_id.as_str())
@@ -1222,16 +1236,48 @@ mod tests {
             let kind = vector["kind"].as_str().unwrap();
             let mut payload = vector["payload"].clone();
             let digest = vector["digest"].as_str().unwrap();
-            assert!(result_v3_payload_matches(&payload, kind, digest));
+            let operation = payload["operation_id"].as_str().unwrap().to_owned();
+            let tenant = payload["tenant_id"].as_str().unwrap().to_owned();
+            assert!(result_v3_payload_matches(
+                &payload, kind, digest, &operation, &tenant
+            ));
+            payload["operation_id"] = serde_json::json!("other-operation");
+            let other_operation_digest = payload_digest(&payload, kind).unwrap();
+            assert!(!result_v3_payload_matches(
+                &payload,
+                kind,
+                &other_operation_digest,
+                &operation,
+                &tenant
+            ));
+            payload["operation_id"] = serde_json::json!(operation.clone());
+            payload["tenant_id"] = serde_json::json!("other-tenant");
+            let other_tenant_digest = payload_digest(&payload, kind).unwrap();
+            assert!(!result_v3_payload_matches(
+                &payload,
+                kind,
+                &other_tenant_digest,
+                &operation,
+                &tenant
+            ));
+            payload["tenant_id"] = serde_json::json!(tenant.clone());
             payload["manifest_version"] = serde_json::json!(2);
             let legacy_digest = payload_digest(&payload, kind).unwrap();
-            assert!(!result_v3_payload_matches(&payload, kind, &legacy_digest));
+            assert!(!result_v3_payload_matches(
+                &payload,
+                kind,
+                &legacy_digest,
+                &operation,
+                &tenant
+            ));
             payload.as_object_mut().unwrap().remove("manifest_version");
             let unversioned_digest = payload_digest(&payload, kind).unwrap();
             assert!(!result_v3_payload_matches(
                 &payload,
                 kind,
-                &unversioned_digest
+                &unversioned_digest,
+                &operation,
+                &tenant
             ));
         }
         assert!(checked >= 2, "both model and export v3 vectors required");
