@@ -50,8 +50,9 @@ func LocalRoles(ctx context.Context, db *pgxpool.Pool, directory string) error {
 		`GRANT UPDATE(lock_version) ON question_catalogue,document_admissions TO nex_guard`,
 		`GRANT UPDATE(approved_at,rejected_at,approver_id,consumed_at,consumed_operation_id) ON approvals TO nex_guard`,
 		`GRANT UPDATE(state,phase,error_code,answer,provider,export_id,review_operation_id) ON jobs TO nex_guard`,
-		`GRANT UPDATE(status,result,completed_at) ON execution_operations TO nex_guard`,
+		`GRANT UPDATE(status,result,completed_at,qualification_receiver_cert_sha256) ON execution_operations TO nex_guard`,
 		`GRANT INSERT ON audit_events TO nex_control,nex_guard`,
+		`GRANT INSERT(event_id,tenant_id,job_id,operation_id,event_bytes,event_sha256) ON committed_reconciliation_outbox TO nex_control`,
 		`GRANT UPDATE(integrity_reference) ON audit_events TO nex_control,nex_guard`,
 	}
 	for _, statement := range statements {

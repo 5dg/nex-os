@@ -89,7 +89,7 @@ def second_admission(candidate, first, first_digest, policy, current_docker):
             "minimum_free": {filesystem: estimate + 2 * GIB for filesystem, estimate in estimates.items()}}
 
 
-IMAGE_ROLES = {'control', 'guard', 'fixtures', 'workspace', 'postgres'}
+IMAGE_ROLES = {'control', 'guard', 'fixtures', 'workspace', 'postgres', 'opa'}
 
 
 def image_forecast(role, budgets):

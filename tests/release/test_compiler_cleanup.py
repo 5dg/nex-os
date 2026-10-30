@@ -100,7 +100,7 @@ class CompilerCleanupTests(unittest.TestCase):
         # When the test coordinator is root, run this fixture as an unprivileged
         # uid. A plain rmtree must reproduce the hosted permission error first.
         source=self.root/'fixture-scripts';source.mkdir(mode=0o755)
-        for name in ('canonical-build.py','candidate.py','source_record.py','image_record.py','resource_admission.py'):
+        for name in ('canonical-build.py','canonical_image.py','opa_image.py','candidate.py','source_record.py','image_record.py','image_archive.py','resource_admission.py'):
             shutil.copy2(SCRIPTS/name,source/name)
             (source/name).chmod(0o644)
         script=self.root/'nonroot.py'

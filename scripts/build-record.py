@@ -71,7 +71,7 @@ else:
     record = json.loads(path.read_text())
     if record['inputs'] != inputs():
         raise SystemExit('Build inputs changed during compilation; freeze source and rebuild.')
-    names = ['control', 'dev-issuer', 'model', 'executor', 'worker', 'evidence', 'guard-kernel']
+    names = ['control', 'dev-issuer', 'model', 'executor', 'worker', 'evidence', 'policy-edge', 'guard-kernel']
     if os.environ.get('NEX_BUILD_QUALIFICATION_FIXTURES') == '1':
         names += ['qualification-edge', 'qualification-policy-edge', 'qualification-pki', 'qualification-issuer']
         record['build_mode'] = 'local-host-synthetic-qualification'

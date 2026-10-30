@@ -20,10 +20,25 @@ run `go run ./services/guard-kernel/tests/synthetic_prepare.go pki`. It refuses
 an existing directory and generates a fresh synthetic CA and workload keys.
 Start an isolated OPA service with that PKI's `opa` identity and the repository
 Guard policy; supply its authenticated HTTPS URL in `NEX_RESULT_TEST_OPA_URL`.
+Start the synthetic Go evidence service with the generated `evidence` identity,
+its fresh `evidence-control.key`, `evidence-kernel.key` and `evidence-seed.key`,
+and a new private journal directory. Configure `APP_ENV=development`,
+`NEX_PROFILE=synthetic-qualification`, the corresponding `NEX_TLS_*` files,
+`EVIDENCE_KEY_FILE`, `KERNEL_EVIDENCE_KEY_FILE`, `SIGNING_SEED_FILE`, and
+`EVIDENCE_DIR` set to the fresh PKI directory's `journal` subdirectory. Supply
+its verified `https://evidence:8084` URL in `NEX_RESULT_TEST_EVIDENCE_URL` and
+the independently invoked Go evidence binary's absolute host path in
+`NEX_RESULT_TEST_EVIDENCE_BINARY`. The test verifies the retained journal with
+the generated public key, compares each proof to the committed Guard audit row,
+and saves a `journal-verification.json` receipt without overwriting an existing
+file. Retain the journal and public key. The test Guard reads its kernel
+capability and public key from the fresh PKI directory; never reuse customer
+credentials. This verification does not independently anchor against rollback.
 The coordinator must retain its own resource receipts and stop only its stack.
 If the runner inherits a proxy, preserve its settings and append the private
-`opa` and `postgres` names to its existing `NO_PROXY` and `no_proxy` lists.
-Guard's HTTP client otherwise may send the private OPA request to the proxy.
+`opa`, `postgres`, and `evidence` names to its existing `NO_PROXY` and
+`no_proxy` lists. Guard's HTTP client otherwise may send a private service
+request to the proxy.
 
 Set `NEX_RESULT_TEST_ADMIN_DSN` and `NEX_RESULT_TEST_GUARD_DSN` to the separate
 admin and restricted login URLs and run `go run ./services/guard-kernel/tests/synthetic_prepare.go database`.
@@ -32,8 +47,9 @@ logins. It installs synthetic authority state and a vector-derived v3 operation;
 the fixture manifest is inserted by the synthetic administrator and does not
 establish a trusted production Guard manifest-issuance path. The test changes
 operation status directly through the synthetic administrator to exercise the
-phase matrix; it does not exercise normal Guard effect authorization, prove a
-real receipt state, or establish an actual claimant or fence.
+phase matrix. A separate synthetic job uses real Guard preparation and races two
+same-role TLS certificates through Guard authorization, with real OPA and
+fixture-signed evidence. It does not prove a production receipt or recovery fence.
 
 Set `NEX_TLS_CA_FILE`, `NEX_TLS_CERT_FILE`, and `NEX_TLS_KEY_FILE` to the new
 PKI's CA and `guard/tls.crt`, `guard/tls.key`. Set
@@ -50,3 +66,13 @@ production profile.
 Every run requires independently reviewed and frozen source, dependencies,
 credentials, resource budget and isolated orchestration. Record the actual
 test execution and outcome; do not treat a skipped test as a pass.
+
+The fixture also issues two distinct model certificates with the same workload
+role. It sets synthetic operation state using the fixture administrator to test
+that Guard reports a foreign, rotated or historical unbound receiver as unknown
+and rejects completion. A completed operation bound to the original leaf can be
+acknowledged again by that leaf. A separate job tests concurrent real Guard
+authorization without invoking a provider. These checks do not establish
+per-instance identity or an effect-spanning recovery fence. A certificate
+replacement during an in-flight operation requires separately authorized
+reconciliation, never automatic claim transfer or historical backfill.

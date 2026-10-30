@@ -1,0 +1,733 @@
+--- a/go.mod
++++ b/go.mod
+@@ -1,6 +1,6 @@
+ module github.com/open-policy-agent/opa
+ 
+-go 1.26.0
++go 1.26.10
+ 
+ require (
+ 	github.com/agnivade/levenshtein v1.2.1
+@@ -16,7 +16,7 @@
+ 	github.com/hashicorp/golang-lru/v2 v2.0.7
+ 	github.com/huandu/go-sqlbuilder v1.43.0
+ 	github.com/klauspost/compress v1.20.0
+-	github.com/lestrrat-go/jwx/v3 v3.3.0
++	github.com/lestrrat-go/jwx/v4 v4.6.0
+ 	github.com/olekukonko/tablewriter v1.1.5
+ 	github.com/opencontainers/go-digest v1.0.0
+ 	github.com/opencontainers/image-spec v1.1.1
+@@ -45,9 +45,9 @@
+ 	go.opentelemetry.io/otel/trace v1.46.0
+ 	go.opentelemetry.io/proto/otlp v1.11.0
+ 	go.yaml.in/yaml/v3 v3.0.5
+-	golang.org/x/sync v0.23.0
+-	golang.org/x/term v0.46.0
+-	golang.org/x/text v0.42.0
++	golang.org/x/sync v0.24.0
++	golang.org/x/term v0.47.0
++	golang.org/x/text v0.43.0
+ 	golang.org/x/time v0.16.0
+ 	google.golang.org/grpc v1.84.0
+ 	google.golang.org/protobuf v1.36.12
+@@ -63,13 +63,11 @@
+ 	github.com/clipperhouse/displaywidth v0.10.0 // indirect
+ 	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
+ 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
+-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 // indirect
+ 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
+ 	github.com/dustin/go-humanize v1.0.1 // indirect
+ 	github.com/fatih/color v1.18.0 // indirect
+ 	github.com/felixge/httpsnoop v1.1.0 // indirect
+ 	github.com/go-logr/stdr v1.2.2 // indirect
+-	github.com/goccy/go-json v0.10.6 // indirect
+ 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
+ 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
+ 	github.com/huandu/go-clone v1.7.3 // indirect
+@@ -78,12 +76,8 @@
+ 	github.com/kr/pretty v0.3.1 // indirect
+ 	github.com/kr/text v0.2.0 // indirect
+ 	github.com/kylelemons/godebug v1.1.0 // indirect
+-	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
+ 	github.com/lestrrat-go/dsig v1.4.0 // indirect
+-	github.com/lestrrat-go/dsig-secp256k1 v1.0.0 // indirect
+-	github.com/lestrrat-go/httpcc v1.0.1 // indirect
+-	github.com/lestrrat-go/httprc/v3 v3.0.6 // indirect
+-	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
++	github.com/lestrrat-go/option/v3 v3.0.0-alpha1 // indirect
+ 	github.com/mattn/go-colorable v0.1.14 // indirect
+ 	github.com/mattn/go-isatty v0.0.20 // indirect
+ 	github.com/mattn/go-runewidth v0.0.19 // indirect
+@@ -97,16 +91,13 @@
+ 	github.com/rivo/uniseg v0.4.7 // indirect
+ 	github.com/rogpeppe/go-internal v1.16.0 // indirect
+ 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+-	github.com/segmentio/asm v1.2.1 // indirect
+-	github.com/valyala/fastjson v1.6.10 // indirect
+ 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
+ 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+ 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
+-	golang.org/x/crypto v0.57.0 // indirect
+ 	golang.org/x/mod v0.41.0 // indirect
+-	golang.org/x/net v0.60.0 // indirect
+-	golang.org/x/sys v0.48.0 // indirect
+-	golang.org/x/tools v0.49.0 // indirect
++	golang.org/x/net v0.62.0 // indirect
++	golang.org/x/sys v0.49.0 // indirect
++	golang.org/x/tools v0.51.0 // indirect
+ 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
+ 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
+ )
+--- a/go.sum
++++ b/go.sum
+@@ -21,8 +21,6 @@
+ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+-github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1 h1:5RVFMOWjMyRy8cARdy79nAmgYw3hK/4HUq48LQ6Wwqo=
+-github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1/go.mod h1:ZXNYxsqcloTdSy/rNShjYzMhyjf0LaoftYK0p+A3h40=
+ github.com/dgraph-io/badger/v4 v4.9.6 h1:IQqMPVGLNCQr1b4Mu8lHkYm/xyqFRsyKaFEtyLi9CCQ=
+ github.com/dgraph-io/badger/v4 v4.9.6/go.mod h1:Xa9dAupjbwAacupWFCpa6YEn9E1PjBXkfZYr2I/8aWg=
+ github.com/dgraph-io/ristretto/v2 v2.2.0 h1:bkY3XzJcXoMuELV8F+vS8kzNgicwQFAaGINAEJdWGOM=
+@@ -52,8 +50,6 @@
+ github.com/go-logr/stdr v1.2.2/go.mod h1:mMo/vtBO5dYbehREoey6XUKy/eSumjCCveDpRre4VKE=
+ github.com/gobwas/glob v1.0.0 h1:p+FKbLEIsK1yZ39/OINwFvqNb5oyPY4H8xcy6uYu8dg=
+ github.com/gobwas/glob v1.0.0/go.mod h1:oWCdo522i2P1n/hMXGNWs7yoV4wy/ciZuUIbvKj5rkc=
+-github.com/goccy/go-json v0.10.6 h1:p8HrPJzOakx/mn/bQtjgNjdTcN+/S6FcG2CTtQOrHVU=
+-github.com/goccy/go-json v0.10.6/go.mod h1:oq7eo15ShAhp70Anwd5lgX2pLfOS3QCiwU/PULtXL6M=
+ github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
+ github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
+ github.com/google/flatbuffers v25.2.10+incompatible h1:F3vclr7C3HpB1k9mxCGRMXq6FdUalZ6H/pNX4FP1v0Q=
+@@ -91,20 +87,12 @@
+ github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
+ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
+ github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
+-github.com/lestrrat-go/blackmagic v1.0.4 h1:IwQibdnf8l2KoO+qC3uT4OaTWsW7tuRQXy9TRN9QanA=
+-github.com/lestrrat-go/blackmagic v1.0.4/go.mod h1:6AWFyKNNj0zEXQYfTMPfZrAXUWUfTIZ5ECEUEJaijtw=
+ github.com/lestrrat-go/dsig v1.4.0 h1:g7LUjK8cT74A5DzBXJI5HzsJuLhoYN0Wzj4nuOMIrH8=
+ github.com/lestrrat-go/dsig v1.4.0/go.mod h1:I8Nddg/vN2cUl/h8N7SRRApLnNNeyZPIqLYpvpOtGGo=
+-github.com/lestrrat-go/dsig-secp256k1 v1.0.0 h1:JpDe4Aybfl0soBvoVwjqDbp+9S1Y2OM7gcrVVMFPOzY=
+-github.com/lestrrat-go/dsig-secp256k1 v1.0.0/go.mod h1:CxUgAhssb8FToqbL8NjSPoGQlnO4w3LG1P0qPWQm/NU=
+-github.com/lestrrat-go/httpcc v1.0.1 h1:ydWCStUeJLkpYyjLDHihupbn2tYmZ7m22BGkcvZZrIE=
+-github.com/lestrrat-go/httpcc v1.0.1/go.mod h1:qiltp3Mt56+55GPVCbTdM9MlqhvzyuL6W/NMDA8vA5E=
+-github.com/lestrrat-go/httprc/v3 v3.0.6 h1:4FpLQ18KK/ypPbVU3NLWJNRvH3kcYiqKqWfKGqNWxxI=
+-github.com/lestrrat-go/httprc/v3 v3.0.6/go.mod h1:mSMtkZW92Z98M5YoNNztbRGxbXHql7tSitCvaxvo9l0=
+-github.com/lestrrat-go/jwx/v3 v3.3.0 h1:OXcYvQOQ7cxWzeZ/Q9sYk8ABe/kCSI371WmuACiCT+4=
+-github.com/lestrrat-go/jwx/v3 v3.3.0/go.mod h1:eIJhDcKHBwcgxqv8RiIylV67TVl1wJp/265IAHY1Db8=
+-github.com/lestrrat-go/option/v2 v2.0.0 h1:XxrcaJESE1fokHy3FpaQ/cXW8ZsIdWcdFzzLOcID3Ss=
+-github.com/lestrrat-go/option/v2 v2.0.0/go.mod h1:oSySsmzMoR0iRzCDCaUfsCzxQHUEuhOViQObyy7S6Vg=
++github.com/lestrrat-go/jwx/v4 v4.6.0 h1:Gq/JIOqNb/Fl3Oug5Ylfu/OUNLAnXQM+A8dMOPn4OIc=
++github.com/lestrrat-go/jwx/v4 v4.6.0/go.mod h1:QOCcs9ZL83fD8Abq9mDXLrLT0ObfyINsISiW03PZPMs=
++github.com/lestrrat-go/option/v3 v3.0.0-alpha1 h1:dvdzLwm/Ba5CJUF3jQP7w/iNYSLfy7yyh9XXNa1WjxI=
++github.com/lestrrat-go/option/v3 v3.0.0-alpha1/go.mod h1:5KSg20dfsKkNJtjDmaQRLZVXuUrzuCCcz/gbDK0pfKk=
+ github.com/mattn/go-colorable v0.1.14 h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHPsaIE=
+ github.com/mattn/go-colorable v0.1.14/go.mod h1:6LmQG8QLFO4G5z1gPvYEzlUgJ2wF+stgPZH1UqBm1s8=
+ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
+@@ -148,8 +136,6 @@
+ github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
+ github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 h1:1EYB5IzjZawrrnELUi78f9fPu57HuXjmddZPjrls/28=
+ github.com/santhosh-tekuri/jsonschema/v6 v6.0.3/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
+-github.com/segmentio/asm v1.2.1 h1:DTNbBqs57ioxAD4PrArqftgypG4/qNpXoJx8TVXxPR0=
+-github.com/segmentio/asm v1.2.1/go.mod h1:BqMnlJP91P8d+4ibuonYZw9mfnzI9HfxselHZr5aAcs=
+ github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
+ github.com/sergi/go-diff v1.4.0/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
+ github.com/sirupsen/logrus v1.10.2 h1:G2SED73/qrAu6YwbdxOD6peLkCBI3z7L+ykJFTXJBBo=
+@@ -172,8 +158,6 @@
+ github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
+ github.com/tetratelabs/wazero v1.12.0 h1:DuWcpNu/FzgEXgGBDp8J1Spc+CWOvvtvVyjKlaZopYU=
+ github.com/tetratelabs/wazero v1.12.0/go.mod h1:LvKtzl2RqO4gyF27BiXU+nKAjcV8f38U+kP/q2vgxh0=
+-github.com/valyala/fastjson v1.6.10 h1:/yjJg8jaVQdYR3arGxPE2X5z89xrlhS0eGXdv+ADTh4=
+-github.com/valyala/fastjson v1.6.10/go.mod h1:e6FubmQouUNP73jtMLmcbxS6ydWIpOfhz34TSfO3JaE=
+ github.com/vektah/gqlparser/v2 v2.5.58 h1:yHxQ3EjU2OGuDMh6noxxmZova1HkBM3CbdGtL+rvjOc=
+ github.com/vektah/gqlparser/v2 v2.5.58/go.mod h1:9O4Ox6Ngd3Y12bMD3w6i3CRQXh8W1oC1q0m6olCymDM=
+ github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb h1:zGWFAtiMcyryUHoUjUJX0/lt1H2+i2Ka2n+D3DImSNo=
+@@ -225,10 +209,6 @@
+ golang.org/x/crypto v0.13.0/go.mod h1:y6Z2r+Rw4iayiXXAIxJIDAJ1zMW4yaTpebo8fPOliYc=
+ golang.org/x/crypto v0.14.0/go.mod h1:MVFd36DqK4CsrnJYDkBA3VC4m2GkXAM0PvzMCn4JQf4=
+ golang.org/x/crypto v0.15.0/go.mod h1:4ChreQoLWfG3xLDer1WdlH5NdlQ3+mwnQq1YTKY+72g=
+-golang.org/x/crypto v0.55.0 h1:+KWHjbgOaAQ66dh/YlkZKHlz9ZUlq61AFirAR9ntP8M=
+-golang.org/x/crypto v0.55.0/go.mod h1:uq0V9dE/fzQuJtbnL+2EhWOE63vo164FY8xqEnV9xis=
+-golang.org/x/crypto v0.57.0 h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=
+-golang.org/x/crypto v0.57.0/go.mod h1:Fdz0i5U6CoizGwLda9DttjSk6qlZo25zYNtR+ycvuZA=
+ golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4/go.mod h1:jJ57K6gSWd91VN4djpZkiMVwK6gcyfeH4XE8wZrZaV4=
+ golang.org/x/mod v0.8.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
+ golang.org/x/mod v0.12.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
+@@ -243,18 +223,16 @@
+ golang.org/x/net v0.15.0/go.mod h1:idbUs1IY1+zTqbi8yxTbhexhEEk5ur9LInksu6HrEpk=
+ golang.org/x/net v0.17.0/go.mod h1:NxSsAGuq816PNPmqtQdLE42eU2Fs7NoRIZrHJAlaCOE=
+ golang.org/x/net v0.18.0/go.mod h1:/czyP5RqHAH4odGYxBJ1qz0+CE5WZ+2j1YgoEo8F2jQ=
+-golang.org/x/net v0.58.0 h1:ynWG7rqYi4ccpTEuPZ2QGWHktVEM9DMCj9yzDE0Q7To=
+-golang.org/x/net v0.58.0/go.mod h1:YwCddHnFlT7eLQqVprV19OnhLGtc5xOKgE0RyqgfWAU=
+-golang.org/x/net v0.60.0 h1:79p50tfZlm0J9YfoDsSi639qSXNGVwEzOPLCxM2FsYU=
+-golang.org/x/net v0.60.0/go.mod h1:2DA/G1UfVbCpQPeWTmMPGY7Cs2PkBkwu743bVX5PIVg=
++golang.org/x/net v0.62.0 h1:18ELalfM5+XNRwzM2nYqXsZQ9ByS1uhj2O/U7+5jqRY=
++golang.org/x/net v0.62.0/go.mod h1:WgDCOTH8iwtB66T4/GfI94AHo/hhdb7Hah9NDseQfiI=
+ golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.1.0/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
+ golang.org/x/sync v0.3.0/go.mod h1:FU7BRWz2tNW+3quACPkgCx/L+uEAv1htQ0V83Z9Rj+Y=
+ golang.org/x/sync v0.4.0/go.mod h1:FU7BRWz2tNW+3quACPkgCx/L+uEAv1htQ0V83Z9Rj+Y=
+ golang.org/x/sync v0.5.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
+-golang.org/x/sync v0.23.0 h1:KameEIfc1IkluZyXWLn39Wd4tURc6GbCiISGiZm2bQk=
+-golang.org/x/sync v0.23.0/go.mod h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0=
++golang.org/x/sync v0.24.0 h1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=
++golang.org/x/sync v0.24.0/go.mod h1:sUUOizhqBxiL6pEWpqNLUiaJn1ShEbZ6BBqskPbjZm0=
+ golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
+ golang.org/x/sys v0.0.0-20201119102817-f84b799fce68/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+ golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+@@ -266,8 +244,8 @@
+ golang.org/x/sys v0.12.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.13.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+ golang.org/x/sys v0.14.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+-golang.org/x/sys v0.48.0 h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=
+-golang.org/x/sys v0.48.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
++golang.org/x/sys v0.49.0 h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=
++golang.org/x/sys v0.49.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
+ golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
+ golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
+ golang.org/x/term v0.5.0/go.mod h1:jMB1sMXY+tzblOD4FWmEbocvup2/aLOaQEp7JmGp78k=
+@@ -275,8 +253,8 @@
+ golang.org/x/term v0.12.0/go.mod h1:owVbMEjm3cBLCHdkQu9b1opXd4ETQWc3BhuQGKgXgvU=
+ golang.org/x/term v0.13.0/go.mod h1:LTmsnFJwVN6bCy1rVCoS+qHT1HhALEFxKncY3WNNh4U=
+ golang.org/x/term v0.14.0/go.mod h1:TySc+nGkYR6qt8km8wUhuFRTVSMIX3XPR58y2lC8vww=
+-golang.org/x/term v0.46.0 h1:3+OXuTbaKDgwk8jTi3aSLHRlmWqHEUDUtxnbFigO4YE=
+-golang.org/x/term v0.46.0/go.mod h1:+K02xbkittuwc0Am4abfA3Fc+XRGXkvBXNO88NCXPoc=
++golang.org/x/term v0.47.0 h1:cpyOwQkr2Nzxe2p6KnrTG7Ei2wtzjsuSjhpXXepZ/BM=
++golang.org/x/term v0.47.0/go.mod h1:efAfAuG6RKABvg1ArGebRkvX6LXul14SM67o2e4mUCY=
+ golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
+ golang.org/x/text v0.3.3/go.mod h1:5Zoc/QRtKVWzQhOtBMvqHzDpF6irO9z98xDceosuGiQ=
+ golang.org/x/text v0.3.7/go.mod h1:u+2+/6zg+i71rQMx5EYifcz6MCKuco9NR6JIITiCfzQ=
+@@ -284,8 +262,8 @@
+ golang.org/x/text v0.9.0/go.mod h1:e1OnstbJyHTd6l/uOt8jFFHp6TRDWZR/bV3emEE/zU8=
+ golang.org/x/text v0.13.0/go.mod h1:TvPlkZtksWOMsz7fbANvkp4WM8x/WCo/om8BMLbz+aE=
+ golang.org/x/text v0.14.0/go.mod h1:18ZOQIKpY8NJVqYksKHtTdi31H5itFRjB5/qKTNYzSU=
+-golang.org/x/text v0.42.0 h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=
+-golang.org/x/text v0.42.0/go.mod h1:ojzP1Z+2QtioaF8DTtO8K5q7JWVVYwZKenzujK0Zd0E=
++golang.org/x/text v0.43.0 h1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=
++golang.org/x/text v0.43.0/go.mod h1:hbSIYA/amXcRXTFSZqh8tWHEoqRvvbKPJ2uz/KU+a+s=
+ golang.org/x/time v0.16.0 h1:vMb6ptszcQMkcwiRTAuNNU50gom6++Q/6gY2hDM6VDE=
+ golang.org/x/time v0.16.0/go.mod h1:rVKOqvZeKvrDKTQiAHJ7wmwP0RzleSphoEA9RcdLA0s=
+ golang.org/x/tools v0.0.0-20180917221912-90fa682c2a6e/go.mod h1:n7NCudcB/nEzxVGmLbDWY5pfWTLqBcC2KZ6jyYvM4mQ=
+@@ -294,8 +272,8 @@
+ golang.org/x/tools v0.6.0/go.mod h1:Xwgl3UAJ/d3gWutnCtw505GrjyAbvKui8lOU390QaIU=
+ golang.org/x/tools v0.13.0/go.mod h1:HvlwmtVNQAhOuCjW7xxvovg8wbNq7LwfXh/k7wXUl58=
+ golang.org/x/tools v0.15.0/go.mod h1:hpksKq4dtpQWS1uQ61JkdqWM3LscIS6Slf+VVkm+wQk=
+-golang.org/x/tools v0.49.0 h1:3NI7VXzL9+1WZD52Dx2ttoPwD5DWrFGpl9mFZDlmisI=
+-golang.org/x/tools v0.49.0/go.mod h1:SJNXV9DBKT0UbdttsQjbfJlAE/q+y36++zo3uL3N0Oo=
++golang.org/x/tools v0.51.0 h1:k4Xc/1Om9jwkBJBo4NVLMSARBoWtK10mx+W5BnXCeAI=
++golang.org/x/tools v0.51.0/go.mod h1:9eEncMayCV6zRMGhR5eZEC2iBx98qWcF1HZ9Z7wJOoA=
+ golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
+ gonum.org/v1/gonum v0.17.0 h1:VbpOemQlsSMrYmn7T2OUvQ4dqxQXU+ouZFQsZOx50z4=
+ gonum.org/v1/gonum v0.17.0/go.mod h1:El3tOrEuMpv2UdMrbNlKEh9vd86bmQ6vqIcDwxEOc1E=
+--- a/v1/bundle/keys.go
++++ b/v1/bundle/keys.go
+@@ -13,7 +13,7 @@
+ 	"os"
+ 	"strings"
+ 
+-	"github.com/lestrrat-go/jwx/v3/jwa"
++	"github.com/lestrrat-go/jwx/v4/jwa"
+ 	"github.com/open-policy-agent/opa/v1/keys"
+ 
+ 	"github.com/open-policy-agent/opa/v1/util"
+--- a/v1/bundle/sign.go
++++ b/v1/bundle/sign.go
+@@ -8,9 +8,9 @@
+ import (
+ 	"fmt"
+ 
+-	"github.com/lestrrat-go/jwx/v3/jwa"
+-	"github.com/lestrrat-go/jwx/v3/jwk"
+-	"github.com/lestrrat-go/jwx/v3/jwt"
++	"github.com/lestrrat-go/jwx/v4/jwa"
++	"github.com/lestrrat-go/jwx/v4/jwk"
++	"github.com/lestrrat-go/jwx/v4/jwt"
+ )
+ 
+ const defaultSignerID = "_default"
+@@ -68,7 +68,7 @@
+ 	// In order to sign the token with a kid, we need a key ID _on_ the key
+ 	// (note: we might be able to make this more efficient if we just load
+ 	// the key as a JWK from the start)
+-	jwkKey, err := jwk.Import(privateKey)
++	jwkKey, err := jwk.Import[jwk.Key](privateKey)
+ 	if err != nil {
+ 		return "", fmt.Errorf("failed to import private key: %w", err)
+ 	}
+--- a/v1/bundle/sign_test.go
++++ b/v1/bundle/sign_test.go
+@@ -10,8 +10,9 @@
+ 	"path/filepath"
+ 	"testing"
+ 
+-	"github.com/lestrrat-go/jwx/v3/jwa"
+-	"github.com/lestrrat-go/jwx/v3/jws"
++	"github.com/lestrrat-go/jwx/v4/jwa"
++	"github.com/lestrrat-go/jwx/v4/jws"
++	"github.com/lestrrat-go/jwx/v4/jwt"
+ )
+ 
+ func TestGenerateSignedToken(t *testing.T) {
+@@ -163,8 +164,8 @@
+ 		t.Fatalf("Unexpected error %v", err)
+ 	}
+ 
+-	var gotKid string
+-	if err := token.Get("keyid", &gotKid); err != nil {
++	gotKid, err := jwt.Get[string](token, "keyid")
++	if err != nil {
+ 		t.Fatalf("Expected claim \"keyid\" in token: %s", err)
+ 	}
+ 
+@@ -178,7 +179,7 @@
+ 		t.Fatalf("Unexpected error %v", err)
+ 	}
+ 
+-	if err := token.Get("keyid", &gotKid); err == nil {
++	if _, err := jwt.Get[string](token, "keyid"); err == nil {
+ 		t.Fatal("Unexpected claim \"keyid\" in token")
+ 	}
+ }
+--- a/v1/bundle/verify.go
++++ b/v1/bundle/verify.go
+@@ -14,9 +14,11 @@
+ 	"encoding/pem"
+ 	"errors"
+ 	"fmt"
+-
+-	"github.com/lestrrat-go/jwx/v3/jwa"
+-	"github.com/lestrrat-go/jwx/v3/jws/jwsbb"
++	"strconv"
++	"unicode/utf8"
++
++	"github.com/lestrrat-go/jwx/v4/jwa"
++	"github.com/lestrrat-go/jwx/v4/jws/jwsbb"
+ 	"github.com/open-policy-agent/opa/v1/util"
+ )
+ 
+@@ -115,29 +117,142 @@
+ 	return files, nil
+ }
+ 
++// validEscapedUnicode rejects unpaired surrogate escapes, which the legacy JSON
++// decoder otherwise replaces with the Unicode replacement character.
++func validEscapedUnicode(raw []byte) bool {
++	inString := false
++	for i := 0; i < len(raw); i++ {
++		if raw[i] == '"' {
++			inString = !inString
++			continue
++		}
++		if !inString || raw[i] != '\\' {
++			continue
++		}
++		i++
++		if i >= len(raw) {
++			return false
++		}
++		if raw[i] != 'u' {
++			continue
++		}
++		if i+4 >= len(raw) {
++			return false
++		}
++		value, err := strconv.ParseUint(string(raw[i+1:i+5]), 16, 16)
++		if err != nil {
++			return false
++		}
++		i += 4
++		if value >= 0xdc00 && value <= 0xdfff {
++			return false
++		}
++		if value >= 0xd800 && value <= 0xdbff {
++			if i+6 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
++				return false
++			}
++			low, err := strconv.ParseUint(string(raw[i+3:i+7]), 16, 16)
++			if err != nil || low < 0xdc00 || low > 0xdfff {
++				return false
++			}
++			i += 6
++		}
++	}
++	return !inString
++}
++
++// validateJSONValue rejects duplicate object names at every depth. The decoder
++// compares decoded names, so differently escaped spellings cannot evade it.
++func validateJSONValue(decoder *json.Decoder, depth int, objectRequired bool) error {
++	if depth > 128 {
++		return errors.New("protected header nesting limit exceeded")
++	}
++	token, err := decoder.Token()
++	if err != nil {
++		return err
++	}
++	delim, isDelim := token.(json.Delim)
++	if objectRequired && (!isDelim || delim != '{') {
++		return errors.New("protected header must be an object")
++	}
++	if !isDelim {
++		return nil
++	}
++	switch delim {
++	case '{':
++		seen := make(map[string]struct{})
++		for decoder.More() {
++			name, err := decoder.Token()
++			if err != nil {
++				return err
++			}
++			key, ok := name.(string)
++			if !ok {
++				return errors.New("invalid protected header member")
++			}
++			if _, exists := seen[key]; exists {
++				return errors.New("duplicate protected header member")
++			}
++			seen[key] = struct{}{}
++			if err := validateJSONValue(decoder, depth+1, false); err != nil {
++				return err
++			}
++		}
++		end, err := decoder.Token()
++		if err != nil || end != json.Delim('}') {
++			return errors.New("invalid protected header object")
++		}
++	case '[':
++		for decoder.More() {
++			if err := validateJSONValue(decoder, depth+1, false); err != nil {
++				return err
++			}
++		}
++		end, err := decoder.Token()
++		if err != nil || end != json.Delim(']') {
++			return errors.New("invalid protected header array")
++		}
++	default:
++		return errors.New("invalid protected header delimiter")
++	}
++	return nil
++}
++
+ func verifyJWTSignature(token string, bvc *VerificationConfig) (*DecodedSignature, error) {
+ 	hdrb64, payloadb64, signatureb64, err := jwsbb.SplitCompact(util.StringToByteSlice(token))
+ 	if err != nil {
+ 		return nil, fmt.Errorf("failed to split compact JWT: %w", err)
+ 	}
+ 
+-	// check for the id of the key to use for JWT signature verification
+-	// first in the OPA config. If not found, then check the JWT kid.
++	// Validate the entire protected header even when configuration supplies the
++	// key ID. Reject invalid UTF-8 and duplicate names at every depth, including
++	// names that become identical after unescaping.
++	headerBytes, err := base64.RawURLEncoding.DecodeString(string(hdrb64))
++	if err != nil {
++		return nil, fmt.Errorf("failed to extract key ID from headers: failed to decode source: %w", err)
++	}
++	headerDecoder := json.NewDecoder(bytes.NewReader(headerBytes))
++	headerDecoder.UseNumber()
++	if !utf8.Valid(headerBytes) || !json.Valid(headerBytes) || !validEscapedUnicode(headerBytes) || validateJSONValue(headerDecoder, 0, true) != nil {
++		return nil, errors.New("failed to extract key ID from headers: invalid protected JWT header")
++	}
++	var header map[string]json.RawMessage
++	if err := json.Unmarshal(headerBytes, &header); err != nil {
++		return nil, errors.New("failed to extract key ID from headers: invalid protected JWT header")
++	}
++	var headerAlg string
++	algField := header["alg"]
++	if len(algField) == 0 || algField[0] != '"' || json.Unmarshal(algField, &headerAlg) != nil || headerAlg == "" {
++		return nil, errors.New("failed to extract key ID from headers: invalid protected JWT header")
++	}
+ 	keyID := bvc.KeyID
+-	if keyID == "" {
+-		// Use jwsbb.Header to access into the "kid" header field, which we will
+-		// use to determine the key to use for verification.
+-		hdr := jwsbb.HeaderParseCompact(hdrb64)
+-		v, err := jwsbb.HeaderGetString(hdr, "kid")
+-		switch {
+-		case err == nil:
+-			// err == nils means we found the key ID in the header
++	if kid, present := header["kid"]; present {
++		var v string
++		if len(kid) == 0 || kid[0] != '"' || json.Unmarshal(kid, &v) != nil {
++			return nil, errors.New("failed to extract key ID from headers: invalid protected JWT header")
++		}
++		if keyID == "" {
+ 			keyID = v
+-		case errors.Is(err, jwsbb.ErrHeaderNotFound()):
+-			// no "kid" in the header. no op.
+-		default:
+-			// some other error occurred while trying to extract the key ID
+-			return nil, fmt.Errorf("failed to extract key ID from headers: %w", err)
+ 		}
+ 	}
+ 
+@@ -173,6 +288,9 @@
+ 	alg, ok := jwa.LookupSignatureAlgorithm(keyConfig.Algorithm)
+ 	if !ok {
+ 		return nil, fmt.Errorf("unknown signature algorithm: %s", keyConfig.Algorithm)
++	}
++	if headerAlg != alg.String() {
++		return nil, errors.New("JWT algorithm does not match configured verification key")
+ 	}
+ 
+ 	// Parse the key into the appropriate type
+--- a/v1/bundle/verify_test.go
++++ b/v1/bundle/verify_test.go
+@@ -45,7 +45,7 @@
+ 		"invalid_token_header_json": {
+ 			SignaturesConfig{Signatures: []string{badTokenHeaderJSON}},
+ 			NewVerificationConfig(nil, "", "", nil),
+-			true, errors.New("failed to extract key ID from headers: cannot parse JSON: cannot parse object: cannot parse object value: cannot parse string: missing closing '\"'; unparsed tail: \"\""),
++			true, errors.New("failed to extract key ID from headers: invalid protected JWT header"),
+ 		},
+ 		"bad_token_payload": {
+ 			SignaturesConfig{Signatures: []string{badTokenPayload}},
+--- a/v1/plugins/rest/auth.go
++++ b/v1/plugins/rest/auth.go
+@@ -28,8 +28,8 @@
+ 	"strings"
+ 	"time"
+ 
+-	"github.com/lestrrat-go/jwx/v3/jwa"
+-	"github.com/lestrrat-go/jwx/v3/jws"
++	"github.com/lestrrat-go/jwx/v4/jwa"
++	"github.com/lestrrat-go/jwx/v4/jws"
+ 	"github.com/open-policy-agent/opa/internal/providers/aws"
+ 	"github.com/open-policy-agent/opa/internal/uuid"
+ 	"github.com/open-policy-agent/opa/v1/keys"
+--- a/v1/plugins/rest/rest_test.go
++++ b/v1/plugins/rest/rest_test.go
+@@ -32,8 +32,8 @@
+ 	"testing"
+ 	"time"
+ 
+-	"github.com/lestrrat-go/jwx/v3/jwa"
+-	"github.com/lestrrat-go/jwx/v3/jws"
++	"github.com/lestrrat-go/jwx/v4/jwa"
++	"github.com/lestrrat-go/jwx/v4/jws"
+ 	"github.com/open-policy-agent/opa/internal/providers/aws"
+ 	"github.com/open-policy-agent/opa/v1/bundle"
+ 	"github.com/open-policy-agent/opa/v1/keys"
+--- a/v1/topdown/crypto.go
++++ b/v1/topdown/crypto.go
+@@ -25,7 +25,7 @@
+ 	"strings"
+ 	"time"
+ 
+-	"github.com/lestrrat-go/jwx/v3/jwk"
++	"github.com/lestrrat-go/jwx/v4/jwk"
+ 
+ 	"github.com/open-policy-agent/opa/v1/ast"
+ 	"github.com/open-policy-agent/opa/v1/topdown/builtins"
+@@ -353,7 +353,7 @@
+ 		return iter(ast.InternedNullTerm)
+ 	}
+ 
+-	key, err := jwk.Import(rawKeys[0])
++	key, err := jwk.Import[jwk.Key](rawKeys[0])
+ 	if err != nil {
+ 		return err
+ 	}
+--- a/v1/topdown/tokens.go
++++ b/v1/topdown/tokens.go
+@@ -24,8 +24,8 @@
+ 	"strconv"
+ 	"strings"
+ 
+-	"github.com/lestrrat-go/jwx/v3/jwk"
+-	"github.com/lestrrat-go/jwx/v3/jws/jwsbb"
++	"github.com/lestrrat-go/jwx/v4/jwk"
++	"github.com/lestrrat-go/jwx/v4/jws/jwsbb"
+ 
+ 	"github.com/open-policy-agent/opa/v1/ast"
+ 	"github.com/open-policy-agent/opa/v1/topdown/builtins"
+@@ -381,8 +381,8 @@
+ 		if !ok {
+ 			continue
+ 		}
+-		var key any
+-		if err := jwk.Export(k, &key); err != nil {
++		key, err := jwk.Export[any](k)
++		if err != nil {
+ 			return nil, err
+ 		}
+ 		var alg string
+@@ -1324,7 +1324,9 @@
+ }
+ 
+ func init() {
+-	jwk.Configure(jwk.WithMinRSAPublicExponent(0), jwk.WithMinRSAModulusBits(0))
++	if err := jwk.Settings(jwk.WithMinRSAPublicExponent(0), jwk.WithMinRSAModulusBits(0)); err != nil {
++		panic(err)
++	}
+ 
+ 	// By default, the JWT cache is disabled.
+ 	disabled := true
+--- a/v1/topdown/tokens_bench_test.go
++++ b/v1/topdown/tokens_bench_test.go
+@@ -17,7 +17,7 @@
+ 	"testing"
+ 	"time"
+ 
+-	"github.com/lestrrat-go/jwx/v3/jwk"
++	"github.com/lestrrat-go/jwx/v4/jwk"
+ 
+ 	"github.com/open-policy-agent/opa/v1/ast"
+ 	"github.com/open-policy-agent/opa/v1/topdown/cache"
+@@ -229,8 +229,8 @@
+ 	if err != nil {
+ 		b.Fatal(err)
+ 	}
+-	var raw any
+-	if err := jwk.Export(key, &raw); err != nil {
++	raw, err := jwk.Export[any](key)
++	if err != nil {
+ 		b.Fatal(err)
+ 	}
+ 	pk := raw.(*rsa.PrivateKey)
+--- a/v1/topdown/tokens_test.go
++++ b/v1/topdown/tokens_test.go
+@@ -15,9 +15,9 @@
+ 	"testing"
+ 	"time"
+ 
+-	"github.com/lestrrat-go/jwx/v3/jwa"
+-	"github.com/lestrrat-go/jwx/v3/jwk"
+-	"github.com/lestrrat-go/jwx/v3/jws"
++	"github.com/lestrrat-go/jwx/v4/jwa"
++	"github.com/lestrrat-go/jwx/v4/jwk"
++	"github.com/lestrrat-go/jwx/v4/jws"
+ 	"github.com/open-policy-agent/opa/v1/ast"
+ 	"github.com/open-policy-agent/opa/v1/storage"
+ 	inmem "github.com/open-policy-agent/opa/v1/storage/inmem/test"
+@@ -333,8 +333,7 @@
+ 	if !ok {
+ 		t.Fatal("Failed to get first key")
+ 	}
+-	var key any
+-	err = jwk.Export(jwkKey, &key)
++	key, err := jwk.Export[any](jwkKey)
+ 	if err != nil {
+ 		t.Fatal("Failed to create private key")
+ 	}
+@@ -342,8 +341,7 @@
+ 	if err != nil {
+ 		t.Fatalf("failed to get public key: %v", err)
+ 	}
+-	var rawPublicKey any
+-	err = jwk.Export(publicKey, &rawPublicKey)
++	rawPublicKey, err := jwk.Export[any](publicKey)
+ 	if err != nil {
+ 		t.Fatalf("failed to export public key: %v", err)
+ 	}
+@@ -469,8 +467,7 @@
+ 	if !ok {
+ 		t.Fatal("Failed to get first key")
+ 	}
+-	var key any
+-	err = jwk.Export(jwkKey, &key)
++	key, err := jwk.Export[any](jwkKey)
+ 	if err != nil {
+ 		t.Fatalf("Failed to create private key: %v", err)
+ 	}
+@@ -478,8 +475,7 @@
+ 	if err != nil {
+ 		t.Fatalf("Failed to get public key: %v", err)
+ 	}
+-	var rawPublicKey any
+-	err = jwk.Export(publicKey, &rawPublicKey)
++	rawPublicKey, err := jwk.Export[any](publicKey)
+ 	if err != nil {
+ 		t.Fatalf("failed to export public key: %v", err)
+ 	}
+@@ -1091,8 +1087,8 @@
+ 		return "", errors.New("failed to get first key from JWK set")
+ 	}
+ 
+-	var pk any
+-	if err := jwk.Export(jwkKey, &pk); err != nil {
++	pk, err := jwk.Export[any](jwkKey)
++	if err != nil {
+ 		return "", fmt.Errorf("failed to materialize key: %s", err.Error())
+ 	}
+ 
+--- /dev/null
++++ b/v1/bundle/nex_v4_header_test.go
+@@ -0,0 +1,75 @@
++// Downstream Nex OS diagnostic regression; not part of an upstream release.
++package bundle
++
++import (
++	"crypto/hmac"
++	"crypto/sha256"
++	"encoding/base64"
++	"strings"
++	"testing"
++)
++
++func TestNexRejectSignedMalformedHeader(t *testing.T) {
++	encode := base64.RawURLEncoding.EncodeToString
++	secret := []byte("diagnostic-secret")
++	signed := func(header []byte) string {
++		input := encode(header) + "." + encode([]byte(`{"files":[],"keyid":"foo"}`))
++		mac := hmac.New(sha256.New, secret)
++		_, _ = mac.Write([]byte(input))
++		return input + "." + encode(mac.Sum(nil))
++	}
++	valid := signed([]byte(`{"alg":"HS256","kid":"foo"}`))
++	validNoKID := signed([]byte(`{"alg":"HS256"}`))
++	validEscapedKey := signed([]byte(`{"\u0061lg":"HS256","kid":"foo"}`))
++	validNested := signed([]byte(`{"alg":"HS256","kid":"foo","extension":{"x":1,"y":2}}`))
++	validSurrogatePair := signed([]byte(`{"alg":"HS256","kid":"foo","extension":"\ud83d\ude80"}`))
++	bad := map[string][]byte{
++		"invalid_utf8":            append([]byte(`{"alg":"HS256","kid":"`), 0xff, '"', '}'),
++		"malformed_json":          []byte(`{"alg":"HS256","kid":"foo"`),
++		"duplicate_alg":           []byte(`{"alg":"HS256","alg":"none","kid":"foo"}`),
++		"duplicate_kid":           []byte(`{"alg":"HS256","kid":"foo","kid":"bar"}`),
++		"duplicate_escaped_alg":   []byte(`{"alg":"HS256","\u0061lg":"none","kid":"foo"}`),
++		"duplicate_nested":        []byte(`{"alg":"HS256","kid":"foo","extension":{"x":1,"x":2}}`),
++		"algorithm_confusion":     []byte(`{"alg":"none","kid":"foo"}`),
++		"algorithm_mismatch":      []byte(`{"alg":"RS256","kid":"foo"}`),
++		"missing_algorithm":       []byte(`{"kid":"foo"}`),
++		"non_string_algorithm":    []byte(`{"alg":5,"kid":"foo"}`),
++		"non_string_kid":          []byte(`{"alg":"HS256","kid":5}`),
++		"duplicate_escaped_kid":   []byte(`{"alg":"HS256","kid":"foo","\u006bid":"bar"}`),
++		"unpaired_high_surrogate": []byte(`{"alg":"HS256","kid":"\ud800"}`),
++		"unpaired_low_surrogate":  []byte(`{"alg":"HS256","kid":"\udc00"}`),
++	}
++	keys := map[string]*KeyConfig{"foo": {Key: string(secret), Algorithm: "HS256"}}
++	for _, configuredID := range []string{"", "foo"} {
++		t.Run("configured="+configuredID, func(t *testing.T) {
++			cfg := NewVerificationConfig(keys, configuredID, "", nil)
++			if _, err := VerifyBundleSignature(SignaturesConfig{Signatures: []string{valid}}, cfg); err != nil {
++				t.Fatalf("valid signed control rejected: %v", err)
++			}
++			if _, err := VerifyBundleSignature(SignaturesConfig{Signatures: []string{validNoKID}}, cfg); err != nil {
++				t.Fatalf("valid signed control without header kid rejected: %v", err)
++			}
++			if _, err := VerifyBundleSignature(SignaturesConfig{Signatures: []string{validEscapedKey}}, cfg); err != nil {
++				t.Fatalf("valid signed control with escaped header key rejected: %v", err)
++			}
++			if _, err := VerifyBundleSignature(SignaturesConfig{Signatures: []string{validNested}}, cfg); err != nil {
++				t.Fatalf("valid signed control with nested extension rejected: %v", err)
++			}
++			if _, err := VerifyBundleSignature(SignaturesConfig{Signatures: []string{validSurrogatePair}}, cfg); err != nil {
++				t.Fatalf("valid signed control with surrogate pair rejected: %v", err)
++			}
++			for name, header := range bad {
++				t.Run(name, func(t *testing.T) {
++					files, err := VerifyBundleSignature(SignaturesConfig{Signatures: []string{signed(header)}}, cfg)
++					wantPrefix := "failed to extract key ID from headers:"
++					if name == "algorithm_confusion" || name == "algorithm_mismatch" {
++						wantPrefix = "JWT algorithm does not match configured verification key"
++					}
++					if err == nil || len(files) != 0 || !strings.HasPrefix(err.Error(), wantPrefix) {
++						t.Fatalf("malformed header not rejected at header validation: files=%v err=%v", files, err)
++					}
++				})
++			}
++		})
++	}
++}

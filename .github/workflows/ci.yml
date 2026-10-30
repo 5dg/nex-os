@@ -48,6 +48,12 @@ jobs:
         run: make dev
       - name: Functional and negative checks
         run: make verify-local
+      - name: Build source-bound OPA for synthetic qualification
+        run: |
+          mkdir -p .local/qualification-build-evidence
+          task_opa_image="$(python3 -B scripts/foundation-opa.py "$PWD/.local/qualification-build-evidence/opa" /etc/ssl/certs/ca-certificates.crt)"
+          [[ "$task_opa_image" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "NEX_OPA_IMAGE=$task_opa_image" >> "$GITHUB_ENV"
       - name: Isolated current-source synthetic qualification
         run: |
           make down
@@ -82,6 +88,13 @@ jobs:
           path: |
             .local/release-evidence
             .local/qualification-release-evidence
+            .local/qualification-build-evidence/opa/receipt.json
+            .local/qualification-build-evidence/opa/bin/opa
+            .local/qualification-build-evidence/opa/bin/opa-build.txt
+            .local/qualification-build-evidence/opa/bin/opa-*-tests.txt
+            .local/qualification-build-evidence/opa/bin/opa-source-inventory.txt
+            .local/qualification-build-evidence/opa/package/opa/source-files.bin
+            .local/qualification-build-evidence/opa/package/opa/source-tree.bin
           include-hidden-files: true
           if-no-files-found: warn
       - name: Cleanup

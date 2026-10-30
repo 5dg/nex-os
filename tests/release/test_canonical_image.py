@@ -181,14 +181,16 @@ class CanonicalImageTests(unittest.TestCase):
     def assert_process_gone_or_zombie(self, status):
         try:
             stat = status.read_text()
-        except FileNotFoundError:
-            # The process may exit and be reaped immediately before this read.
+        except (FileNotFoundError, ProcessLookupError):
+            # The process can exit and be reaped before or during the procfs read.
             return
         self.assertEqual(stat.split()[2], 'Z')
 
     def test_proc_status_allows_reaped_process_but_rejects_live_process(self):
         status = Path('/proc/fixture/stat')
         with patch.object(Path, 'read_text', side_effect=FileNotFoundError):
+            self.assert_process_gone_or_zombie(status)
+        with patch.object(Path, 'read_text', side_effect=ProcessLookupError):
             self.assert_process_gone_or_zombie(status)
         with patch.object(Path, 'read_text', return_value='123 (fixture) Z 1'):
             self.assert_process_gone_or_zombie(status)
@@ -197,6 +199,9 @@ class CanonicalImageTests(unittest.TestCase):
                 self.assert_process_gone_or_zombie(status)
         with patch.object(Path, 'read_text', side_effect=PermissionError):
             with self.assertRaises(PermissionError):
+                self.assert_process_gone_or_zombie(status)
+        with patch.object(Path, 'read_text', side_effect=OSError('unexpected procfs error')):
+            with self.assertRaises(OSError):
                 self.assert_process_gone_or_zombie(status)
 
     def test_command_cancellation_kills_owned_descendants_holding_stdout(self):

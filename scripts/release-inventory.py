@@ -44,11 +44,16 @@ def component(ecosystem, name, version, properties=None, hashes=None):
     components[purl] = value
 
 go_scopes = ((root, 'go.mod', 'application'),
-             (root / 'deploy/qualification/gosu', 'deploy/qualification/gosu/go.mod', 'gosu-downstream-overlay'))
+             (root / 'deploy/qualification/gosu', 'deploy/qualification/gosu/go.mod', 'gosu-downstream-overlay'),
+             (root / 'deploy/qualification/opa', 'deploy/qualification/opa/go.mod', 'opa-downstream-overlay'))
 gosu_inputs = ['deploy/qualification/gosu/go.mod', 'deploy/qualification/gosu/go.sum', 'deploy/qualification/gosu/upstream-inputs.json']
-for name in gosu_inputs:
+opa_inputs = ['deploy/qualification/opa/go.mod', 'deploy/qualification/opa/go.sum',
+              'deploy/qualification/opa/opa-v4.patch', 'deploy/qualification/opa/crit.patch',
+              'deploy/qualification/opa/nex_v4_algorithms_test.go', 'deploy/qualification/opa/LICENSE',
+              'scripts/apply-opa-overlay.sh', 'scripts/canonical-opa.sh']
+for name in gosu_inputs + opa_inputs:
     if not (root / name).is_file() or (root / name).is_symlink():
-        raise SystemExit('Complete regular gosu overlay inputs are required for the source inventory.')
+        raise SystemExit('Complete regular downstream overlay inputs are required for the source inventory.')
 for directory, module_file, scope in go_scopes:
     # Never resolve an ambient workspace or fall back to the parent application
     # graph when the independent vendor overlay is missing or incomplete.
@@ -97,7 +102,7 @@ for package in lock['package']:
 
 inputs = ['go.mod', 'go.sum', 'apps/workspace/package.json', 'apps/workspace/package-lock.json', 'services/guard-kernel/Cargo.toml', 'services/guard-kernel/Cargo.lock', 'deploy/local/compose.yaml']
 inputs += ['apps/workspace/tests/browser/package.json', 'apps/workspace/tests/browser/package-lock.json', 'apps/workspace/tests/browser/Dockerfile']
-inputs += gosu_inputs
+inputs += gosu_inputs + opa_inputs
 if profile == 'synthetic-qualification':
     inputs += ['deploy/qualification/compose.yaml', 'deploy/qualification/pki.json']
 inputs += [str(path.relative_to(root)) for path in sorted((root / 'deploy').rglob('Dockerfile*'))]
@@ -108,7 +113,7 @@ bom = {
     'serialNumber': 'urn:uuid:' + str(uuid.uuid5(uuid.NAMESPACE_URL, 'nex.os/source-inventory/' + identity)),
     'metadata': {
         'component': {'type': 'application', 'name': 'Nex.os', 'version': 'alpha-0.4'},
-        'properties': [{'name': 'nex:inventory-scope', 'value': 'Source dependencies including application, downstream gosu overlay, development, optional and isolated browser-tool packages; no image OS-package inventory.'}, {'name': 'nex:runtime-profile', 'value': profile}],
+        'properties': [{'name': 'nex:inventory-scope', 'value': 'Source dependencies including application, downstream gosu and OPA overlays, development, optional and isolated browser-tool packages; no image OS-package inventory.'}, {'name': 'nex:runtime-profile', 'value': profile}],
     },
     'components': [components[key] for key in sorted(components)],
 }

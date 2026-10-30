@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -41,12 +43,35 @@ func preparePKI() {
 	if filepath.Dir(root) != "/workspace" || !strings.HasPrefix(base, "nex-result-pki-") || len(base) < 20 {
 		fail("a fresh /workspace/nex-result-pki-* directory is required")
 	}
-	entries := make([]pki.BundleEntry, 0, 5)
-	for _, role := range []string{"guard", "control", "model", "export", "opa"} {
-		entries = append(entries, pki.BundleEntry{Name: role, DNSNames: []string{role}, URIs: []string{"spiffe://nex.local/service/" + role}, ClientAuth: true, ServerAuth: role == "guard" || role == "opa"})
+	entries := make([]pki.BundleEntry, 0, 7)
+	for _, role := range []string{"guard", "control", "model", "export", "opa", "evidence"} {
+		entries = append(entries, pki.BundleEntry{Name: role, DNSNames: []string{role}, URIs: []string{"spiffe://nex.local/service/" + role}, ClientAuth: true, ServerAuth: role == "guard" || role == "opa" || role == "evidence"})
 	}
+	// A second, independently issued certificate with the same workload role
+	// models certificate replacement; it is not a production instance ID.
+	entries = append(entries, pki.BundleEntry{Name: "model-rotated", DNSNames: []string{"model"}, URIs: []string{"spiffe://nex.local/service/model"}, ClientAuth: true})
 	if _, err := pki.WriteBundle(root, pki.BundleConfig{ValidForSeconds: 3600, Entries: entries}); err != nil {
 		fail("fresh synthetic PKI creation failed")
+	}
+	var controlKey, kernelKey, seed [32]byte
+	for _, value := range []*[32]byte{&controlKey, &kernelKey, &seed} {
+		if _, err := rand.Read(value[:]); err != nil {
+			fail("synthetic evidence key generation failed")
+		}
+	}
+	public := ed25519.NewKeyFromSeed(seed[:]).Public().(ed25519.PublicKey)
+	for name, value := range map[string][]byte{"evidence-control.key": controlKey[:], "evidence-kernel.key": kernelKey[:], "evidence-seed.key": seed[:], "evidence-public.key": public} {
+		file, err := os.OpenFile(filepath.Join(root, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			fail("synthetic evidence key file creation failed")
+		}
+		if _, err = file.Write(value); err != nil {
+			file.Close()
+			fail("synthetic evidence key write failed")
+		}
+		if err = file.Close(); err != nil {
+			fail("synthetic evidence key close failed")
+		}
 	}
 	fmt.Println("Fresh synthetic workload identities created.")
 }
@@ -108,9 +133,13 @@ func prepareDatabase() {
 	for _, q := range []string{
 		`REVOKE CREATE ON SCHEMA public FROM PUBLIC`, `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC`,
 		`GRANT USAGE ON SCHEMA public TO ` + quoted,
-		`GRANT SELECT ON users,delegations,resources,document_bodies,model_routes,question_catalogue,jobs,execution_operations,execution_manifests,production_result_tenant_status,production_result_actor_status,production_result_sessions,production_result_identity_bindings TO ` + quoted,
-		`GRANT UPDATE(lock_version) ON users,delegations,resources,document_bodies,model_routes,production_result_tenant_status,production_result_actor_status,production_result_sessions,production_result_identity_bindings TO ` + quoted,
+		`GRANT SELECT ON users,delegations,resources,document_bodies,model_routes,question_catalogue,document_admissions,jobs,approvals,execution_operations,execution_manifests,audit_events,production_result_tenant_status,production_result_actor_status,production_result_sessions,production_result_identity_bindings TO ` + quoted,
+		`GRANT UPDATE(lock_version) ON users,delegations,resources,document_bodies,model_routes,question_catalogue,document_admissions,production_result_tenant_status,production_result_actor_status,production_result_sessions,production_result_identity_bindings TO ` + quoted,
 		`GRANT UPDATE(result_access_lock_version) ON jobs,execution_operations,execution_manifests TO ` + quoted,
+		`GRANT UPDATE(status,result,completed_at,qualification_receiver_cert_sha256) ON execution_operations TO ` + quoted,
+		`GRANT UPDATE(answer,provider,review_operation_id) ON jobs TO ` + quoted,
+		`GRANT INSERT ON execution_operations,execution_manifests,audit_events TO ` + quoted,
+		`GRANT UPDATE(integrity_reference) ON audit_events TO ` + quoted,
 		`GRANT INSERT ON production_result_identity_bindings TO ` + quoted,
 	} {
 		if _, err := admin.Exec(ctx, q); err != nil {
@@ -119,12 +148,14 @@ func prepareDatabase() {
 	}
 	for _, q := range []string{
 		`INSERT INTO tenants(id,name) VALUES('tenant-a','synthetic')`,
-		`INSERT INTO users(id,tenant_id,issuer,subject,permissions) VALUES('test-actor','tenant-a','https://fixture.invalid','test-subject',ARRAY['document.read'])`,
-		`INSERT INTO delegations(id,tenant_id,user_id,permissions,expires_at) VALUES('test-delegation','tenant-a','test-actor',ARRAY['document.read'],now()+interval '5 minutes')`,
+		`INSERT INTO users(id,tenant_id,issuer,subject,permissions) VALUES('test-actor','tenant-a','https://fixture.invalid','test-subject',ARRAY['document.read','model.invoke'])`,
+		`INSERT INTO delegations(id,tenant_id,user_id,permissions,expires_at) VALUES('test-delegation','tenant-a','test-actor',ARRAY['document.read','model.invoke'],now()+interval '5 minutes')`,
 		`INSERT INTO resources(id,tenant_id,kind,classification,version,reader_ids) VALUES('test-document','tenant-a','document','internal','v1',ARRAY['test-actor']),('dev-model','tenant-a','model','public','v1',ARRAY['test-actor'])`,
 		`INSERT INTO document_bodies(tenant_id,resource_id,content,content_digest) VALUES('tenant-a','test-document','synthetic','b3cc0475bb78a5026098858e9889acf666d31062d513d303314eca31d36e72f2')`,
-		`INSERT INTO model_routes(tenant_id,id,approved_classifications) VALUES('tenant-a','dev-model',ARRAY['internal'])`,
+		`INSERT INTO document_admissions(tenant_id,resource_id,version,content_digest,profile) VALUES('tenant-a','test-document','v1','b3cc0475bb78a5026098858e9889acf666d31062d513d303314eca31d36e72f2','synthetic-qualification')`,
+		`INSERT INTO model_routes(tenant_id,id,approved_classifications,template_version) VALUES('tenant-a','dev-model',ARRAY['internal'],'review-template-v2')`,
 		`INSERT INTO jobs(id,tenant_id,delegation_id,owner_id,state,document_id,document_version,question,question_id,question_version,execution_profile,operation_id,lease_until) VALUES('fixture-job','tenant-a','test-delegation','test-actor','running','test-document','v1','synthetic','access-review-controls','v1','synthetic-qualification','operation-v3-123',now()+interval '5 minutes')`,
+		`INSERT INTO jobs(id,tenant_id,delegation_id,owner_id,state,document_id,document_version,question,question_id,question_version,execution_profile,operation_id,lease_until) VALUES('fixture-claim-job','tenant-a','test-delegation','test-actor','running','test-document','v1','What access review and export controls apply?','access-review-controls','v1','synthetic-qualification','operation-claim-123',now()+interval '5 minutes')`,
 		`INSERT INTO production_result_tenant_status(tenant_id,enabled) VALUES('tenant-a',true)`,
 		`INSERT INTO production_result_actor_status(tenant_id,actor_id,enabled) VALUES('tenant-a','test-actor',true)`,
 		`INSERT INTO production_result_sessions(session_reference,issuer,subject,tenant_id,actor_id,delegation_id,expires_at) VALUES('test-session','https://fixture.invalid','test-subject','tenant-a','test-actor','test-delegation',now()+interval '5 minutes')`,

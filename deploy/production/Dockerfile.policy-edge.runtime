@@ -1,0 +1,7 @@
+# Candidate only. Build from the canonical runtime root and source-bound binary.
+# This recipe is outside the release image set until separately built and scanned.
+FROM scratch
+COPY runtime-root/ /
+COPY --chmod=0555 bin/policy-edge /policy-edge
+USER 65532:65532
+ENTRYPOINT ["/policy-edge"]

@@ -101,7 +101,7 @@ class SecondBuildAdmissionTests(unittest.TestCase):
     def test_postgres_default_and_reviewed_floor_eight_other_roles_unchanged(self):
         self.assertEqual(image_forecast('postgres', {}), 8*GIB)
         self.assertEqual(image_forecast('postgres', {'postgres': 9*GIB}), 9*GIB)
-        for role in ('control', 'guard', 'fixtures', 'workspace'):
+        for role in ('control', 'guard', 'fixtures', 'workspace', 'opa'):
             self.assertEqual(image_forecast(role, {}), 6*GIB)
             self.assertEqual(image_forecast(role, {role: 4*GIB}), 4*GIB)
         for budget in (4*GIB, 6*GIB, 8*GIB-1, True):

@@ -12,8 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/5dg/nex-os/packages/broker"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -113,6 +116,107 @@ func VerifyContext(ctx context.Context, directory string, public ed25519.PublicK
 	}
 	return entries, nil
 }
+
+// AnchoredVerificationLimits bound directory entries inspected (including
+// non-journal files), individual journal files, and total journal bytes read.
+// Deployment callers should choose lower limits appropriate for their storage.
+type AnchoredVerificationLimits struct {
+	MaxEntries    int
+	MaxEntryBytes int64
+	MaxTotalBytes int64
+}
+
+// VerifyAnchoredExtensionContext verifies a complete journal and requires an
+// independently retained, signed checkpoint to occur at its original sequence.
+// Entries after the checkpoint may have been lost or replaced since that
+// checkpoint was retained: callers must advance and protect their anchor using
+// an independently trustworthy custody protocol before relying on those
+// entries. This function neither provisions that custody nor fences writers.
+// The directory must not be concurrently modified by an untrusted writer. The
+// bounds constrain normal file reads, not hostile replacement with device files.
+func VerifyAnchoredExtensionContext(ctx context.Context, directory string, public ed25519.PublicKey, anchor Proof, limits AnchoredVerificationLimits) ([]Entry, error) {
+	if ctx == nil || anchor.Sequence <= 0 || !VerifyProof(public, anchor) ||
+		limits.MaxEntries < 1 || limits.MaxEntries > 100000 ||
+		limits.MaxEntryBytes < 1 || limits.MaxEntryBytes > 1024*1024 ||
+		limits.MaxTotalBytes < 1 || limits.MaxTotalBytes > 64*1024*1024 {
+		return nil, errors.New("invalid pinned checkpoint")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	dir, err := os.Open(directory)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	names := make([]string, 0)
+	seen := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		batch, readErr := dir.ReadDir(128)
+		seen += len(batch)
+		if seen > limits.MaxEntries {
+			return nil, errors.New("journal directory entry limit exceeded")
+		}
+		for _, file := range batch {
+			if strings.HasSuffix(file.Name(), ".json") {
+				if !file.Type().IsRegular() {
+					return nil, errors.New("journal entry is not a regular file")
+				}
+				names = append(names, file.Name())
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return nil, readErr
+		}
+	}
+	sort.Strings(names)
+	entries := make([]Entry, 0, len(names))
+	previous := ""
+	var total int64
+	for i, name := range names {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if name != fmt.Sprintf("%012d.json", i+1) {
+			return nil, errors.New("journal sequence gap")
+		}
+		file, err := os.Open(filepath.Join(directory, name))
+		if err != nil {
+			return nil, err
+		}
+		remaining := limits.MaxTotalBytes - total
+		readLimit := min(limits.MaxEntryBytes, remaining)
+		data, readErr := io.ReadAll(io.LimitReader(file, readLimit+1))
+		closeErr := file.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		total += int64(len(data))
+		if int64(len(data)) > limits.MaxEntryBytes || total > limits.MaxTotalBytes {
+			return nil, errors.New("journal byte limit exceeded")
+		}
+		var entry Entry
+		if json.Unmarshal(data, &entry) != nil || entry.Proof.Sequence != i+1 || entry.Previous != previous || entry.Proof.Head != hashEvent(entry.Event, previous) || !VerifyEvent(public, entry.Proof, entry.Event) || entry.Proof.Previous != previous {
+			return nil, errors.New("journal integrity failure")
+		}
+		entries = append(entries, entry)
+		previous = entry.Proof.Head
+	}
+	if anchor.Sequence > len(entries) || entries[anchor.Sequence-1].Proof != anchor {
+		return nil, errors.New("pinned checkpoint mismatch")
+	}
+	return entries, nil
+}
+
 func (j *Journal) Append(event Event) (Proof, error) {
 	return j.AppendContext(context.Background(), event, nil)
 }

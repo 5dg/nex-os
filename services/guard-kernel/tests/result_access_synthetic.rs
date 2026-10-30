@@ -246,8 +246,8 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
         Kernel,
         profile::Profile,
         protocol::{
-            ReceiptPhaseRequest, ResultAccessRequest, guard_client::GuardClient,
-            guard_server::GuardServer,
+            CompletionRequest, ExecutionRequest, PrepareRequest, ReceiptPhaseRequest,
+            ResultAccessRequest, guard_client::GuardClient, guard_server::GuardServer,
         },
         result_access::{ResultAccessConfig, ResultAccessPolicy, SessionPolicy},
         trust::Trust,
@@ -341,6 +341,12 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
             .unwrap()
             .with_execution(kernel_url.as_str().to_owned(), &[], &[])
             .unwrap()
+            .with_evidence(
+                std::env::var("NEX_RESULT_TEST_EVIDENCE_URL").expect("synthetic evidence URL"),
+                fs::read(pki.join("evidence-kernel.key")).expect("synthetic evidence capability"),
+                fs::read(pki.join("evidence-public.key")).expect("synthetic evidence public key"),
+            )
+            .unwrap()
             .with_result_access(config)
             .unwrap();
     let shutdown = kernel.shutdown_control();
@@ -382,7 +388,9 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
             .tls_config(tls)
             .unwrap()
             .connect_timeout(Duration::from_secs(3))
-            .timeout(Duration::from_secs(10))
+            // Guard bounds each RPC at 15 seconds. The competing claimant may
+            // wait for the first transaction's policy and evidence calls.
+            .timeout(Duration::from_secs(20))
             .connect()
             .await
             .unwrap();
@@ -528,6 +536,315 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
     let certificate =
         CertificateDer::from_pem_slice(&fs::read(pki.join("model/tls.crt")).unwrap()).unwrap();
     let fingerprint = format!("{:x}", Sha256::digest(certificate.as_ref()));
+    // These state transitions are synthetic administrator setup, not proof
+    // that a real claimant, authorization grant, or fence was established.
+    // They exercise the actual mTLS Guard RPCs against two distinct leaves
+    // carrying the same model role, including legacy unbound operations.
+    let mut rotated = client(address, &pki, "model-rotated").await;
+    let state_request = || ExecutionRequest {
+        operation_id: operation.clone(),
+        request_digest: digest.clone(),
+    };
+    let result = serde_json::json!({"text":"synthetic result", "provider":"development", "model_id":"deterministic-review-v1"});
+    let completion = || CompletionRequest {
+        operation_id: operation.clone(),
+        request_digest: digest.clone(),
+        result_json: result.to_string(),
+    };
+    assert_eq!(
+        model
+            .execution_state(state_request())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "pending"
+    );
+    assert_eq!(
+        rotated
+            .execution_state(state_request())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "pending"
+    );
+    admin.execute("UPDATE execution_operations SET status='started', qualification_receiver_cert_sha256=NULL WHERE id=$1", &[&operation]).await.unwrap();
+    assert_eq!(
+        model
+            .execution_state(state_request())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "unknown"
+    );
+    denied(model.complete_execution(completion()).await);
+    admin
+        .execute(
+            "UPDATE execution_operations SET qualification_receiver_cert_sha256=$2 WHERE id=$1",
+            &[&operation, &fingerprint],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        model
+            .execution_state(state_request())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "started"
+    );
+    assert_eq!(
+        rotated
+            .execution_state(state_request())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "unknown"
+    );
+    denied(rotated.complete_execution(completion()).await);
+    let unchanged = admin
+        .query_one(
+            "SELECT status,result FROM execution_operations WHERE id=$1",
+            &[&operation],
+        )
+        .await
+        .unwrap();
+    assert_eq!(unchanged.get::<_, String>("status"), "started");
+    assert_eq!(
+        unchanged.get::<_, Option<serde_json::Value>>("result"),
+        None
+    );
+    admin.execute("UPDATE execution_operations SET status='completed',result=$2,qualification_receiver_cert_sha256=NULL WHERE id=$1", &[&operation, &result]).await.unwrap();
+    assert_eq!(
+        model
+            .execution_state(state_request())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "unknown"
+    );
+    denied(model.complete_execution(completion()).await);
+    admin
+        .execute(
+            "UPDATE execution_operations SET qualification_receiver_cert_sha256=$2 WHERE id=$1",
+            &[&operation, &fingerprint],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        model
+            .execution_state(state_request())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "completed"
+    );
+    assert_eq!(
+        rotated
+            .execution_state(state_request())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "unknown"
+    );
+    denied(rotated.complete_execution(completion()).await);
+    assert!(
+        model
+            .complete_execution(completion())
+            .await
+            .unwrap()
+            .into_inner()
+            .allowed
+    );
+    admin.execute("UPDATE execution_operations SET status='pending',result=NULL,qualification_receiver_cert_sha256=NULL WHERE id=$1", &[&operation]).await.unwrap();
+
+    // Unlike the vector-state matrix above, this separate operation is prepared
+    // and authorized by the real Guard RPCs, OPA and independently signed
+    // fixture evidence. Both authenticated leaves race for one pending grant.
+    let claim_operation = "operation-claim-123";
+    let prepared = control
+        .prepare_execution(PrepareRequest {
+            job_id: "fixture-claim-job".into(),
+            operation_id: claim_operation.into(),
+        })
+        .await
+        .expect("real synthetic Guard prepare")
+        .into_inner();
+    assert!(!prepared.payload_json.is_empty() && prepared.request_digest.len() == 64);
+    let claim_request = ExecutionRequest {
+        operation_id: claim_operation.into(),
+        request_digest: prepared.request_digest.clone(),
+    };
+    let (first, second) = tokio::join!(
+        model.authorize_execution(claim_request.clone()),
+        rotated.authorize_execution(claim_request.clone())
+    );
+    let first_won = match (first, second) {
+        (Ok(allowed), Err(failure)) => {
+            assert!(allowed.into_inner().allowed);
+            assert_eq!(failure.code(), tonic::Code::PermissionDenied);
+            true
+        }
+        (Err(failure), Ok(allowed)) => {
+            assert!(allowed.into_inner().allowed);
+            assert_eq!(failure.code(), tonic::Code::PermissionDenied);
+            false
+        }
+        _ => panic!("exactly one authenticated model certificate must acquire the grant"),
+    };
+    let rotated_certificate =
+        CertificateDer::from_pem_slice(&fs::read(pki.join("model-rotated/tls.crt")).unwrap())
+            .unwrap();
+    let rotated_fingerprint = format!("{:x}", Sha256::digest(rotated_certificate.as_ref()));
+    assert_ne!(fingerprint, rotated_fingerprint);
+    let winner_fingerprint = if first_won {
+        &fingerprint
+    } else {
+        &rotated_fingerprint
+    };
+    let claimed = admin.query_one("SELECT status,qualification_receiver_cert_sha256,result FROM execution_operations WHERE id=$1", &[&claim_operation]).await.unwrap();
+    assert_eq!(claimed.get::<_, String>("status"), "started");
+    assert_eq!(
+        claimed
+            .get::<_, Option<String>>("qualification_receiver_cert_sha256")
+            .as_deref(),
+        Some(winner_fingerprint.as_str())
+    );
+    assert_eq!(claimed.get::<_, Option<serde_json::Value>>("result"), None);
+    let completion = CompletionRequest {
+        operation_id: claim_operation.into(),
+        request_digest: prepared.request_digest.clone(),
+        result_json: serde_json::json!({"text":"synthetic claim result", "provider":"development", "model_id":"deterministic-review-v1"}).to_string(),
+    };
+    let (winner, loser) = if first_won {
+        (&mut model, &mut rotated)
+    } else {
+        (&mut rotated, &mut model)
+    };
+    assert_eq!(
+        winner
+            .execution_state(claim_request.clone())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "started"
+    );
+    assert_eq!(
+        loser
+            .execution_state(claim_request.clone())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "unknown"
+    );
+    denied(loser.complete_execution(completion.clone()).await);
+    let before_complete = admin
+        .query_one(
+            "SELECT status,result FROM execution_operations WHERE id=$1",
+            &[&claim_operation],
+        )
+        .await
+        .unwrap();
+    assert_eq!(before_complete.get::<_, String>("status"), "started");
+    assert_eq!(
+        before_complete.get::<_, Option<serde_json::Value>>("result"),
+        None
+    );
+    assert!(
+        winner
+            .complete_execution(completion.clone())
+            .await
+            .unwrap()
+            .into_inner()
+            .allowed
+    );
+    assert!(
+        winner
+            .complete_execution(completion.clone())
+            .await
+            .unwrap()
+            .into_inner()
+            .allowed
+    );
+    assert_eq!(
+        loser
+            .execution_state(claim_request.clone())
+            .await
+            .unwrap()
+            .into_inner()
+            .state,
+        "unknown"
+    );
+    denied(loser.complete_execution(completion).await);
+    let committed = admin
+        .query_one(
+            "SELECT status,result FROM execution_operations WHERE id=$1",
+            &[&claim_operation],
+        )
+        .await
+        .unwrap();
+    assert_eq!(committed.get::<_, String>("status"), "completed");
+    assert_eq!(
+        committed.get::<_, serde_json::Value>("result")["text"],
+        "synthetic claim result"
+    );
+    let signed: i64 = admin.query_one("SELECT count(*) FROM audit_events WHERE job_id='fixture-claim-job' AND action IN ('model.prepared','model.authorized','model.completed') AND integrity_reference IS NOT NULL", &[]).await.unwrap().get(0);
+    assert_eq!(signed, 3);
+    // A separate reader verifies the retained journal against the public key,
+    // then each signed journal proof is matched to the committed Guard row.
+    // This does not independently anchor the journal against rollback.
+    let evidence_binary = std::env::var("NEX_RESULT_TEST_EVIDENCE_BINARY")
+        .expect("independent synthetic journal verifier binary");
+    let journal = pki.join("journal");
+    let verified = std::process::Command::new(evidence_binary)
+        .arg("verify")
+        .arg(&journal)
+        .arg(pki.join("evidence-public.key"))
+        .output()
+        .expect("independent journal verification started");
+    assert!(
+        verified.status.success(),
+        "independent journal verification failed"
+    );
+    let verification: serde_json::Value = serde_json::from_slice(&verified.stdout).unwrap();
+    assert_eq!(verification["events"], 3);
+    for (index, action) in ["model.prepared", "model.authorized", "model.completed"]
+        .iter()
+        .enumerate()
+    {
+        let entry: serde_json::Value = serde_json::from_slice(
+            &fs::read(journal.join(format!("{:012}.json", index + 1))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(entry["event"]["job_id"], "fixture-claim-job");
+        assert_eq!(entry["event"]["action"], *action);
+        let event_id = entry["event"]["event_id"].as_str().unwrap();
+        let saved: serde_json::Value = admin.query_one(
+            "SELECT integrity_reference FROM audit_events WHERE id=$1 AND job_id='fixture-claim-job' AND action=$2",
+            &[&event_id, action],
+        ).await.unwrap().get(0);
+        assert_eq!(saved, entry["proof"]);
+        if index == 2 {
+            assert_eq!(verification["checkpoint"], saved);
+        }
+    }
+    use std::io::Write;
+    let mut receipt = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(pki.join("journal-verification.json"))
+        .expect("new synthetic verification receipt");
+    receipt.write_all(&verified.stdout).unwrap();
+    receipt.sync_all().unwrap();
     let phase_proof = |phase: u8, status: &str, receipt: &str, nonce: &str| PhaseProof {
         issuer: "fixture-phase-issuer".into(),
         audience: "fixture-guard-phase".into(),

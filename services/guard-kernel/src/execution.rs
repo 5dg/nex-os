@@ -1179,6 +1179,40 @@ fn executor_kind<T>(k: &Kernel, r: &Request<T>) -> Result<(&'static str, PeerIde
         peer,
     ))
 }
+
+// Qualification pins the authenticated receiver leaf to the operation. This
+// identifies a certificate, not a unique instance or a failover-safe fence.
+fn qualification_receiver_certificate(
+    k: &Kernel,
+    peer: &PeerIdentity,
+) -> Result<Option<String>, Status> {
+    if k.profile != Profile::Qualification {
+        return Ok(None);
+    }
+    let fingerprint = peer.certificate_sha256().ok_or_else(denied)?;
+    Ok(Some(
+        fingerprint.iter().map(|v| format!("{v:02x}")).collect(),
+    ))
+}
+
+fn qualification_claim_matches(stored: Option<&str>, receiver: Option<&str>) -> bool {
+    stored.is_some() && stored == receiver
+}
+
+fn qualification_visible_state<'a>(
+    status: &'a str,
+    stored: Option<&str>,
+    receiver: Option<&str>,
+) -> &'a str {
+    if (status == "pending" && stored.is_some())
+        || (matches!(status, "started" | "completed" | "unknown")
+            && !qualification_claim_matches(stored, receiver))
+    {
+        "unknown"
+    } else {
+        status
+    }
+}
 // This query proves only kernel state for an exact authenticated receiver and
 // manifest. It never grants execution or converts absence into a safe retry.
 pub async fn state(
@@ -1189,9 +1223,10 @@ pub async fn state(
         return Err(denied());
     }
     let (kind, peer) = executor_kind(k, &r)?;
+    let receiver_certificate = qualification_receiver_certificate(k, &peer)?;
     let r = r.into_inner();
     let db = database(k).await?;
-    let row=db.query_opt("SELECT o.status,m.manifest_context FROM execution_operations o JOIN execution_manifests m ON m.operation_id=o.id WHERE o.id=$1 AND o.kind=$2 AND o.request_digest=$3 AND m.payload_digest=$3 AND m.version=$4 FOR SHARE OF o",&[&r.operation_id,&kind,&r.request_digest,&k.profile.manifest_version()]).await.map_err(unavailable)?.ok_or_else(denied)?;
+    let row=db.query_opt("SELECT o.status,o.qualification_receiver_cert_sha256,m.manifest_context FROM execution_operations o JOIN execution_manifests m ON m.operation_id=o.id WHERE o.id=$1 AND o.kind=$2 AND o.request_digest=$3 AND m.payload_digest=$3 AND m.version=$4 FOR SHARE OF o",&[&r.operation_id,&kind,&r.request_digest,&k.profile.manifest_version()]).await.map_err(unavailable)?.ok_or_else(denied)?;
     let context: serde_json::Value = row.get("manifest_context");
     if context.get("version") != Some(&serde_json::json!(k.profile.manifest_version()))
         || context.get("operation_id").and_then(|v| v.as_str()) != Some(&r.operation_id)
@@ -1199,9 +1234,19 @@ pub async fn state(
         return Err(denied());
     }
     k.check_current(&peer)?;
+    let status: String = row.get("status");
+    let mut visible = status.as_str();
+    if k.profile == Profile::Qualification {
+        let stored: Option<String> = row.get("qualification_receiver_cert_sha256");
+        visible = qualification_visible_state(
+            &status,
+            stored.as_deref(),
+            receiver_certificate.as_deref(),
+        );
+    }
     Ok(Response::new(ExecutionResponse {
         allowed: false,
-        state: row.get("status"),
+        state: visible.to_owned(),
     }))
 }
 
@@ -1514,6 +1559,7 @@ pub async fn execute(
         return Err(denied());
     }
     let (kind, peer) = executor_kind(k, &r)?;
+    let receiver_certificate = qualification_receiver_certificate(k, &peer)?;
     let r = r.into_inner();
     let mut db = database(k).await?;
     let tx = db.transaction().await.map_err(unavailable)?;
@@ -1527,11 +1573,15 @@ pub async fn execute(
         .ok_or_else(denied)?;
     let j = job(&tx, &reference.get::<_, String>("job_id")).await?;
     runnable(&j, &r.operation_id)?;
-    let op=tx.query_opt("SELECT o.kind,o.status,o.request_digest,m.context_digest,m.manifest_context,((extract(epoch FROM m.expires_at)*1000000)::bigint) AS expires_at_us,m.payload_digest,m.payload,(m.expires_at>clock_timestamp()) AS fresh FROM execution_operations o JOIN execution_manifests m ON m.operation_id=o.id WHERE o.id=$1 AND o.tenant_id=$2 FOR UPDATE OF o",&[&r.operation_id,&j.get::<_,String>("tenant_id")]).await.map_err(unavailable)?.ok_or_else(denied)?;
+    let op=tx.query_opt("SELECT o.kind,o.status,o.request_digest,o.qualification_receiver_cert_sha256,m.context_digest,m.manifest_context,((extract(epoch FROM m.expires_at)*1000000)::bigint) AS expires_at_us,m.payload_digest,m.payload,(m.expires_at>clock_timestamp()) AS fresh FROM execution_operations o JOIN execution_manifests m ON m.operation_id=o.id WHERE o.id=$1 AND o.tenant_id=$2 FOR UPDATE OF o",&[&r.operation_id,&j.get::<_,String>("tenant_id")]).await.map_err(unavailable)?.ok_or_else(denied)?;
     if op.get::<_, String>("kind") != kind
         || op.get::<_, String>("status") != "pending"
         || op.get::<_, String>("request_digest") != r.request_digest
         || !op.get::<_, bool>("fresh")
+        || (k.profile == Profile::Qualification
+            && op
+                .get::<_, Option<String>>("qualification_receiver_cert_sha256")
+                .is_some())
     {
         return Err(denied());
     }
@@ -1551,12 +1601,22 @@ pub async fn execute(
         let a = approval(&tx, &j).await?;
         tx.execute("UPDATE approvals SET consumed_at=coalesce(consumed_at,clock_timestamp()),consumed_operation_id=$2 WHERE id=$1",&[&a.get::<_,String>("id"),&r.operation_id]).await.map_err(unavailable)?;
     }
-    tx.execute(
-        "UPDATE execution_operations SET status='started' WHERE id=$1",
-        &[&r.operation_id],
-    )
-    .await
-    .map_err(unavailable)?;
+    if k.profile == Profile::Qualification {
+        let count = tx.execute(
+            "UPDATE execution_operations SET status='started',qualification_receiver_cert_sha256=$2 WHERE id=$1 AND status='pending' AND qualification_receiver_cert_sha256 IS NULL",
+            &[&r.operation_id, &receiver_certificate],
+        ).await.map_err(unavailable)?;
+        if count != 1 {
+            return Err(denied());
+        }
+    } else {
+        tx.execute(
+            "UPDATE execution_operations SET status='started' WHERE id=$1",
+            &[&r.operation_id],
+        )
+        .await
+        .map_err(unavailable)?;
+    }
     audit(
         k,
         &tx,
@@ -1583,6 +1643,7 @@ pub async fn complete(
         return Err(denied());
     }
     let (kind, peer) = executor_kind(k, &r)?;
+    let receiver_certificate = qualification_receiver_certificate(k, &peer)?;
     let r = r.into_inner();
     if r.result_json.len() > 128 * 1024 {
         return Err(denied());
@@ -1599,12 +1660,18 @@ pub async fn complete(
         .map_err(unavailable)?
         .ok_or_else(denied)?;
     let j = job(&tx, &reference.get::<_, String>("job_id")).await?;
-    let op=tx.query_opt("SELECT o.kind,o.status,o.request_digest,o.result,m.payload,m.manifest_context FROM execution_operations o JOIN execution_manifests m ON m.operation_id=o.id WHERE o.id=$1 FOR UPDATE OF o",&[&r.operation_id]).await.map_err(unavailable)?.ok_or_else(denied)?;
+    let op=tx.query_opt("SELECT o.kind,o.status,o.request_digest,o.result,o.qualification_receiver_cert_sha256,m.payload,m.manifest_context FROM execution_operations o JOIN execution_manifests m ON m.operation_id=o.id WHERE o.id=$1 FOR UPDATE OF o",&[&r.operation_id]).await.map_err(unavailable)?.ok_or_else(denied)?;
     let context: serde_json::Value = op.get("manifest_context");
     if context.get("version") != Some(&serde_json::json!(k.profile.manifest_version()))
         || context.get("operation_id").and_then(|v| v.as_str()) != Some(&r.operation_id)
         || op.get::<_, String>("kind") != kind
         || op.get::<_, String>("request_digest") != r.request_digest
+        || (k.profile == Profile::Qualification
+            && !qualification_claim_matches(
+                op.get::<_, Option<String>>("qualification_receiver_cert_sha256")
+                    .as_deref(),
+                receiver_certificate.as_deref(),
+            ))
     {
         return Err(denied());
     }
@@ -1712,6 +1779,12 @@ pub async fn ready(k: &Kernel) -> Result<(), Status> {
             // its non-authority row locks before reporting execution-ready.
             db.query("SELECT q.question,a.content_digest FROM question_catalogue q,document_admissions a WHERE false FOR SHARE OF q,a",&[]).await.map_err(unavailable)?;
             db.query("SELECT j.execution_profile,j.question_id,j.question_version,m.provider,m.region,m.model_id,m.effective_endpoint,m.features,m.template_version FROM jobs j,model_routes m WHERE false FOR UPDATE OF j FOR SHARE OF m",&[]).await.map_err(unavailable)?;
+            let claim_writable: bool = db.query_one("SELECT has_column_privilege(current_user,'execution_operations','qualification_receiver_cert_sha256','UPDATE')", &[]).await.map_err(unavailable)?.get(0);
+            if !claim_writable {
+                return Err(Status::unavailable(
+                    "receiver certificate binding unavailable",
+                ));
+            }
         }
         Ok::<(), Status>(())
     };
@@ -1739,6 +1812,37 @@ mod candidate_transaction_test;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn qualification_receiver_binding_fails_closed_without_backfill() {
+        let original = Some("original-certificate");
+        let rotated = Some("rotated-certificate");
+        assert_eq!(
+            qualification_visible_state("pending", None, original),
+            "pending"
+        );
+        assert_eq!(
+            qualification_visible_state("pending", original, original),
+            "unknown"
+        );
+        for status in ["started", "completed"] {
+            assert_eq!(
+                qualification_visible_state(status, original, original),
+                status
+            );
+            assert_eq!(
+                qualification_visible_state(status, original, rotated),
+                "unknown"
+            );
+            assert_eq!(
+                qualification_visible_state(status, None, original),
+                "unknown"
+            );
+            assert!(!qualification_claim_matches(None, None));
+            assert!(!qualification_claim_matches(original, rotated));
+            assert!(qualification_claim_matches(original, original));
+        }
+    }
 
     #[test]
     fn candidate_evidence_id_is_stable_and_scoped() {

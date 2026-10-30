@@ -18,8 +18,9 @@ import sys
 sys.dont_write_bytecode = True
 from candidate import load
 from image_record import payload
+from opa_image import BASE_LAYER, VENDOR_CONFIG, VENDOR_EXEC_LAYER, VENDOR_IMAGE, verify_reconstruction
 from source_record import atomic_json, identity, sha256
-from resource_admission import load_policy, second_admission, summarize_measurements, phase_settings, phase_record_digest, inherit_phase_settings
+from resource_admission import load_policy, second_admission, summarize_measurements, phase_settings, phase_record_digest, inherit_phase_settings, image_forecast
 
 COMPILERS = {
  "go": "golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5",
@@ -29,7 +30,9 @@ COMPILERS = {
 GIB = 1024 ** 3
 FRONTEND = "docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e"
 PHASE_SCRATCH = {"gosu": ("go-cache", "gopath", "gosu", "gosu-go-cache", "gosu-gopath", "tmp"),
+                 "opa": ("opa-source", "opa-go-cache", "opa-gopath", "tmp"),
                  "rust": ("target", "cargo")}
+OPA_SCRATCH_FILES = ("opa-source.tar.gz", "opa-files-before.unsorted", "opa-files-before", "opa-files-after.unsorted", "opa-files-after", "opa-tree-before.unsorted", "opa-tree-before", "opa-tree-after.unsorted", "opa-tree-after")
 
 
 def supervise_packager(command, env, stream, timeout=1800, grace=150):
@@ -237,7 +240,7 @@ class Builder:
   return log.read_text() if capture else None
 
  def compiler(self, role):
-  image = COMPILERS["go" if role == "gosu" else role]
+  image = COMPILERS["go" if role in ("gosu", "opa") else role]
   self.run(role+"-pull", self.docker("pull", image))
   details = json.loads(self.run(role+"-identity", self.docker("image", "inspect", image, "--format",
    '{"id":{{json .Id}},"repo_digests":{{json .RepoDigests}},"os":{{json .Os}},"architecture":{{json .Architecture}}}'), True))
@@ -248,7 +251,7 @@ class Builder:
   owner = {"org.nex.compiler.run":self.candidate["run_id"],"org.nex.compiler.build":self.args.build,
    "org.nex.compiler.role":role,"org.nex.compiler.nonce":nonce,"org.nex.source.inputs":self.candidate["source"]["inputs"]["sha256"]}
   command = self.docker("run", "--rm", "--name",container_name,"--cidfile",str(self.path/(role+".cid")),"--init", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges:true",
-   "--user", f"{os.getuid()}:{os.getgid()}", "--cpus=2", "--memory="+{"go":"4g","gosu":"4g","rust":"8g","node":"6g"}[role],
+   "--user", f"{os.getuid()}:{os.getgid()}", "--cpus=2", "--memory="+{"go":"4g","gosu":"4g","opa":"4g","rust":"8g","node":"6g"}[role],
    "--tmpfs", "/tmp:rw,nosuid,nodev,size=256m")
   for key,value in owner.items(): command += ["--label",key+"="+value]
   for src, dst, readonly in ((self.source,"/src",True),(self.work,"/work",False),(self.bin,"/out",False),
@@ -326,6 +329,32 @@ class Builder:
   atomic_json(self.manifest,self.record)
 
  def compiler_boundary(self, role):
+  if role == "opa":
+   exported = {}
+   for name in ("opa", "opa-build.txt", "opa-source-inventory.txt", "opa-bundle-tests.txt", "opa-topdown-tests.txt", "opa-private-key-tests.txt", "opa-rest-tests.txt", "opa-jwe-tests.txt"):
+    path = self.bin/name
+    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+     raise ValueError("missing or unsupported OPA compiler export: "+name)
+    if name == "opa" and not os.access(path,os.X_OK):
+     raise ValueError("OPA compiler binary is not executable")
+    exported[str(path.relative_to(self.path))] = {"sha256":sha256(path),"mode":path.stat().st_mode & 0o7777}
+   if self.package.is_symlink() or not self.package.is_dir() or (self.package/"opa").is_symlink() or not (self.package/"opa").is_dir():
+    raise ValueError("regular retained OPA inventory directory required")
+   for name in ("source-files.bin", "source-tree.bin"):
+    path = self.package/"opa"/name
+    if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+     raise ValueError("missing or unsupported OPA source inventory: "+name)
+    exported[str(path.relative_to(self.path))] = {"sha256":sha256(path),"mode":path.stat().st_mode & 0o7777}
+   expected_inventory = [f'{exported["package/opa/"+name]["sha256"]}  /package/opa/{name}' for name in ("source-files.bin", "source-tree.bin")]
+   if (self.bin/"opa-source-inventory.txt").read_text().splitlines() != expected_inventory:
+    raise ValueError("OPA source inventory receipt differs from retained bytes")
+   self.record.setdefault("phase_exports",{})[role] = exported
+   atomic_json(self.manifest,self.record)
+   discarded = [name for name in PHASE_SCRATCH[role] if self.discard_owned_scratch(name)]
+   discarded.extend(self.discard_opa_scratch_files())
+   self.record.setdefault("phase_boundaries",[]).append({"after":role,"discarded_own_scratch":discarded,"compiler_eviction_reviewed":False,"at":self.now()})
+   atomic_json(self.manifest,self.record)
+   return
   if role == "gosu":
    digest_path = self.bin/"runtime-trust-bundle.sha256"
    layout_path = self.bin/"runtime-root-layout.json"
@@ -334,7 +363,7 @@ class Builder:
    digest_record = re.fullmatch(r"([a-f0-9]{64})  /package/trust/ca-certificates\.crt\n?",digest_path.read_text())
    if not digest_record: raise ValueError("unexpected compiler trust digest format")
    atomic_json(layout_path,prepare_runtime_root(self.package,digest_record.group(1)))
-  names = ("control","dev-issuer","model","executor","worker","evidence","qualification-edge","qualification-policy-edge","qualification-pki","qualification-issuer","qualification-receiver-readiness") if role == "gosu" else ("guard-kernel",)
+  names = ("control","dev-issuer","model","executor","worker","evidence","policy-edge","qualification-edge","qualification-policy-edge","qualification-pki","qualification-issuer","qualification-receiver-readiness") if role == "gosu" else ("guard-kernel",)
   exported = {}
   paths = [self.bin/name for name in names]
   if role == "gosu": paths += [self.package/"runtime-root/etc/ssl/certs/ca-certificates.crt",self.package/"trust/ca-certificates.crt",self.package/"postgres/usr/local/bin/gosu",self.package/"postgres/usr/local/share/nex/gosu-build.txt",self.package/"postgres/usr/local/share/nex/gosu-dependency-overlay.json"]
@@ -407,6 +436,25 @@ class Builder:
    return True
   finally: os.close(with_fd)
 
+ def discard_opa_scratch_files(self):
+  # Only files created by the current OPA compiler in its original owned work
+  # directory. Retained binary, test logs and inventory exports are elsewhere.
+  fd = os.open(self.work, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+  removed = []
+  try:
+   current = os.fstat(fd)
+   if (current.st_dev,current.st_ino) != self.work_identity or current.st_uid != os.getuid():
+    raise ValueError("OPA scratch ownership or original inode changed")
+   for name in OPA_SCRATCH_FILES:
+    try: info = os.stat(name,dir_fd=fd,follow_symlinks=False)
+    except FileNotFoundError: continue
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_dev != current.st_dev:
+     raise ValueError("OPA scratch file is not an owned regular file")
+    os.unlink(name,dir_fd=fd)
+    removed.append(name)
+   return removed
+  finally: os.close(fd)
+
  def image(self, name, dockerfile):
   # The official exporter controls new layer/whiteout timestamps; an owned,
   # fresh daemon/cache is removed before admission of the next image.
@@ -428,11 +476,71 @@ class Builder:
   self.record["images"][name] = details
   atomic_json(self.manifest,self.record)
 
+ def opa_image(self):
+  # Fetch the exact original subject, verify its saved image, and construct a
+  # new image from only its approved base layer and this build's OPA binary.
+  configured = json.loads((self.source/"deploy/qualification/compose.yaml").read_text())["services"]["opa"]["image"]
+  if configured != "${NEX_OPA_IMAGE:-" + VENDOR_IMAGE + "}":
+   raise ValueError("qualification OPA vendor pin differs from reconstruction policy")
+  settings = self.record["resource_budget"]["phase_settings"]
+  forecast = image_forecast("opa",settings["packaging_image_estimated_peak_additional"])
+  observed = self.measure_free()
+  if min(observed.values()) < forecast + self.reserve:
+   raise ValueError("OPA packaging requires reviewed forecast plus 2 GiB reserve")
+  self.record["resource_budget"]["opa_packaging_admission"] = {"forecast_bytes":forecast,"reserve_bytes":self.reserve,"observed_free":observed}
+  atomic_json(self.manifest,self.record)
+  self.run("opa-vendor-pull", self.docker("pull", VENDOR_IMAGE))
+  raw = self.run("opa-vendor-identity", self.docker("image", "inspect", VENDOR_IMAGE, "--format",
+   '{"Id":{{json .Id}},"RepoDigests":{{json .RepoDigests}},"Os":{{json .Os}},"Architecture":{{json .Architecture}},"RootFS":{{json .RootFS}}}'), True)
+  inspected = json.loads(raw)
+  if inspected.get("Id") != VENDOR_CONFIG or VENDOR_IMAGE not in (inspected.get("RepoDigests") or []) or inspected.get("RootFS",{}).get("Layers") != [BASE_LAYER,VENDOR_EXEC_LAYER]:
+   raise ValueError("pinned OPA vendor identity differs")
+  exports = self.work/"image-exports"
+  exports.mkdir(mode=0o700,exist_ok=True)
+  vendor_archive = exports/"opa-vendor.tar"
+  generated = exports/"opa-generated.tar"
+  inspected_path = self.path/"opa-vendor-identity.json"
+  receipt_path = self.path/"opa-reconstruction.json"
+  atomic_json(inspected_path,inspected)
+  self.run("opa-vendor-save",self.docker("image","save","-o",str(vendor_archive),VENDOR_CONFIG))
+  self.run("opa-reconstruct",[sys.executable,str(self.source/"scripts/opa_image.py"),
+   "--vendor-archive",str(vendor_archive),"--vendor-inspect",str(inspected_path),
+   "--binary",str(self.bin/"opa"),"--license",str(self.source/"deploy/qualification/opa/LICENSE"),
+   "--output",str(generated),"--receipt",str(receipt_path),
+   "--epoch",str(self.candidate["source"]["source_epoch"]),
+   "--revision",self.candidate["source"]["revision"],"--source-hash",self.candidate["source"]["inputs"]["sha256"]])
+  result = json.loads(receipt_path.read_text())
+  if result.get("vendor_image") != VENDOR_IMAGE or result.get("vendor_id") != VENDOR_CONFIG or result.get("retained_base") != BASE_LAYER or result.get("excluded_vendor_executable_layer") != VENDOR_EXEC_LAYER or result.get("compiled_binary_sha256") != self.record["phase_exports"]["opa"]["bin/opa"]["sha256"] or result.get("archive_sha256") != sha256(generated):
+   raise ValueError("OPA reconstruction does not match verified compiler and vendor inputs")
+  verify_reconstruction(generated,result,result["compiled_binary_sha256"],self.candidate["source"]["revision"],self.candidate["source"]["inputs"]["sha256"],self.candidate["source"]["source_epoch"])
+  self.run("opa-load",self.docker("image","load","--input",str(generated)))
+  loaded = json.loads(self.run("opa-loaded-identity",self.docker("image","inspect",result["id"],"--format",
+   '{"id":{{json .Id}},"layers":{{json .RootFS.Layers}},"labels":{{json .Config.Labels}}}'), True))
+  labels = loaded.get("labels") or {}
+  if loaded.get("id") != result["id"] or loaded.get("layers") != result["layers"] or labels.get("org.nex.source.inputs") != self.candidate["source"]["inputs"]["sha256"] or labels.get("org.opencontainers.image.revision") != self.candidate["source"]["revision"] or labels.get("org.nex.opa.vendor-base") != VENDOR_IMAGE:
+   raise ValueError("loaded OPA image differs from verified source-bound archive")
+  archives = self.path/"images"
+  archives.mkdir(exist_ok=True)
+  archive = archives/"opa.tar"
+  preparation = self.path/"opa-archive-preparation.json"
+  self.run("opa-prepare-archive",[sys.executable,str(self.source/"scripts/image_archive.py"),"--source",str(generated),"--output",str(archive),"--report",str(preparation),"--epoch",str(self.candidate["source"]["source_epoch"]),"--image-id",result["id"]])
+  tag = f'nex-alpha04-{self.candidate["run_id"]}-opa:{self.args.build}'
+  self.run("opa-tag",self.docker("image","tag",result["id"],tag))
+  self.record["images"]["opa"] = {"id":result["id"],"layers":result["layers"],"tag":tag,
+   "archive":{"path":"images/opa.tar","sha256":sha256(archive)},
+   "archive_preparation":{"path":preparation.name,"sha256":sha256(preparation)},
+   "payload":payload(archive,self.path/"opa-payload.json"),"archive_origin":"verified-vendor-base-reconstruction-v1",
+   "vendor_identity":{"path":inspected_path.name,"sha256":sha256(inspected_path)},
+   "reconstruction":{"path":receipt_path.name,"sha256":sha256(receipt_path)}}
+  atomic_json(self.manifest,self.record)
+
  def build(self):
   try:
    self.compiler("go")
    self.compiler("gosu")
    self.compiler_boundary("gosu")
+   self.compiler("opa")
+   self.compiler_boundary("opa")
    self.compiler("rust")
    self.compiler_boundary("rust")
    shutil.copytree(self.source/"apps/workspace",self.work/"workspace")
@@ -447,11 +555,7 @@ class Builder:
    for name, dockerfile in (("control","deploy/qualification/Dockerfile.control.runtime"),("guard","deploy/local/Dockerfile.guard"),
     ("fixtures","deploy/qualification/Dockerfile.fixtures.runtime"),("workspace","deploy/qualification/Dockerfile.workspace.runtime"),
     ("postgres","deploy/qualification/Dockerfile.postgres.runtime")): self.image(name,dockerfile)
-   opa = json.loads((self.source/"deploy/qualification/compose.yaml").read_text())["services"]["opa"]["image"]
-   variable = re.fullmatch(r"\$\{NEX_OPA_IMAGE:-(.+)\}", opa)
-   if variable: opa = variable.group(1)
-   self.run("opa-pull",self.docker("pull",opa))
-   self.save_image("opa",opa,{"requested":opa})
+   self.opa_image()
    if identity(self.source,canonical=True) != self.candidate["source"]: raise ValueError("source changed during build")
    self.record.update(status="built",ended_at=self.now())
    self.discard_owned_scratch()  # Only this newly created compilation scratch, not state.

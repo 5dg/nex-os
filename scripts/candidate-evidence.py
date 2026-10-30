@@ -38,6 +38,19 @@ def build_record(candidate, base, name):
         exported = path.parent / "bin" / binary
         if exported.is_symlink() or sha256(exported) != digest:
             raise ValueError("exported binary differs from completed build")
+    if data.get("images", {}).get("opa", {}).get("archive_origin") == "verified-vendor-base-reconstruction-v1":
+        for directory in (path.parent / "bin", path.parent / "package", path.parent / "package/opa"):
+            if directory.is_symlink() or not directory.is_dir():
+                raise ValueError("regular OPA compiler evidence directories required")
+        names = ["bin/opa", "bin/opa-build.txt", "bin/opa-source-inventory.txt", "bin/opa-bundle-tests.txt", "bin/opa-topdown-tests.txt", "bin/opa-private-key-tests.txt", "bin/opa-rest-tests.txt", "bin/opa-jwe-tests.txt", "package/opa/source-files.bin", "package/opa/source-tree.bin"]
+        exports = data.get("phase_exports", {}).get("opa", {})
+        if set(exports) != set(names):
+            raise ValueError("complete OPA compiler evidence required")
+        for relative in names:
+            exported = path.parent / relative
+            record = exports[relative]
+            if exported.is_symlink() or not exported.is_file() or sha256(exported) != record.get("sha256") or exported.stat().st_mode & 0o7777 != record.get("mode"):
+                raise ValueError("OPA compiler evidence differs from completed build")
     return data
 
 

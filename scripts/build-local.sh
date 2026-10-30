@@ -24,6 +24,7 @@ go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/model ./services/model/
 go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/executor ./services/tool-executor/cmd/executor
 go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/worker ./services/worker
 go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/evidence ./services/evidence
+go build -mod=readonly -trimpath -ldflags='-s -w' -o bin/policy-edge ./services/policy-edge
 if [[ "${NEX_BUILD_QUALIFICATION_FIXTURES:-0}" == 1 ]]; then
   for task_fixture in qualification-edge qualification-policy-edge; do
     go build -mod=readonly -trimpath -ldflags='-s -w' -o "bin/$task_fixture" "./scripts/$task_fixture"

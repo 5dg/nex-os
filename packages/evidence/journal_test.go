@@ -85,3 +85,125 @@ func TestTamperDetectionAndRestore(t *testing.T) {
 		t.Fatal("truncation passed the pinned checkpoint")
 	}
 }
+
+func TestVerifyAnchoredExtension(t *testing.T) {
+	limits := AnchoredVerificationLimits{MaxEntries: 10, MaxEntryBytes: 4096, MaxTotalBytes: 16384}
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := Journal{Directory: t.TempDir(), Private: private}
+	event := func(id string) Event {
+		return Event{ID: id, TenantID: "tenant-a", ActorID: "alice", Producer: "kernel", Action: "model.intent", Detail: json.RawMessage(`{"outcome":"reserved"}`)}
+	}
+	first, err := j.Append(event("event-one"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := j.Append(event("event-two"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := j.Append(event("event-three")); err != nil {
+		t.Fatal(err)
+	}
+	for _, pinned := range []Proof{first, anchor} {
+		entries, err := VerifyAnchoredExtensionContext(context.Background(), j.Directory, public, pinned, limits)
+		if err != nil || len(entries) != 3 {
+			t.Fatalf("valid anchored extension rejected: %v", err)
+		}
+	}
+	if _, err := Verify(j.Directory, public, &anchor); err == nil {
+		t.Fatal("exact-tip verification unexpectedly accepted an older checkpoint")
+	}
+	wrongPublic, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pinned := range []Proof{{}, {Sequence: anchor.Sequence, Head: anchor.Head, Signature: anchor.Signature, EventID: "other", Producer: anchor.Producer, Previous: anchor.Previous}} {
+		if _, err := VerifyAnchoredExtensionContext(context.Background(), j.Directory, public, pinned, limits); err == nil {
+			t.Fatal("invalid anchor accepted")
+		}
+	}
+	if _, err := VerifyAnchoredExtensionContext(context.Background(), j.Directory, wrongPublic, anchor, limits); err == nil {
+		t.Fatal("checkpoint from another key accepted")
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := VerifyAnchoredExtensionContext(canceled, j.Directory, public, anchor, limits); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled verification returned %v", err)
+	}
+	if _, err := VerifyAnchoredExtensionContext(nil, j.Directory, public, anchor, limits); err == nil {
+		t.Fatal("nil context accepted")
+	}
+	for _, restricted := range []AnchoredVerificationLimits{
+		{},
+		{MaxEntries: 2, MaxEntryBytes: 4096, MaxTotalBytes: 16384},
+		{MaxEntries: 10, MaxEntryBytes: 1, MaxTotalBytes: 16384},
+		{MaxEntries: 10, MaxEntryBytes: 4096, MaxTotalBytes: 1},
+		{MaxEntries: 100001, MaxEntryBytes: 4096, MaxTotalBytes: 16384},
+		{MaxEntries: 10, MaxEntryBytes: 1024*1024 + 1, MaxTotalBytes: 16384},
+		{MaxEntries: 10, MaxEntryBytes: 4096, MaxTotalBytes: 64*1024*1024 + 1},
+	} {
+		if _, err := VerifyAnchoredExtensionContext(context.Background(), j.Directory, public, anchor, restricted); err == nil {
+			t.Fatalf("invalid or exceeded resource limits accepted: %+v", restricted)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(j.Directory, "unrelated.txt"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyAnchoredExtensionContext(context.Background(), j.Directory, public, anchor, AnchoredVerificationLimits{MaxEntries: 3, MaxEntryBytes: 4096, MaxTotalBytes: 16384}); err == nil {
+		t.Fatal("non-journal files did not count toward the directory limit")
+	}
+	thirdPath := filepath.Join(j.Directory, "000000000003.json")
+	thirdBytes, err := os.ReadFile(thirdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(thirdPath, []byte(`{"bad":"entry"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyAnchoredExtensionContext(context.Background(), j.Directory, public, anchor, limits); err == nil {
+		t.Fatal("invalid entry after the anchor was accepted")
+	}
+	if err := os.WriteFile(thirdPath, thirdBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(j.Directory, "000000000004.json")
+	if err := os.Symlink(thirdPath, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyAnchoredExtensionContext(context.Background(), j.Directory, public, anchor, limits); err == nil {
+		t.Fatal("symlinked journal entry was accepted")
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	// A journal signed by the same key can still be a valid fork. An external
+	// checkpoint distinguishes it from the originally acknowledged branch.
+	fork := Journal{Directory: t.TempDir(), Private: private}
+	if _, err := fork.Append(event("event-one")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fork.Append(event("forked-event-two")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(fork.Directory, public, nil); err != nil {
+		t.Fatalf("fixture fork is not independently valid: %v", err)
+	}
+	if _, err := VerifyAnchoredExtensionContext(context.Background(), fork.Directory, public, anchor, limits); err == nil {
+		t.Fatal("signed fork passed the pinned checkpoint")
+	}
+	if err := os.Remove(filepath.Join(j.Directory, "000000000003.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyAnchoredExtensionContext(context.Background(), j.Directory, public, anchor, limits); err != nil {
+		t.Fatalf("exact checkpoint rejected: %v", err)
+	}
+	if err := os.Remove(filepath.Join(j.Directory, "000000000002.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyAnchoredExtensionContext(context.Background(), j.Directory, public, anchor, limits); err == nil {
+		t.Fatal("truncation before the checkpoint accepted")
+	}
+}

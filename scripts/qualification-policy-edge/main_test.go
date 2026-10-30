@@ -6,11 +6,16 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/5dg/nex-os/packages/policyedge"
 )
 
 type roundTrip func(*http.Request) (*http.Response, error)
 
 func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func policyHandler(transport http.RoundTripper) http.Handler {
+	return policyedge.Handler(transport, func(*http.Request) error { return nil })
+}
 func TestOnlyImmutableSourceAndDecisionRoutesReachOPA(t *testing.T) {
 	calls := 0
 	h := policyHandler(roundTrip(func(r *http.Request) (*http.Response, error) {

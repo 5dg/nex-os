@@ -316,6 +316,10 @@ func TestPreparationFailureReleasesLease(t *testing.T) {
 		if e := db.QueryRow(ctx, `SELECT state FROM jobs WHERE id=$1`, uncertain.ID).Scan(&failedState); e != nil || failedState != "failed" {
 			t.Fatal("substituted acknowledgement changed job state", failedState, e)
 		}
+		var outboxCount int
+		if e := db.QueryRow(ctx, `SELECT count(*) FROM committed_reconciliation_outbox WHERE job_id=$1`, uncertain.ID).Scan(&outboxCount); e != nil || outboxCount != 0 {
+			t.Fatal("rejected acknowledgement produced committed evidence", outboxCount, e)
+		}
 		forgedAcknowledgement = false
 		revokeDuringCall = true
 		call("alice", "reconcile", uncertain.ID, "", 403)
@@ -327,9 +331,47 @@ func TestPreparationFailureReleasesLease(t *testing.T) {
 		if out["state"] != "completed" {
 			t.Fatal(out)
 		}
+		var eventBytes []byte
+		var eventHash string
+		if e := db.QueryRow(ctx, `SELECT event_bytes,event_sha256 FROM committed_reconciliation_outbox WHERE job_id=$1 AND operation_id=$2`, uncertain.ID, uncertain.Operation).Scan(&eventBytes, &eventHash); e != nil || broker.Hash(eventBytes) != eventHash {
+			t.Fatal("committed transition lacks intact outbox event", e)
+		}
+		var committed evidence.Event
+		var detail map[string]string
+		var storedResult []byte
+		var storedDigest string
+		if e := db.QueryRow(ctx, `SELECT request_digest,result FROM execution_operations WHERE id=$1`, uncertain.Operation).Scan(&storedDigest, &storedResult); e != nil {
+			t.Fatal(e)
+		}
+		if json.Unmarshal(eventBytes, &committed) != nil || json.Unmarshal(committed.Detail, &detail) != nil || committed.Action != "job.reconciliation.committed" || committed.Producer != "control" || committed.TenantID != uncertain.TenantID || committed.JobID != uncertain.ID || committed.ActorID != uncertain.Owner || detail["operation_id"] != uncertain.Operation || detail["kind"] != "model" || detail["request_digest"] != storedDigest || detail["protected_result_sha256"] != broker.Hash(storedResult) {
+			t.Fatal("outbox event did not bind the committed transition")
+		}
 		call("alice", "reconcile", uncertain.ID, "", 409)
 		if calls != 5 {
 			t.Fatal("unexpected receiver calls", calls)
+		}
+
+		// The outbox row and its transition must disappear together if the
+		// caller's transaction rolls back after enqueueing.
+		rolledBack := recoveryJob("model_OUTCOME_UNAVAILABLE_OR_UNKNOWN", "started", true)
+		rollbackTx, e := db.Begin(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = rollbackTx.Exec(ctx, `UPDATE jobs SET state='completed' WHERE id=$1`, rolledBack.ID); e != nil {
+			t.Fatal(e)
+		}
+		if e = evidence.EnqueueCommittedReconciliation(ctx, rollbackTx, evidence.CommittedReconciliationScope{TenantID: rolledBack.TenantID, ActorID: rolledBack.Owner, JobID: rolledBack.ID, ResourceID: rolledBack.DocumentID, DelegationID: rolledBack.Delegation, OperationID: rolledBack.Operation, Kind: "model", RequestDigest: broker.Hash([]byte("synthetic-request")), ProtectedResult: []byte(`{"text":"synthetic"}`)}); e != nil {
+			t.Fatal(e)
+		}
+		if e = rollbackTx.Rollback(ctx); e != nil {
+			t.Fatal(e)
+		}
+		if e = db.QueryRow(ctx, `SELECT state FROM jobs WHERE id=$1`, rolledBack.ID).Scan(&failedState); e != nil || failedState != "failed" {
+			t.Fatal("rollback retained transition", failedState, e)
+		}
+		if e = db.QueryRow(ctx, `SELECT count(*) FROM committed_reconciliation_outbox WHERE job_id=$1`, rolledBack.ID).Scan(&outboxCount); e != nil || outboxCount != 0 {
+			t.Fatal("rollback retained committed evidence", outboxCount, e)
 		}
 
 		// Hold the final evidence signing call until the delegation expires.

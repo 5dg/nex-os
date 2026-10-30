@@ -9,6 +9,7 @@ import (
 
 	"github.com/5dg/nex-os/packages/broker"
 	"github.com/5dg/nex-os/packages/contracts"
+	"github.com/5dg/nex-os/packages/evidence"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -193,9 +194,16 @@ func (s *Server) reconcileJob(w http.ResponseWriter, r *http.Request) {
 	if e == nil {
 		// The external signer commits before this transaction, so its event
 		// describes the verified attempt rather than claiming SQL committed.
-		// An independently durable, commit-confirmed outbox is still required
-		// to produce evidence that reconciliation actually committed.
+		// The outbox below captures the transition in this transaction. It is
+		// not independently durable or signed evidence of the commit.
 		e = s.record(r.Context(), done, current, "job.reconciliation_attempt", "protected_result_verified")
+	}
+	if e == nil {
+		e = evidence.EnqueueCommittedReconciliation(r.Context(), done, evidence.CommittedReconciliationScope{
+			TenantID: current.TenantID, ActorID: current.Owner, JobID: current.ID,
+			ResourceID: current.DocumentID, DelegationID: current.Delegation,
+			OperationID: current.Operation, Kind: kind, RequestDigest: digest, ProtectedResult: protected,
+		})
 	}
 	if e == nil {
 		e = s.reconcileCurrentAuthority(r, done, current)

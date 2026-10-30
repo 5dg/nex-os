@@ -8,7 +8,7 @@ go)
  mkdir -p "$GOCACHE" "$GOPATH" "$GOTMPDIR"
  go mod download
  go mod verify
- for item in control:services/control/cmd/control dev-issuer:services/control/cmd/dev-issuer model:services/model/cmd/model executor:services/tool-executor/cmd/executor worker:services/worker evidence:services/evidence qualification-edge:scripts/qualification-edge qualification-policy-edge:scripts/qualification-policy-edge qualification-pki:tests/qualification/cmd/pki qualification-issuer:tests/qualification/cmd/oidc-issuer qualification-receiver-readiness:tests/qualification/cmd/receiver-readiness; do
+ for item in control:services/control/cmd/control dev-issuer:services/control/cmd/dev-issuer model:services/model/cmd/model executor:services/tool-executor/cmd/executor worker:services/worker evidence:services/evidence policy-edge:services/policy-edge qualification-edge:scripts/qualification-edge qualification-policy-edge:scripts/qualification-policy-edge qualification-pki:tests/qualification/cmd/pki qualification-issuer:tests/qualification/cmd/oidc-issuer qualification-receiver-readiness:tests/qualification/cmd/receiver-readiness; do
   name=$(printf '%s' "$item" | cut -d: -f1); package=$(printf '%s' "$item" | cut -d: -f2)
   go build -mod=readonly -trimpath -buildvcs=false -ldflags='-s -w' -o "/out/$name" "./$package"
  done
@@ -30,6 +30,9 @@ rust)
  sha256sum "$(rustup which rustc)" > /out/rustc-compiler.sha256
  ldd --version > /out/rust-libc.txt
  ldd /out/guard-kernel > /out/guard-linked-libraries.txt
+ ;;
+opa)
+ sh /src/scripts/canonical-opa.sh
  ;;
 node)
  node --version | grep -Fx 'v24.19.0'

@@ -101,19 +101,26 @@ class RuntimeRootTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'changed during'):
                 self.prepare()
 
-    def test_compiler_boundary_binds_layout_and_actual_export_in_phase_metadata(self):
+    def compiler_fixture(self, include_policy=True):
         instance = builder.Builder.__new__(builder.Builder)
         instance.path = self.root; instance.package = self.package
         instance.bin = self.root / 'bin'; instance.bin.mkdir()
         instance.manifest = self.root / 'manifest.json'; instance.record = {}
         instance.eviction_plan = {}; instance.discard_owned_scratch = lambda name: False
-        for name in ('control', 'dev-issuer', 'model', 'executor', 'worker', 'evidence', 'qualification-edge', 'qualification-policy-edge', 'qualification-pki', 'qualification-issuer', 'qualification-receiver-readiness'):
+        names = ['control', 'dev-issuer', 'model', 'executor', 'worker', 'evidence', 'qualification-edge', 'qualification-policy-edge', 'qualification-pki', 'qualification-issuer', 'qualification-receiver-readiness']
+        if include_policy:
+            names.append('policy-edge')
+        for name in names:
             path = instance.bin / name; path.write_bytes(b'fixture compiled public binary'); path.chmod(0o555)
         for name in ('go-version.txt', 'go-target.txt', 'go-compiler.sha256'):
             (instance.bin / name).write_text('fixture pinned compiler metadata')
         (instance.bin / 'runtime-trust-bundle.sha256').write_text(self.digest + '  /package/trust/ca-certificates.crt\n')
         for name in ('usr/local/bin/gosu', 'usr/local/share/nex/gosu-build.txt', 'usr/local/share/nex/gosu-dependency-overlay.json'):
             path = self.package / 'postgres' / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_text('fixture public compiler export')
+        return instance
+
+    def test_compiler_boundary_binds_layout_and_actual_export_in_phase_metadata(self):
+        instance = self.compiler_fixture()
         instance.compiler_boundary('gosu')
         record = json.loads(instance.manifest.read_text())['phase_exports']['gosu']
         self.assertEqual(record['package/runtime-root/etc/ssl/certs/ca-certificates.crt'], {'sha256': self.digest, 'mode': 0o444})
@@ -121,6 +128,18 @@ class RuntimeRootTests(unittest.TestCase):
         self.assertEqual(layout['public_ca_sha256'], self.digest)
         self.assertEqual(set(layout['directories'].values()), {0o555})
         self.assertEqual(record['bin/runtime-root-layout.json']['sha256'], hashlib.sha256((instance.bin / 'runtime-root-layout.json').read_bytes()).hexdigest())
+        self.assertEqual(record['bin/policy-edge'], {'sha256': hashlib.sha256((instance.bin / 'policy-edge').read_bytes()).hexdigest(), 'mode': 0o555})
+
+    def test_compiler_boundary_rejects_missing_policy_edge_export(self):
+        instance = self.compiler_fixture(include_policy=False)
+        with self.assertRaisesRegex(ValueError, 'missing or unsupported fresh compiler export: policy-edge'):
+            instance.compiler_boundary('gosu')
+        self.assertFalse(instance.manifest.exists())
+
+    def test_candidate_policy_runtime_uses_explicit_ca_tree_and_nonroot_user(self):
+        dockerfile = SCRIPTS.parent / 'deploy/production/Dockerfile.policy-edge.runtime'
+        instructions = [line.strip() for line in dockerfile.read_text().splitlines() if line.strip() and not line.startswith('#')]
+        self.assertEqual(instructions, ['FROM scratch', 'COPY runtime-root/ /', 'COPY --chmod=0555 bin/policy-edge /policy-edge', 'USER 65532:65532', 'ENTRYPOINT ["/policy-edge"]'])
 
     def test_both_runtime_consumers_copy_the_explicit_tree_and_keep_nonroot_user(self):
         for role in ('control', 'fixtures'):

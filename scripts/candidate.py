@@ -178,13 +178,45 @@ def verify_images(args: argparse.Namespace) -> None:
         if not IMAGE_ID.fullmatch(image_id):
             raise ValueError("invalid recorded image identity")
         output = subprocess.check_output(["docker", "--host=unix:///var/run/docker.sock", "image", "inspect", image_id,
-            "--format", '{"id":{{json .Id}},"labels":{{json .Config.Labels}},"digests":{{json .RepoDigests}}}'],
+            "--format", '{"id":{{json .Id}},"labels":{{json .Config.Labels}},"digests":{{json .RepoDigests}},"layers":{{json .RootFS.Layers}}}'],
             env=environment_values, text=True)
         actual = json.loads(output)
         if actual["id"] != image_id:
             raise ValueError("image identity differs from the tested candidate")
         if name == "opa":
-            if record.get("requested") not in (actual.get("digests") or []):
+            from opa_image import BASE_LAYER, VENDOR_CONFIG, VENDOR_EXEC_LAYER, VENDOR_IMAGE, verify_reconstruction
+            if record.get("archive_origin") == "verified-vendor-base-reconstruction-v1":
+                labels = actual.get("labels") or {}
+                layers = actual.get("layers")
+                if (not isinstance(layers, list) or len(layers) != 2 or layers[0] != BASE_LAYER or
+                        VENDOR_EXEC_LAYER in layers or layers != record.get("layers") or
+                        labels.get("org.nex.source.inputs") != data["source"]["inputs"]["sha256"] or
+                        labels.get("org.opencontainers.image.revision") != data["source"]["revision"] or
+                        labels.get("org.nex.opa.downstream") != "true" or labels.get("org.nex.opa.vendor-base") != VENDOR_IMAGE):
+                    raise ValueError("downstream OPA source or vendor base mismatch")
+                build_path = base / "builds" / args.build
+                if build_path.is_symlink() or not build_path.is_dir() or (build_path / "images").is_symlink() or not (build_path / "images").is_dir():
+                    raise ValueError("regular OPA build and image directories required")
+                proof = record.get("reconstruction", {})
+                if not isinstance(proof.get("path"), str) or Path(proof["path"]).name != proof["path"]:
+                    raise ValueError("bounded OPA reconstruction receipt required")
+                proof_path = build_path / proof["path"]
+                if proof_path.is_symlink() or not proof_path.is_file() or sha256(proof_path) != proof.get("sha256"):
+                    raise ValueError("OPA reconstruction receipt binding mismatch")
+                receipt = json.loads(proof_path.read_text())
+                if (receipt.get("id") != image_id or receipt.get("layers") != layers or
+                        receipt.get("vendor_image") != VENDOR_IMAGE or receipt.get("vendor_id") != VENDOR_CONFIG or
+                        receipt.get("retained_base") != BASE_LAYER or receipt.get("excluded_vendor_executable_layer") != VENDOR_EXEC_LAYER or
+                        receipt.get("compiled_binary_sha256") != build.get("binaries", {}).get("opa")):
+                    raise ValueError("OPA reconstruction receipt mismatch")
+                saved = record.get("archive", {})
+                if saved.get("path") != "images/opa.tar":
+                    raise ValueError("bounded OPA image archive required")
+                archive = build_path / saved["path"]
+                if archive.is_symlink() or not archive.is_file() or sha256(archive) != saved.get("sha256"):
+                    raise ValueError("OPA image archive identity mismatch")
+                verify_reconstruction(archive, receipt, build["binaries"]["opa"], data["source"]["revision"], data["source"]["inputs"]["sha256"], data["source"]["source_epoch"])
+            elif record.get("requested") != VENDOR_IMAGE or VENDOR_IMAGE not in (actual.get("digests") or []):
                 raise ValueError("OPA vendor digest mismatch")
         else:
             labels = actual.get("labels") or {}

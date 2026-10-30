@@ -49,7 +49,7 @@ ROLES = {'control': 'deploy/qualification/Dockerfile.control.runtime',
          'postgres': 'deploy/qualification/Dockerfile.postgres.runtime'}
 
 
-def archive_identity(path):
+def archive_identity(path, *, allow_repo_tags=False):
     """Verify actual exported config and every uncompressed layer before load."""
     if path.is_symlink() or not path.is_file():
         raise ValueError('regular direct export archive required')
@@ -65,7 +65,7 @@ def archive_identity(path):
         if not isinstance(manifest, list) or len(manifest) != 1 or not isinstance(manifest[0], dict):
             raise ValueError('one exported image required')
         manifest = manifest[0]
-        if manifest.get('RepoTags'):
+        if manifest.get('RepoTags') and not allow_repo_tags:
             raise ValueError('canonical exporter archive must be untagged')
         member = archive.getmember(manifest['Config'])
         if not member.isfile() or member.size > 16 * 1024 ** 2:

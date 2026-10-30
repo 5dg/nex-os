@@ -1,0 +1,78 @@
+--- a/v1/bundle/verify.go
++++ b/v1/bundle/verify.go
+@@ -240,6 +240,14 @@
+ 	if err := json.Unmarshal(headerBytes, &header); err != nil {
+ 		return nil, errors.New("failed to extract key ID from headers: invalid protected JWT header")
+ 	}
++	// This verifier supports no critical JWS extensions or unencoded payloads.
++	// Presence is rejected even for empty, malformed, or otherwise benign values.
++	if _, present := header["crit"]; present {
++		return nil, errors.New("unsupported critical JWT header extension")
++	}
++	if _, present := header["b64"]; present {
++		return nil, errors.New("unsupported critical JWT header extension")
++	}
+ 	var headerAlg string
+ 	algField := header["alg"]
+ 	if len(algField) == 0 || algField[0] != '"' || json.Unmarshal(algField, &headerAlg) != nil || headerAlg == "" {
+--- /dev/null
++++ b/v1/bundle/nex_v4_crit_test.go
+@@ -0,0 +1,58 @@
++// Downstream Nex OS diagnostic regression; not part of an upstream release.
++package bundle
++
++import (
++	"crypto/hmac"
++	"crypto/sha256"
++	"encoding/base64"
++	"strings"
++	"testing"
++)
++
++func TestNexRejectUnsupportedCriticalHeaders(t *testing.T) {
++	encode := base64.RawURLEncoding.EncodeToString
++	secret := []byte("diagnostic-secret")
++	signed := func(header string) string {
++		input := encode([]byte(header)) + "." + encode([]byte(`{"files":[],"keyid":"foo"}`))
++		mac := hmac.New(sha256.New, secret)
++		_, _ = mac.Write([]byte(input))
++		return input + "." + encode(mac.Sum(nil))
++	}
++	controls := []string{
++		`{"alg":"HS256","kid":"foo"}`,
++		`{"alg":"HS256"}`,
++		`{"alg":"HS256","kid":"foo","noncritical":{"value":true}}`,
++		`{"alg":"HS256","kid":"foo","noncritical":{"crit":[],"b64":false}}`,
++	}
++	bad := map[string]string{
++		"unknown_critical":   `{"alg":"HS256","kid":"foo","crit":["unknown"],"unknown":true}`,
++		"escaped_critical":   `{"alg":"HS256","kid":"foo","\u0063rit":["unknown"],"unknown":true}`,
++		"missing_extension":  `{"alg":"HS256","kid":"foo","crit":["unknown"]}`,
++		"empty_critical":     `{"alg":"HS256","kid":"foo","crit":[]}`,
++		"null_critical":      `{"alg":"HS256","kid":"foo","crit":null}`,
++		"wrong_type":         `{"alg":"HS256","kid":"foo","crit":"unknown"}`,
++		"duplicate_critical": `{"alg":"HS256","kid":"foo","crit":["x","x"],"x":true}`,
++		"reserved_critical":  `{"alg":"HS256","kid":"foo","crit":["alg"]}`,
++		"unencoded_payload":  `{"alg":"HS256","kid":"foo","crit":["b64"],"b64":false}`,
++		"b64_without_crit":   `{"alg":"HS256","kid":"foo","b64":true}`,
++	}
++	keys := map[string]*KeyConfig{"foo": {Key: string(secret), Algorithm: "HS256"}}
++	for _, configuredID := range []string{"", "foo"} {
++		t.Run("configured="+configuredID, func(t *testing.T) {
++			cfg := NewVerificationConfig(keys, configuredID, "", nil)
++			for _, header := range controls {
++				if _, err := VerifyBundleSignature(SignaturesConfig{Signatures: []string{signed(header)}}, cfg); err != nil {
++					t.Fatalf("valid signed control rejected: %v", err)
++				}
++			}
++			for name, header := range bad {
++				t.Run(name, func(t *testing.T) {
++					files, err := VerifyBundleSignature(SignaturesConfig{Signatures: []string{signed(header)}}, cfg)
++					if err == nil || len(files) != 0 || !strings.HasPrefix(err.Error(), "unsupported critical JWT header extension") {
++						t.Fatalf("unsupported critical header not rejected: files=%v err=%v", files, err)
++					}
++				})
++			}
++		})
++	}
++}
