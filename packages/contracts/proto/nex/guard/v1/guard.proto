@@ -11,9 +11,16 @@ service Guard {
   rpc CompleteExecution(CompletionRequest) returns (ExecutionResponse);
   rpc ExecutionState(ExecutionRequest) returns (ExecutionResponse);
   rpc AuthorizeExecution(ExecutionRequest) returns (ExecutionResponse);
+  // Non-mutating result access check; never grants or starts an effect.
+  rpc CheckResultAccess(ResultAccessRequest) returns (ExecutionResponse);
+  // Establish immutable original identity from an authenticated assertion.
+  rpc BindResultIdentity(ResultAccessRequest) returns (ExecutionResponse);
   rpc DecideApproval(ApprovalRequest) returns (ExecutionResponse);
 }
 message ExecutionRequest { string operation_id = 1; string request_digest = 2; }
+// Opaque short-lived service assertion, not a browser token or session handle.
+// Actor/tenant/session identity is derived from verified claims and Guard state.
+message ResultAccessRequest { string operation_id = 1; string request_digest = 2; bytes service_capability = 3; }
 message ExecutionResponse { bool allowed = 1; string state = 2; }
 message ApprovalRequest { string approval_id = 1; string request_digest = 2; string actor_id = 3; string tenant_id = 4; bool approve = 5; }
 message Actor {

@@ -25,6 +25,8 @@ const (
 	Guard_CompleteExecution_FullMethodName  = "/nex.guard.v1.Guard/CompleteExecution"
 	Guard_ExecutionState_FullMethodName     = "/nex.guard.v1.Guard/ExecutionState"
 	Guard_AuthorizeExecution_FullMethodName = "/nex.guard.v1.Guard/AuthorizeExecution"
+	Guard_CheckResultAccess_FullMethodName  = "/nex.guard.v1.Guard/CheckResultAccess"
+	Guard_BindResultIdentity_FullMethodName = "/nex.guard.v1.Guard/BindResultIdentity"
 	Guard_DecideApproval_FullMethodName     = "/nex.guard.v1.Guard/DecideApproval"
 )
 
@@ -41,6 +43,10 @@ type GuardClient interface {
 	CompleteExecution(ctx context.Context, in *CompletionRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
 	ExecutionState(ctx context.Context, in *ExecutionRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
 	AuthorizeExecution(ctx context.Context, in *ExecutionRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
+	// Non-mutating result access check; never grants or starts an effect.
+	CheckResultAccess(ctx context.Context, in *ResultAccessRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
+	// Establish immutable original identity from an authenticated assertion.
+	BindResultIdentity(ctx context.Context, in *ResultAccessRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
 	DecideApproval(ctx context.Context, in *ApprovalRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
 }
 
@@ -112,6 +118,26 @@ func (c *guardClient) AuthorizeExecution(ctx context.Context, in *ExecutionReque
 	return out, nil
 }
 
+func (c *guardClient) CheckResultAccess(ctx context.Context, in *ResultAccessRequest, opts ...grpc.CallOption) (*ExecutionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecutionResponse)
+	err := c.cc.Invoke(ctx, Guard_CheckResultAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *guardClient) BindResultIdentity(ctx context.Context, in *ResultAccessRequest, opts ...grpc.CallOption) (*ExecutionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecutionResponse)
+	err := c.cc.Invoke(ctx, Guard_BindResultIdentity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *guardClient) DecideApproval(ctx context.Context, in *ApprovalRequest, opts ...grpc.CallOption) (*ExecutionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ExecutionResponse)
@@ -135,6 +161,10 @@ type GuardServer interface {
 	CompleteExecution(context.Context, *CompletionRequest) (*ExecutionResponse, error)
 	ExecutionState(context.Context, *ExecutionRequest) (*ExecutionResponse, error)
 	AuthorizeExecution(context.Context, *ExecutionRequest) (*ExecutionResponse, error)
+	// Non-mutating result access check; never grants or starts an effect.
+	CheckResultAccess(context.Context, *ResultAccessRequest) (*ExecutionResponse, error)
+	// Establish immutable original identity from an authenticated assertion.
+	BindResultIdentity(context.Context, *ResultAccessRequest) (*ExecutionResponse, error)
 	DecideApproval(context.Context, *ApprovalRequest) (*ExecutionResponse, error)
 	mustEmbedUnimplementedGuardServer()
 }
@@ -163,6 +193,12 @@ func (UnimplementedGuardServer) ExecutionState(context.Context, *ExecutionReques
 }
 func (UnimplementedGuardServer) AuthorizeExecution(context.Context, *ExecutionRequest) (*ExecutionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AuthorizeExecution not implemented")
+}
+func (UnimplementedGuardServer) CheckResultAccess(context.Context, *ResultAccessRequest) (*ExecutionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckResultAccess not implemented")
+}
+func (UnimplementedGuardServer) BindResultIdentity(context.Context, *ResultAccessRequest) (*ExecutionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BindResultIdentity not implemented")
 }
 func (UnimplementedGuardServer) DecideApproval(context.Context, *ApprovalRequest) (*ExecutionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DecideApproval not implemented")
@@ -296,6 +332,42 @@ func _Guard_AuthorizeExecution_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Guard_CheckResultAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResultAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GuardServer).CheckResultAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Guard_CheckResultAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GuardServer).CheckResultAccess(ctx, req.(*ResultAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Guard_BindResultIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResultAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GuardServer).BindResultIdentity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Guard_BindResultIdentity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GuardServer).BindResultIdentity(ctx, req.(*ResultAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Guard_DecideApproval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ApprovalRequest)
 	if err := dec(in); err != nil {
@@ -344,6 +416,14 @@ var Guard_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AuthorizeExecution",
 			Handler:    _Guard_AuthorizeExecution_Handler,
+		},
+		{
+			MethodName: "CheckResultAccess",
+			Handler:    _Guard_CheckResultAccess_Handler,
+		},
+		{
+			MethodName: "BindResultIdentity",
+			Handler:    _Guard_BindResultIdentity_Handler,
 		},
 		{
 			MethodName: "DecideApproval",

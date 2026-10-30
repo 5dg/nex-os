@@ -180,6 +180,46 @@ func (c *Client) ExecutionState(ctx context.Context, operation, digest string) (
 	return out.State, nil
 }
 
+// Result access is separate from the one-shot execution grant. The opaque
+// service assertion must be verified by Guard; browser tokens are not forwarded.
+func (c *Client) CheckResultAccess(ctx context.Context, operation, digest string, capability []byte) error {
+	return c.resultAccess(ctx, operation, digest, capability, false)
+}
+
+// BindResultIdentity is intended for authenticated control-service wiring
+// after independent user/session verification. It does not dispatch an effect.
+func (c *Client) BindResultIdentity(ctx context.Context, operation, digest string, capability []byte) error {
+	return c.resultAccess(ctx, operation, digest, capability, true)
+}
+
+func (c *Client) resultAccess(ctx context.Context, operation, digest string, capability []byte, bind bool) error {
+	if ctx == nil || c == nil || c.RPC == nil || c.RPC.client == nil || len(capability) == 0 || len(capability) > 16*1024 {
+		return errors.New("verified Guard result-access boundary required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	ctx = c.RPC.outgoing(ctx)
+	req := &pb.ResultAccessRequest{OperationId: operation, RequestDigest: digest, ServiceCapability: append([]byte(nil), capability...)}
+	var remote peer.Peer
+	var out *pb.ExecutionResponse
+	var err error
+	if bind {
+		out, err = c.RPC.client.BindResultIdentity(ctx, req, grpc.Peer(&remote))
+	} else {
+		out, err = c.RPC.client.CheckResultAccess(ctx, req, grpc.Peer(&remote))
+	}
+	if err == nil {
+		err = c.RPC.after(remote)
+	}
+	if err != nil {
+		return rpcError(err)
+	}
+	if out == nil || !out.Allowed {
+		return ErrDenied
+	}
+	return nil
+}
+
 // An authorization transport failure may hide a committed grant. Only a fresh
 // pending state proves no previous authorization/effect for this exact operation.
 func (c *Client) AuthorizeEffect(ctx context.Context, operation, digest string) error {

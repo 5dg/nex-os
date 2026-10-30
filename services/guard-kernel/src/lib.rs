@@ -7,6 +7,7 @@ mod evidence;
 mod evidence_v1;
 mod execution;
 pub mod profile;
+pub mod result_access;
 mod shutdown;
 mod state;
 pub mod trust;
@@ -39,8 +40,21 @@ pub struct Kernel {
     model_token: String,
     export_token: String,
     evidence: Option<evidence::Writer>,
+    result_access: Option<Arc<result_access::ResultAccessConfig>>,
 }
 impl Kernel {
+    // Main does not configure this boundary. An embedding must supply approved
+    // verifier/session implementations and validated workload trust explicitly.
+    pub fn with_result_access(
+        mut self,
+        access: result_access::ResultAccessConfig,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        if self.trust.is_none() || self.state.is_none() {
+            return Err("result access requires verified workload trust and state".into());
+        }
+        self.result_access = Some(Arc::new(access));
+        Ok(self)
+    }
     pub fn with_evidence(
         mut self,
         url: String,
@@ -105,6 +119,7 @@ impl Kernel {
             model_token: String::new(),
             export_token: String::new(),
             evidence: None,
+            result_access: None,
         })
     }
     pub fn with_execution(
@@ -279,6 +294,20 @@ impl protocol::guard_server::Guard for Kernel {
         request: Request<protocol::ExecutionRequest>,
     ) -> Result<Response<protocol::ExecutionResponse>, Status> {
         self.bounded(execution::execute(self, request)).await
+    }
+    async fn check_result_access(
+        &self,
+        request: Request<protocol::ResultAccessRequest>,
+    ) -> Result<Response<protocol::ExecutionResponse>, Status> {
+        self.bounded(execution::result_access(self, request, false))
+            .await
+    }
+    async fn bind_result_identity(
+        &self,
+        request: Request<protocol::ResultAccessRequest>,
+    ) -> Result<Response<protocol::ExecutionResponse>, Status> {
+        self.bounded(execution::result_access(self, request, true))
+            .await
     }
     async fn decide_approval(
         &self,

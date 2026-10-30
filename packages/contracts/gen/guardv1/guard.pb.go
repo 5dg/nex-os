@@ -125,6 +125,68 @@ func (x *ExecutionRequest) GetRequestDigest() string {
 	return ""
 }
 
+// Opaque short-lived service assertion, not a browser token or session handle.
+// Actor/tenant/session identity is derived from verified claims and Guard state.
+type ResultAccessRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	OperationId       string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	RequestDigest     string                 `protobuf:"bytes,2,opt,name=request_digest,json=requestDigest,proto3" json:"request_digest,omitempty"`
+	ServiceCapability []byte                 `protobuf:"bytes,3,opt,name=service_capability,json=serviceCapability,proto3" json:"service_capability,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ResultAccessRequest) Reset() {
+	*x = ResultAccessRequest{}
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResultAccessRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResultAccessRequest) ProtoMessage() {}
+
+func (x *ResultAccessRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResultAccessRequest.ProtoReflect.Descriptor instead.
+func (*ResultAccessRequest) Descriptor() ([]byte, []int) {
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ResultAccessRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *ResultAccessRequest) GetRequestDigest() string {
+	if x != nil {
+		return x.RequestDigest
+	}
+	return ""
+}
+
+func (x *ResultAccessRequest) GetServiceCapability() []byte {
+	if x != nil {
+		return x.ServiceCapability
+	}
+	return nil
+}
+
 type ExecutionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Allowed       bool                   `protobuf:"varint,1,opt,name=allowed,proto3" json:"allowed,omitempty"`
@@ -135,7 +197,7 @@ type ExecutionResponse struct {
 
 func (x *ExecutionResponse) Reset() {
 	*x = ExecutionResponse{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[1]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -147,7 +209,7 @@ func (x *ExecutionResponse) String() string {
 func (*ExecutionResponse) ProtoMessage() {}
 
 func (x *ExecutionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[1]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -160,7 +222,7 @@ func (x *ExecutionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutionResponse.ProtoReflect.Descriptor instead.
 func (*ExecutionResponse) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{1}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ExecutionResponse) GetAllowed() bool {
@@ -190,7 +252,7 @@ type ApprovalRequest struct {
 
 func (x *ApprovalRequest) Reset() {
 	*x = ApprovalRequest{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[2]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -202,7 +264,7 @@ func (x *ApprovalRequest) String() string {
 func (*ApprovalRequest) ProtoMessage() {}
 
 func (x *ApprovalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[2]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -215,7 +277,7 @@ func (x *ApprovalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApprovalRequest.ProtoReflect.Descriptor instead.
 func (*ApprovalRequest) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{2}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ApprovalRequest) GetApprovalId() string {
@@ -264,7 +326,7 @@ type Actor struct {
 
 func (x *Actor) Reset() {
 	*x = Actor{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[3]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -276,7 +338,7 @@ func (x *Actor) String() string {
 func (*Actor) ProtoMessage() {}
 
 func (x *Actor) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[3]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -289,7 +351,7 @@ func (x *Actor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Actor.ProtoReflect.Descriptor instead.
 func (*Actor) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{3}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Actor) GetId() string {
@@ -326,7 +388,7 @@ type Resource struct {
 
 func (x *Resource) Reset() {
 	*x = Resource{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[4]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -338,7 +400,7 @@ func (x *Resource) String() string {
 func (*Resource) ProtoMessage() {}
 
 func (x *Resource) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[4]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -351,7 +413,7 @@ func (x *Resource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resource.ProtoReflect.Descriptor instead.
 func (*Resource) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{4}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Resource) GetTenantId() string {
@@ -403,7 +465,7 @@ type EvaluateRequest struct {
 
 func (x *EvaluateRequest) Reset() {
 	*x = EvaluateRequest{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[5]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -415,7 +477,7 @@ func (x *EvaluateRequest) String() string {
 func (*EvaluateRequest) ProtoMessage() {}
 
 func (x *EvaluateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[5]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -428,7 +490,7 @@ func (x *EvaluateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluateRequest.ProtoReflect.Descriptor instead.
 func (*EvaluateRequest) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{5}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *EvaluateRequest) GetActor() *Actor {
@@ -485,7 +547,7 @@ type EvaluateResponse struct {
 
 func (x *EvaluateResponse) Reset() {
 	*x = EvaluateResponse{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[6]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -497,7 +559,7 @@ func (x *EvaluateResponse) String() string {
 func (*EvaluateResponse) ProtoMessage() {}
 
 func (x *EvaluateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[6]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -510,7 +572,7 @@ func (x *EvaluateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EvaluateResponse.ProtoReflect.Descriptor instead.
 func (*EvaluateResponse) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{6}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EvaluateResponse) GetEffect() Effect {
@@ -553,7 +615,7 @@ type PrepareRequest struct {
 
 func (x *PrepareRequest) Reset() {
 	*x = PrepareRequest{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[7]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -565,7 +627,7 @@ func (x *PrepareRequest) String() string {
 func (*PrepareRequest) ProtoMessage() {}
 
 func (x *PrepareRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[7]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -578,7 +640,7 @@ func (x *PrepareRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareRequest.ProtoReflect.Descriptor instead.
 func (*PrepareRequest) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{7}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PrepareRequest) GetJobId() string {
@@ -605,7 +667,7 @@ type PreparedOperation struct {
 
 func (x *PreparedOperation) Reset() {
 	*x = PreparedOperation{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[8]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -617,7 +679,7 @@ func (x *PreparedOperation) String() string {
 func (*PreparedOperation) ProtoMessage() {}
 
 func (x *PreparedOperation) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[8]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -630,7 +692,7 @@ func (x *PreparedOperation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreparedOperation.ProtoReflect.Descriptor instead.
 func (*PreparedOperation) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{8}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PreparedOperation) GetPayloadJson() string {
@@ -658,7 +720,7 @@ type CompletionRequest struct {
 
 func (x *CompletionRequest) Reset() {
 	*x = CompletionRequest{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[9]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -670,7 +732,7 @@ func (x *CompletionRequest) String() string {
 func (*CompletionRequest) ProtoMessage() {}
 
 func (x *CompletionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[9]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -683,7 +745,7 @@ func (x *CompletionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompletionRequest.ProtoReflect.Descriptor instead.
 func (*CompletionRequest) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{9}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CompletionRequest) GetOperationId() string {
@@ -715,7 +777,7 @@ type ReadinessRequest struct {
 
 func (x *ReadinessRequest) Reset() {
 	*x = ReadinessRequest{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[10]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -727,7 +789,7 @@ func (x *ReadinessRequest) String() string {
 func (*ReadinessRequest) ProtoMessage() {}
 
 func (x *ReadinessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[10]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -740,7 +802,7 @@ func (x *ReadinessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadinessRequest.ProtoReflect.Descriptor instead.
 func (*ReadinessRequest) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{10}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{11}
 }
 
 type ReadinessResponse struct {
@@ -753,7 +815,7 @@ type ReadinessResponse struct {
 
 func (x *ReadinessResponse) Reset() {
 	*x = ReadinessResponse{}
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[11]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -765,7 +827,7 @@ func (x *ReadinessResponse) String() string {
 func (*ReadinessResponse) ProtoMessage() {}
 
 func (x *ReadinessResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nex_guard_v1_guard_proto_msgTypes[11]
+	mi := &file_nex_guard_v1_guard_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -778,7 +840,7 @@ func (x *ReadinessResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadinessResponse.ProtoReflect.Descriptor instead.
 func (*ReadinessResponse) Descriptor() ([]byte, []int) {
-	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{11}
+	return file_nex_guard_v1_guard_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ReadinessResponse) GetReady() bool {
@@ -802,7 +864,11 @@ const file_nex_guard_v1_guard_proto_rawDesc = "" +
 	"\x18nex/guard/v1/guard.proto\x12\fnex.guard.v1\"\\\n" +
 	"\x10ExecutionRequest\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12%\n" +
-	"\x0erequest_digest\x18\x02 \x01(\tR\rrequestDigest\"C\n" +
+	"\x0erequest_digest\x18\x02 \x01(\tR\rrequestDigest\"\x8e\x01\n" +
+	"\x13ResultAccessRequest\x12!\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12%\n" +
+	"\x0erequest_digest\x18\x02 \x01(\tR\rrequestDigest\x12-\n" +
+	"\x12service_capability\x18\x03 \x01(\fR\x11serviceCapability\"C\n" +
 	"\x11ExecutionResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\"\xab\x01\n" +
@@ -856,14 +922,16 @@ const file_nex_guard_v1_guard_proto_rawDesc = "" +
 	"\x12EFFECT_UNSPECIFIED\x10\x00\x12\b\n" +
 	"\x04DENY\x10\x01\x12\t\n" +
 	"\x05ALLOW\x10\x02\x12\x14\n" +
-	"\x10REQUIRE_APPROVAL\x10\x032\xcb\x04\n" +
+	"\x10REQUIRE_APPROVAL\x10\x032\xfe\x05\n" +
 	"\x05Guard\x12Q\n" +
 	"\x0eCheckReadiness\x12\x1e.nex.guard.v1.ReadinessRequest\x1a\x1f.nex.guard.v1.ReadinessResponse\x12I\n" +
 	"\bEvaluate\x12\x1d.nex.guard.v1.EvaluateRequest\x1a\x1e.nex.guard.v1.EvaluateResponse\x12Q\n" +
 	"\x10PrepareExecution\x12\x1c.nex.guard.v1.PrepareRequest\x1a\x1f.nex.guard.v1.PreparedOperation\x12U\n" +
 	"\x11CompleteExecution\x12\x1f.nex.guard.v1.CompletionRequest\x1a\x1f.nex.guard.v1.ExecutionResponse\x12Q\n" +
 	"\x0eExecutionState\x12\x1e.nex.guard.v1.ExecutionRequest\x1a\x1f.nex.guard.v1.ExecutionResponse\x12U\n" +
-	"\x12AuthorizeExecution\x12\x1e.nex.guard.v1.ExecutionRequest\x1a\x1f.nex.guard.v1.ExecutionResponse\x12P\n" +
+	"\x12AuthorizeExecution\x12\x1e.nex.guard.v1.ExecutionRequest\x1a\x1f.nex.guard.v1.ExecutionResponse\x12W\n" +
+	"\x11CheckResultAccess\x12!.nex.guard.v1.ResultAccessRequest\x1a\x1f.nex.guard.v1.ExecutionResponse\x12X\n" +
+	"\x12BindResultIdentity\x12!.nex.guard.v1.ResultAccessRequest\x1a\x1f.nex.guard.v1.ExecutionResponse\x12P\n" +
 	"\x0eDecideApproval\x12\x1d.nex.guard.v1.ApprovalRequest\x1a\x1f.nex.guard.v1.ExecutionResponseB6Z4github.com/5dg/nex-os/packages/contracts/gen/guardv1b\x06proto3"
 
 var (
@@ -879,42 +947,47 @@ func file_nex_guard_v1_guard_proto_rawDescGZIP() []byte {
 }
 
 var file_nex_guard_v1_guard_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_nex_guard_v1_guard_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_nex_guard_v1_guard_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_nex_guard_v1_guard_proto_goTypes = []any{
-	(Effect)(0),               // 0: nex.guard.v1.Effect
-	(*ExecutionRequest)(nil),  // 1: nex.guard.v1.ExecutionRequest
-	(*ExecutionResponse)(nil), // 2: nex.guard.v1.ExecutionResponse
-	(*ApprovalRequest)(nil),   // 3: nex.guard.v1.ApprovalRequest
-	(*Actor)(nil),             // 4: nex.guard.v1.Actor
-	(*Resource)(nil),          // 5: nex.guard.v1.Resource
-	(*EvaluateRequest)(nil),   // 6: nex.guard.v1.EvaluateRequest
-	(*EvaluateResponse)(nil),  // 7: nex.guard.v1.EvaluateResponse
-	(*PrepareRequest)(nil),    // 8: nex.guard.v1.PrepareRequest
-	(*PreparedOperation)(nil), // 9: nex.guard.v1.PreparedOperation
-	(*CompletionRequest)(nil), // 10: nex.guard.v1.CompletionRequest
-	(*ReadinessRequest)(nil),  // 11: nex.guard.v1.ReadinessRequest
-	(*ReadinessResponse)(nil), // 12: nex.guard.v1.ReadinessResponse
+	(Effect)(0),                 // 0: nex.guard.v1.Effect
+	(*ExecutionRequest)(nil),    // 1: nex.guard.v1.ExecutionRequest
+	(*ResultAccessRequest)(nil), // 2: nex.guard.v1.ResultAccessRequest
+	(*ExecutionResponse)(nil),   // 3: nex.guard.v1.ExecutionResponse
+	(*ApprovalRequest)(nil),     // 4: nex.guard.v1.ApprovalRequest
+	(*Actor)(nil),               // 5: nex.guard.v1.Actor
+	(*Resource)(nil),            // 6: nex.guard.v1.Resource
+	(*EvaluateRequest)(nil),     // 7: nex.guard.v1.EvaluateRequest
+	(*EvaluateResponse)(nil),    // 8: nex.guard.v1.EvaluateResponse
+	(*PrepareRequest)(nil),      // 9: nex.guard.v1.PrepareRequest
+	(*PreparedOperation)(nil),   // 10: nex.guard.v1.PreparedOperation
+	(*CompletionRequest)(nil),   // 11: nex.guard.v1.CompletionRequest
+	(*ReadinessRequest)(nil),    // 12: nex.guard.v1.ReadinessRequest
+	(*ReadinessResponse)(nil),   // 13: nex.guard.v1.ReadinessResponse
 }
 var file_nex_guard_v1_guard_proto_depIdxs = []int32{
-	4,  // 0: nex.guard.v1.EvaluateRequest.actor:type_name -> nex.guard.v1.Actor
-	5,  // 1: nex.guard.v1.EvaluateRequest.resource:type_name -> nex.guard.v1.Resource
+	5,  // 0: nex.guard.v1.EvaluateRequest.actor:type_name -> nex.guard.v1.Actor
+	6,  // 1: nex.guard.v1.EvaluateRequest.resource:type_name -> nex.guard.v1.Resource
 	0,  // 2: nex.guard.v1.EvaluateResponse.effect:type_name -> nex.guard.v1.Effect
-	11, // 3: nex.guard.v1.Guard.CheckReadiness:input_type -> nex.guard.v1.ReadinessRequest
-	6,  // 4: nex.guard.v1.Guard.Evaluate:input_type -> nex.guard.v1.EvaluateRequest
-	8,  // 5: nex.guard.v1.Guard.PrepareExecution:input_type -> nex.guard.v1.PrepareRequest
-	10, // 6: nex.guard.v1.Guard.CompleteExecution:input_type -> nex.guard.v1.CompletionRequest
+	12, // 3: nex.guard.v1.Guard.CheckReadiness:input_type -> nex.guard.v1.ReadinessRequest
+	7,  // 4: nex.guard.v1.Guard.Evaluate:input_type -> nex.guard.v1.EvaluateRequest
+	9,  // 5: nex.guard.v1.Guard.PrepareExecution:input_type -> nex.guard.v1.PrepareRequest
+	11, // 6: nex.guard.v1.Guard.CompleteExecution:input_type -> nex.guard.v1.CompletionRequest
 	1,  // 7: nex.guard.v1.Guard.ExecutionState:input_type -> nex.guard.v1.ExecutionRequest
 	1,  // 8: nex.guard.v1.Guard.AuthorizeExecution:input_type -> nex.guard.v1.ExecutionRequest
-	3,  // 9: nex.guard.v1.Guard.DecideApproval:input_type -> nex.guard.v1.ApprovalRequest
-	12, // 10: nex.guard.v1.Guard.CheckReadiness:output_type -> nex.guard.v1.ReadinessResponse
-	7,  // 11: nex.guard.v1.Guard.Evaluate:output_type -> nex.guard.v1.EvaluateResponse
-	9,  // 12: nex.guard.v1.Guard.PrepareExecution:output_type -> nex.guard.v1.PreparedOperation
-	2,  // 13: nex.guard.v1.Guard.CompleteExecution:output_type -> nex.guard.v1.ExecutionResponse
-	2,  // 14: nex.guard.v1.Guard.ExecutionState:output_type -> nex.guard.v1.ExecutionResponse
-	2,  // 15: nex.guard.v1.Guard.AuthorizeExecution:output_type -> nex.guard.v1.ExecutionResponse
-	2,  // 16: nex.guard.v1.Guard.DecideApproval:output_type -> nex.guard.v1.ExecutionResponse
-	10, // [10:17] is the sub-list for method output_type
-	3,  // [3:10] is the sub-list for method input_type
+	2,  // 9: nex.guard.v1.Guard.CheckResultAccess:input_type -> nex.guard.v1.ResultAccessRequest
+	2,  // 10: nex.guard.v1.Guard.BindResultIdentity:input_type -> nex.guard.v1.ResultAccessRequest
+	4,  // 11: nex.guard.v1.Guard.DecideApproval:input_type -> nex.guard.v1.ApprovalRequest
+	13, // 12: nex.guard.v1.Guard.CheckReadiness:output_type -> nex.guard.v1.ReadinessResponse
+	8,  // 13: nex.guard.v1.Guard.Evaluate:output_type -> nex.guard.v1.EvaluateResponse
+	10, // 14: nex.guard.v1.Guard.PrepareExecution:output_type -> nex.guard.v1.PreparedOperation
+	3,  // 15: nex.guard.v1.Guard.CompleteExecution:output_type -> nex.guard.v1.ExecutionResponse
+	3,  // 16: nex.guard.v1.Guard.ExecutionState:output_type -> nex.guard.v1.ExecutionResponse
+	3,  // 17: nex.guard.v1.Guard.AuthorizeExecution:output_type -> nex.guard.v1.ExecutionResponse
+	3,  // 18: nex.guard.v1.Guard.CheckResultAccess:output_type -> nex.guard.v1.ExecutionResponse
+	3,  // 19: nex.guard.v1.Guard.BindResultIdentity:output_type -> nex.guard.v1.ExecutionResponse
+	3,  // 20: nex.guard.v1.Guard.DecideApproval:output_type -> nex.guard.v1.ExecutionResponse
+	12, // [12:21] is the sub-list for method output_type
+	3,  // [3:12] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -931,7 +1004,7 @@ func file_nex_guard_v1_guard_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nex_guard_v1_guard_proto_rawDesc), len(file_nex_guard_v1_guard_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

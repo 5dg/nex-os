@@ -406,6 +406,14 @@ fn payload_digest(payload: &serde_json::Value, kind: &str) -> Result<String, Sta
         &fields,
     ))
 }
+
+// Result access is only offered for v3 manifests. Unlike the historical
+// digest function above, this boundary must not accept a v2 or unversioned
+// payload even when its own digest is internally consistent.
+fn result_v3_payload_matches(payload: &serde_json::Value, kind: &str, digest: &str) -> bool {
+    payload.get("manifest_version").and_then(|v| v.as_u64()) == Some(3)
+        && payload_digest(payload, kind).is_ok_and(|computed| computed == digest)
+}
 fn field_digest(domain: &[u8], fields: &[String]) -> String {
     let mut hash = Sha256::new();
     hash.update(domain);
@@ -785,6 +793,179 @@ pub async fn state(
         state: row.get("status"),
     }))
 }
+
+// Authenticated service assertions authorize access to a result, never the
+// provider effect. The verifier and live-session authority are injected only by
+// explicitly reviewed trusted wiring; current production profiles remain closed.
+pub async fn result_access(
+    k: &Kernel,
+    request: Request<ResultAccessRequest>,
+    bind: bool,
+) -> Result<Response<ExecutionResponse>, Status> {
+    let config = k.result_access.as_ref().ok_or_else(denied)?;
+    if k.trust.is_none()
+        || request.get_ref().service_capability.is_empty()
+        || request.get_ref().service_capability.len() > 16 * 1024
+    {
+        return Err(denied());
+    }
+    let peer = if bind {
+        k.authenticate(&request, &[Role::Control])?
+    } else {
+        k.authenticate(&request, &[Role::Model, Role::Export])?
+    };
+    let r = request.into_inner();
+    if !(8..=100).contains(&r.operation_id.len())
+        || !r
+            .operation_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        || r.request_digest.len() != 64
+        || !r
+            .request_digest
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(denied());
+    }
+    let claims = config
+        .verifier
+        .verify(&r.service_capability)
+        .await
+        .map_err(|_| denied())?;
+    let (kind, receiver) = match claims.scope.as_str() {
+        "model.result" => ("model", config.policy.model_workload.as_str()),
+        "export.result" => ("export", config.policy.export_workload.as_str()),
+        _ => return Err(denied()),
+    };
+    if config.policy.control_workload != Role::Control.uri()
+        || config.policy.guard_workload != Role::Guard.uri()
+        || (bind && peer.role != Role::Control)
+        || (!bind && peer.role.uri() != receiver)
+        || !config.matches(&claims, &r.operation_id, &r.request_digest, kind, receiver)
+    {
+        return Err(denied());
+    }
+    config
+        .sessions
+        .check_current(&claims)
+        .await
+        .map_err(|_| denied())?;
+    let mut db = database(k).await?;
+    let tx = db.transaction().await.map_err(unavailable)?;
+    // A replica may lag revocations or immutable identity bindings. This is
+    // an admission prerequisite, not a substitute for a failover fence.
+    if tx
+        .query_one("SELECT pg_is_in_recovery()", &[])
+        .await
+        .map_err(unavailable)?
+        .get::<_, bool>(0)
+    {
+        return Err(denied());
+    }
+    let reference = tx
+        .query_opt(
+            "SELECT job_id FROM execution_operations WHERE id=$1",
+            &[&r.operation_id],
+        )
+        .await
+        .map_err(unavailable)?
+        .ok_or_else(denied)?;
+    let j = job(&tx, &reference.get::<_, String>("job_id")).await?;
+    let op = tx.query_opt("SELECT o.kind,o.status,o.tenant_id,o.request_digest,m.version,m.payload,m.payload_digest,m.context_digest,m.manifest_context,(m.expires_at>clock_timestamp()) AS fresh FROM execution_operations o JOIN execution_manifests m ON m.operation_id=o.id WHERE o.id=$1 AND o.job_id=$2 AND o.tenant_id=$3 FOR SHARE OF o,m", &[&r.operation_id,&j.get::<_,String>("id"),&j.get::<_,String>("tenant_id")]).await.map_err(unavailable)?.ok_or_else(denied)?;
+    let manifest: serde_json::Value = op.get("manifest_context");
+    let payload: serde_json::Value = op.get("payload");
+    let source = manifest.get("source").ok_or_else(denied)?;
+    if op.get::<_, String>("kind") != kind
+        || op.get::<_, String>("tenant_id") != claims.tenant_id
+        || op.get::<_, String>("request_digest") != r.request_digest
+        || op.get::<_, String>("payload_digest") != r.request_digest
+        || op.get::<_, i32>("version") != 3
+        || manifest.get("version") != Some(&serde_json::json!(3))
+        || manifest.get("operation_id").and_then(|v| v.as_str()) != Some(r.operation_id.as_str())
+        || manifest.get("kind").and_then(|v| v.as_str()) != Some(kind)
+        || manifest.get("payload_digest").and_then(|v| v.as_str())
+            != Some(r.request_digest.as_str())
+        || !result_v3_payload_matches(&payload, kind, &r.request_digest)
+        || context_digest(&manifest) != op.get::<_, String>("context_digest")
+        || source.get("job_id").and_then(|v| v.as_str()) != Some(j.get::<_, String>("id").as_str())
+        || source.get("tenant_id").and_then(|v| v.as_str()) != Some(claims.tenant_id.as_str())
+        || source.get("owner_id").and_then(|v| v.as_str()) != Some(claims.actor_id.as_str())
+        || source.get("delegation_id").and_then(|v| v.as_str())
+            != Some(claims.delegation_id.as_str())
+        || j.get::<_, String>("owner_id") != claims.actor_id
+        || j.get::<_, String>("delegation_id") != claims.delegation_id
+    {
+        return Err(denied());
+    }
+    let identity = tx.query_opt("SELECT u.issuer,u.subject,ts.enabled AS tenant_enabled,us.enabled AS actor_enabled,s.issuer AS session_issuer,s.subject AS session_subject,s.tenant_id AS session_tenant,s.actor_id AS session_actor,s.delegation_id AS session_delegation,(s.revoked_at IS NULL AND s.expires_at>clock_timestamp()) AS session_current FROM users u JOIN production_result_tenant_status ts ON ts.tenant_id=u.tenant_id JOIN production_result_actor_status us ON us.tenant_id=u.tenant_id AND us.actor_id=u.id JOIN production_result_sessions s ON s.session_reference=$3 WHERE u.tenant_id=$1 AND u.id=$2 FOR SHARE OF u,ts,us,s", &[&claims.tenant_id,&claims.actor_id,&claims.session_reference]).await.map_err(unavailable)?.ok_or_else(denied)?;
+    if !identity.get::<_, bool>("tenant_enabled")
+        || !identity.get::<_, bool>("actor_enabled")
+        || !identity.get::<_, bool>("session_current")
+        || identity.get::<_, String>("issuer") != claims.user_issuer
+        || identity.get::<_, String>("subject") != claims.user_subject
+        || identity.get::<_, String>("session_issuer") != claims.user_issuer
+        || identity.get::<_, String>("session_subject") != claims.user_subject
+        || identity.get::<_, String>("session_tenant") != claims.tenant_id
+        || identity.get::<_, String>("session_actor") != claims.actor_id
+        || identity.get::<_, String>("session_delegation") != claims.delegation_id
+    {
+        return Err(denied());
+    }
+    current_read(k, &j).await?;
+    if kind == "export"
+        && policy(k, &j, "document.export", None, None, "public").await?
+            != Effect::RequireApproval as i32
+    {
+        return Err(denied());
+    }
+    if bind {
+        if op.get::<_, String>("status") != "pending"
+            || !op.get::<_, bool>("fresh")
+            || j.get::<_, String>("state") != "running"
+            || !j.get::<_, Option<bool>>("leased").unwrap_or(false)
+            || j.get::<_, Option<String>>("operation_id").as_deref()
+                != Some(r.operation_id.as_str())
+        {
+            return Err(denied());
+        }
+        let inserted = tx.execute("INSERT INTO production_result_identity_bindings(operation_id,request_digest,kind,tenant_id,actor_id,delegation_id,issuer,subject,original_session_reference) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(operation_id) DO NOTHING", &[&r.operation_id,&r.request_digest,&kind,&claims.tenant_id,&claims.actor_id,&claims.delegation_id,&claims.user_issuer,&claims.user_subject,&claims.session_reference]).await.map_err(unavailable)?;
+        if inserted == 0 {
+            return Err(denied());
+        }
+    } else {
+        let bound = tx.query_opt("SELECT request_digest,kind,tenant_id,actor_id,delegation_id,issuer,subject,original_session_reference FROM production_result_identity_bindings WHERE operation_id=$1 FOR SHARE", &[&r.operation_id]).await.map_err(unavailable)?.ok_or_else(denied)?;
+        if bound.get::<_, String>("request_digest") != r.request_digest
+            || bound.get::<_, String>("kind") != kind
+            || bound.get::<_, String>("tenant_id") != claims.tenant_id
+            || bound.get::<_, String>("actor_id") != claims.actor_id
+            || bound.get::<_, String>("delegation_id") != claims.delegation_id
+            || bound.get::<_, String>("issuer") != claims.user_issuer
+            || bound.get::<_, String>("subject") != claims.user_subject
+            || !config.session_allowed(
+                &claims.session_reference,
+                &bound.get::<_, String>("original_session_reference"),
+            )
+        {
+            return Err(denied());
+        }
+    }
+    config
+        .sessions
+        .check_current(&claims)
+        .await
+        .map_err(|_| denied())?;
+    let fresh = tx.query_one("SELECT d.revoked_at IS NULL AND d.expires_at>clock_timestamp() AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() AS fresh FROM delegations d JOIN production_result_sessions s ON s.session_reference=$3 WHERE d.tenant_id=$1 AND d.id=$2", &[&claims.tenant_id,&claims.delegation_id,&claims.session_reference]).await.map_err(unavailable)?.get::<_, bool>("fresh");
+    if !fresh || !config.current(&claims) {
+        return Err(denied());
+    }
+    k.check_current(&peer)?;
+    tx.commit().await.map_err(unavailable)?;
+    Ok(Response::new(ExecutionResponse {
+        allowed: true,
+        state: String::new(),
+    }))
+}
 pub async fn execute(
     k: &Kernel,
     r: Request<ExecutionRequest>,
@@ -1003,6 +1184,59 @@ pub async fn ready(k: &Kernel) -> Result<(), Status> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn unconfigured_result_access_denies_bind_and_read() {
+        let kernel = Kernel::new_with_profile(
+            "http://127.0.0.1:8181".into(),
+            &[1; 32],
+            Profile::Development,
+            None,
+        )
+        .unwrap();
+        for bind in [true, false] {
+            let request = ResultAccessRequest {
+                operation_id: "operation-123".into(),
+                request_digest: "a".repeat(64),
+                service_capability: b"untrusted".to_vec(),
+            };
+            let status = result_access(&kernel, Request::new(request), bind)
+                .await
+                .unwrap_err();
+            assert_eq!(status.code(), tonic::Code::PermissionDenied);
+        }
+    }
+
+    #[test]
+    fn v3_result_access_rejects_self_consistent_legacy_payloads() {
+        let vectors: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../../packages/contracts/execution-vectors.json"
+        ))
+        .unwrap();
+        let mut checked = 0;
+        for vector in vectors
+            .iter()
+            .filter(|v| v["name"].as_str().unwrap().starts_with("v3-"))
+        {
+            checked += 1;
+            let kind = vector["kind"].as_str().unwrap();
+            let mut payload = vector["payload"].clone();
+            let digest = vector["digest"].as_str().unwrap();
+            assert!(result_v3_payload_matches(&payload, kind, digest));
+            payload["manifest_version"] = serde_json::json!(2);
+            let legacy_digest = payload_digest(&payload, kind).unwrap();
+            assert!(!result_v3_payload_matches(&payload, kind, &legacy_digest));
+            payload.as_object_mut().unwrap().remove("manifest_version");
+            let unversioned_digest = payload_digest(&payload, kind).unwrap();
+            assert!(!result_v3_payload_matches(
+                &payload,
+                kind,
+                &unversioned_digest
+            ));
+        }
+        assert!(checked >= 2, "both model and export v3 vectors required");
+    }
+
     #[test]
     fn semantic_payload_digest_matches_cross_language_vectors() {
         let vectors: Vec<serde_json::Value> = serde_json::from_str(include_str!(
