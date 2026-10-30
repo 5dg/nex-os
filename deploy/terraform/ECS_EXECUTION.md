@@ -8,8 +8,10 @@ region, service inventory, logging retention and operating cost before enabling.
 
 Each execution role can obtain an ECR registry token, pull only its corresponding
 repository, and create streams/write events only in its own precreated log
-group. It has no application or secret access. AWS requires the registry-token
-action to use resource `*`. Keep task identities separate from execution roles.
+group. This foundation grants no application or secret access by itself; the
+optional task-template integration adds a separate policy for exact per-service
+secret and KMS access. AWS requires the registry-token action to use resource
+`*`. Keep task identities separate from execution roles.
 
 The selected customer-managed CloudWatch Logs KMS key must be in the approved
 account and region. Its independently reviewed key policy must permit the
