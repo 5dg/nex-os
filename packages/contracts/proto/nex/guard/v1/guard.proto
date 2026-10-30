@@ -13,6 +13,9 @@ service Guard {
   rpc AuthorizeExecution(ExecutionRequest) returns (ExecutionResponse);
   // Non-mutating result access check; never grants or starts an effect.
   rpc CheckResultAccess(ResultAccessRequest) returns (ExecutionResponse);
+  // Phase-specific authority, checked with the operation status in the same
+  // Guard transaction. Requires independently verified phase/claim proof.
+  rpc CheckReceiptPhase(ReceiptPhaseRequest) returns (ExecutionResponse);
   // Establish immutable original identity from an authenticated assertion.
   rpc BindResultIdentity(ResultAccessRequest) returns (ExecutionResponse);
   rpc DecideApproval(ApprovalRequest) returns (ExecutionResponse);
@@ -21,6 +24,23 @@ message ExecutionRequest { string operation_id = 1; string request_digest = 2; }
 // Opaque short-lived service assertion, not a browser token or session handle.
 // Actor/tenant/session identity is derived from verified claims and Guard state.
 message ResultAccessRequest { string operation_id = 1; string request_digest = 2; bytes service_capability = 3; }
+enum ReceiptPhase {
+  RECEIPT_PHASE_UNSPECIFIED = 0;
+  RECEIPT_DISPATCH_PREFLIGHT = 1;
+  RECEIPT_DISPATCH_EFFECT = 2;
+  RECEIPT_RECEIVER_HANDOFF = 3;
+  RECEIPT_COMPLETED_READ = 4;
+}
+message ReceiptPhaseRequest {
+  string operation_id = 1;
+  string request_digest = 2;
+  bytes service_capability = 3;
+  ReceiptPhase phase = 4;
+  // Empty for preflight/read. The claimant nonce is never an identity.
+  string claimant_nonce = 5;
+  // Opaque phase-bound proof verified by a separately trusted authority.
+  bytes authority_proof = 6;
+}
 message ExecutionResponse { bool allowed = 1; string state = 2; }
 message ApprovalRequest { string approval_id = 1; string request_digest = 2; string actor_id = 3; string tenant_id = 4; bool approve = 5; }
 message Actor {

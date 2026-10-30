@@ -26,6 +26,7 @@ const (
 	Guard_ExecutionState_FullMethodName     = "/nex.guard.v1.Guard/ExecutionState"
 	Guard_AuthorizeExecution_FullMethodName = "/nex.guard.v1.Guard/AuthorizeExecution"
 	Guard_CheckResultAccess_FullMethodName  = "/nex.guard.v1.Guard/CheckResultAccess"
+	Guard_CheckReceiptPhase_FullMethodName  = "/nex.guard.v1.Guard/CheckReceiptPhase"
 	Guard_BindResultIdentity_FullMethodName = "/nex.guard.v1.Guard/BindResultIdentity"
 	Guard_DecideApproval_FullMethodName     = "/nex.guard.v1.Guard/DecideApproval"
 )
@@ -45,6 +46,9 @@ type GuardClient interface {
 	AuthorizeExecution(ctx context.Context, in *ExecutionRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
 	// Non-mutating result access check; never grants or starts an effect.
 	CheckResultAccess(ctx context.Context, in *ResultAccessRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
+	// Phase-specific authority, checked with the operation status in the same
+	// Guard transaction. Requires independently verified phase/claim proof.
+	CheckReceiptPhase(ctx context.Context, in *ReceiptPhaseRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
 	// Establish immutable original identity from an authenticated assertion.
 	BindResultIdentity(ctx context.Context, in *ResultAccessRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
 	DecideApproval(ctx context.Context, in *ApprovalRequest, opts ...grpc.CallOption) (*ExecutionResponse, error)
@@ -128,6 +132,16 @@ func (c *guardClient) CheckResultAccess(ctx context.Context, in *ResultAccessReq
 	return out, nil
 }
 
+func (c *guardClient) CheckReceiptPhase(ctx context.Context, in *ReceiptPhaseRequest, opts ...grpc.CallOption) (*ExecutionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecutionResponse)
+	err := c.cc.Invoke(ctx, Guard_CheckReceiptPhase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *guardClient) BindResultIdentity(ctx context.Context, in *ResultAccessRequest, opts ...grpc.CallOption) (*ExecutionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ExecutionResponse)
@@ -163,6 +177,9 @@ type GuardServer interface {
 	AuthorizeExecution(context.Context, *ExecutionRequest) (*ExecutionResponse, error)
 	// Non-mutating result access check; never grants or starts an effect.
 	CheckResultAccess(context.Context, *ResultAccessRequest) (*ExecutionResponse, error)
+	// Phase-specific authority, checked with the operation status in the same
+	// Guard transaction. Requires independently verified phase/claim proof.
+	CheckReceiptPhase(context.Context, *ReceiptPhaseRequest) (*ExecutionResponse, error)
 	// Establish immutable original identity from an authenticated assertion.
 	BindResultIdentity(context.Context, *ResultAccessRequest) (*ExecutionResponse, error)
 	DecideApproval(context.Context, *ApprovalRequest) (*ExecutionResponse, error)
@@ -196,6 +213,9 @@ func (UnimplementedGuardServer) AuthorizeExecution(context.Context, *ExecutionRe
 }
 func (UnimplementedGuardServer) CheckResultAccess(context.Context, *ResultAccessRequest) (*ExecutionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckResultAccess not implemented")
+}
+func (UnimplementedGuardServer) CheckReceiptPhase(context.Context, *ReceiptPhaseRequest) (*ExecutionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckReceiptPhase not implemented")
 }
 func (UnimplementedGuardServer) BindResultIdentity(context.Context, *ResultAccessRequest) (*ExecutionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BindResultIdentity not implemented")
@@ -350,6 +370,24 @@ func _Guard_CheckResultAccess_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Guard_CheckReceiptPhase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReceiptPhaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GuardServer).CheckReceiptPhase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Guard_CheckReceiptPhase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GuardServer).CheckReceiptPhase(ctx, req.(*ReceiptPhaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Guard_BindResultIdentity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ResultAccessRequest)
 	if err := dec(in); err != nil {
@@ -420,6 +458,10 @@ var Guard_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckResultAccess",
 			Handler:    _Guard_CheckResultAccess_Handler,
+		},
+		{
+			MethodName: "CheckReceiptPhase",
+			Handler:    _Guard_CheckReceiptPhase_Handler,
 		},
 		{
 			MethodName: "BindResultIdentity",

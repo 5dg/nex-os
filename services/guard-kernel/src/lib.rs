@@ -302,6 +302,12 @@ impl protocol::guard_server::Guard for Kernel {
         self.bounded(execution::result_access(self, request, false))
             .await
     }
+    async fn check_receipt_phase(
+        &self,
+        request: Request<protocol::ReceiptPhaseRequest>,
+    ) -> Result<Response<protocol::ExecutionResponse>, Status> {
+        self.bounded(execution::receipt_phase(self, request)).await
+    }
     async fn bind_result_identity(
         &self,
         request: Request<protocol::ResultAccessRequest>,

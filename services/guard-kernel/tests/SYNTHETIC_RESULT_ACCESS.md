@@ -1,8 +1,10 @@
 # Synthetic result-access integration fixture
 
-This fixture is unqualified test code. It uses a fixed, public Ed25519 test key
-and a mutable in-process session mock. It cannot provide production identity,
-session revocation, cryptographic policy, failover or effect-fencing evidence.
+This fixture is unqualified test code. It uses separate fixed, public Ed25519
+keys for caller assertions and phase proofs, plus mutable in-process session and
+receipt/fence authority mocks. It cannot provide production identity, session
+revocation, cryptographic policy, actual claimant ownership, failover or
+effect-fencing evidence.
 
 The runtime coordinator must create a fresh empty database and a distinct,
 unprivileged login on an owned synthetic TLS PostgreSQL cluster. Both names must
@@ -28,7 +30,10 @@ admin and restricted login URLs and run `go run ./services/guard-kernel/tests/sy
 The preparer refuses nonempty databases and nonrestricted or owning Guard
 logins. It installs synthetic authority state and a vector-derived v3 operation;
 the fixture manifest is inserted by the synthetic administrator and does not
-establish a trusted production Guard manifest-issuance path.
+establish a trusted production Guard manifest-issuance path. The test changes
+operation status directly through the synthetic administrator to exercise the
+phase matrix; it does not exercise normal Guard effect authorization, prove a
+real receipt state, or establish an actual claimant or fence.
 
 Set `NEX_TLS_CA_FILE`, `NEX_TLS_CERT_FILE`, and `NEX_TLS_KEY_FILE` to the new
 PKI's CA and `guard/tls.crt`, `guard/tls.key`. Set

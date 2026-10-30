@@ -810,6 +810,71 @@ pub async fn result_access(
     request: Request<ResultAccessRequest>,
     bind: bool,
 ) -> Result<Response<ExecutionResponse>, Status> {
+    result_access_inner(k, request, bind, None).await
+}
+
+struct PhaseCheck {
+    phase: crate::result_access::ReceiptPhase,
+    claimant_nonce: String,
+    authority_proof: Vec<u8>,
+}
+
+pub async fn receipt_phase(
+    k: &Kernel,
+    request: Request<ReceiptPhaseRequest>,
+) -> Result<Response<ExecutionResponse>, Status> {
+    use crate::result_access::ReceiptPhase;
+    let (metadata, extensions, r) = request.into_parts();
+    let phase = match r.phase {
+        1 => ReceiptPhase::DispatchPreflight,
+        2 => ReceiptPhase::DispatchEffect,
+        3 => ReceiptPhase::ReceiverHandoff,
+        4 => ReceiptPhase::CompletedRead,
+        _ => return Err(denied()),
+    };
+    let needs_claim = matches!(
+        phase,
+        ReceiptPhase::DispatchEffect | ReceiptPhase::ReceiverHandoff
+    );
+    let valid_nonce = r.claimant_nonce.len() == 32
+        && r.claimant_nonce
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if r.authority_proof.is_empty()
+        || r.authority_proof.len() > 16 * 1024
+        || (needs_claim && !valid_nonce)
+        || (!needs_claim && !r.claimant_nonce.is_empty())
+    {
+        return Err(denied());
+    }
+    let base = Request::from_parts(
+        metadata,
+        extensions,
+        ResultAccessRequest {
+            operation_id: r.operation_id,
+            request_digest: r.request_digest,
+            service_capability: r.service_capability,
+        },
+    );
+    result_access_inner(
+        k,
+        base,
+        false,
+        Some(PhaseCheck {
+            phase,
+            claimant_nonce: r.claimant_nonce,
+            authority_proof: r.authority_proof,
+        }),
+    )
+    .await
+}
+
+async fn result_access_inner(
+    k: &Kernel,
+    request: Request<ResultAccessRequest>,
+    bind: bool,
+    phase: Option<PhaseCheck>,
+) -> Result<Response<ExecutionResponse>, Status> {
     let config = k.result_access.as_ref().ok_or_else(denied)?;
     if k.trust.is_none()
         || request.get_ref().service_capability.is_empty()
@@ -821,6 +886,16 @@ pub async fn result_access(
         k.authenticate(&request, &[Role::Control])?
     } else {
         k.authenticate(&request, &[Role::Model, Role::Export])?
+    };
+    let phase_authority = if phase.is_some() {
+        Some(config.receipt_phases.as_ref().ok_or_else(denied)?)
+    } else {
+        None
+    };
+    let peer_fingerprint = if phase.is_some() {
+        Some(peer.certificate_sha256().ok_or_else(denied)?)
+    } else {
+        None
     };
     let r = request.into_inner();
     if !(8..=100).contains(&r.operation_id.len())
@@ -882,6 +957,12 @@ pub async fn result_access(
     let j = job(&tx, &reference.get::<_, String>("job_id")).await?;
     let op = tx.query_opt("SELECT o.kind,o.status,o.tenant_id,o.request_digest,m.version,m.payload,m.payload_digest,m.context_digest,m.manifest_context,(m.expires_at>clock_timestamp()) AS fresh FROM execution_operations o JOIN execution_manifests m ON m.operation_id=o.id WHERE o.id=$1 AND o.job_id=$2 AND o.tenant_id=$3 FOR SHARE OF o,m", &[&r.operation_id,&j.get::<_,String>("id"),&j.get::<_,String>("tenant_id")]).await.map_err(unavailable)?.ok_or_else(denied)?;
     let manifest: serde_json::Value = op.get("manifest_context");
+    let guard_status: String = op.get("status");
+    if let Some(p) = &phase {
+        if !crate::result_access::phase_status_allowed(p.phase, &guard_status) {
+            return Err(denied());
+        }
+    }
     let payload: serde_json::Value = op.get("payload");
     let source = manifest.get("source").ok_or_else(denied)?;
     if op.get::<_, String>("kind") != kind
@@ -964,11 +1045,46 @@ pub async fn result_access(
             return Err(denied());
         }
     }
+    if let (Some(p), Some(authority), Some(fingerprint)) =
+        (&phase, phase_authority, peer_fingerprint.as_ref())
+    {
+        authority
+            .check_current(
+                &claims,
+                fingerprint,
+                p.phase,
+                &guard_status,
+                &p.claimant_nonce,
+                &p.authority_proof,
+            )
+            .await
+            .map_err(|_| denied())?;
+    }
     config
         .sessions
         .check_current(&claims)
         .await
         .map_err(|_| denied())?;
+    if let (Some(p), Some(authority), Some(fingerprint)) =
+        (&phase, phase_authority, peer_fingerprint.as_ref())
+    {
+        authority
+            .check_current(
+                &claims,
+                fingerprint,
+                p.phase,
+                &guard_status,
+                &p.claimant_nonce,
+                &p.authority_proof,
+            )
+            .await
+            .map_err(|_| denied())?;
+        config
+            .sessions
+            .check_current(&claims)
+            .await
+            .map_err(|_| denied())?;
+    }
     let fresh = tx.query_one("SELECT d.revoked_at IS NULL AND d.expires_at>clock_timestamp() AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp() AS fresh FROM delegations d JOIN production_result_sessions s ON s.session_reference=$3 WHERE d.tenant_id=$1 AND d.id=$2", &[&claims.tenant_id,&claims.delegation_id,&claims.session_reference]).await.map_err(unavailable)?.get::<_, bool>("fresh");
     if !fresh || !config.current(&claims) {
         return Err(denied());
@@ -977,7 +1093,11 @@ pub async fn result_access(
     tx.commit().await.map_err(unavailable)?;
     Ok(Response::new(ExecutionResponse {
         allowed: true,
-        state: String::new(),
+        state: if phase.is_some() {
+            guard_status
+        } else {
+            String::new()
+        },
     }))
 }
 pub async fn execute(
@@ -1218,6 +1338,61 @@ mod tests {
                 .await
                 .unwrap_err();
             assert_eq!(status.code(), tonic::Code::PermissionDenied);
+        }
+    }
+
+    #[tokio::test]
+    async fn receipt_phase_is_closed_without_trusted_authority_and_rejects_unknown_inputs() {
+        let kernel = Kernel::new_with_profile(
+            "http://127.0.0.1:8181".into(),
+            &[1; 32],
+            Profile::Development,
+            None,
+        )
+        .unwrap();
+        for phase in [0, 1, 2, 3, 4, 5, 999] {
+            let nonce = if phase == 2 || phase == 3 {
+                "a".repeat(32)
+            } else {
+                String::new()
+            };
+            let request = ReceiptPhaseRequest {
+                operation_id: "operation-123".into(),
+                request_digest: "a".repeat(64),
+                service_capability: b"untrusted".to_vec(),
+                phase,
+                claimant_nonce: nonce,
+                authority_proof: b"untrusted".to_vec(),
+            };
+            assert_eq!(
+                receipt_phase(&kernel, Request::new(request))
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::PermissionDenied
+            );
+        }
+        for (phase, nonce, proof) in [
+            (1, "unexpected", "proof"),
+            (2, "invalid", "proof"),
+            (3, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ""),
+            (4, "", ""),
+        ] {
+            let request = ReceiptPhaseRequest {
+                operation_id: "operation-123".into(),
+                request_digest: "a".repeat(64),
+                service_capability: b"untrusted".to_vec(),
+                phase,
+                claimant_nonce: nonce.into(),
+                authority_proof: proof.as_bytes().to_vec(),
+            };
+            assert_eq!(
+                receipt_phase(&kernel, Request::new(request))
+                    .await
+                    .unwrap_err()
+                    .code(),
+                tonic::Code::PermissionDenied
+            );
         }
     }
 

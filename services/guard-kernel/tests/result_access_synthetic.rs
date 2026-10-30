@@ -2,11 +2,125 @@
 //! production issuer, verifier, session authority, or cryptographic policy.
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use nex_guard_kernel::result_access::{
-    ResultAssertionVerifier, ResultSessionAuthority, VerifiedResultAssertion,
+    ReceiptPhase, ReceiptPhaseAuthority, ResultAssertionVerifier, ResultSessionAuthority,
+    VerifiedResultAssertion,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tonic::Status;
+
+// Separate, publicly known fixture key. This signed mock attests fabricated
+// receipt/fence state solely to exercise the Guard RPC, never production trust.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PhaseProof {
+    issuer: String,
+    audience: String,
+    phase: u8,
+    operation: String,
+    digest: String,
+    tenant: String,
+    actor: String,
+    delegation: String,
+    user_issuer: String,
+    user_subject: String,
+    session: String,
+    receiver_workload: String,
+    result_scope: String,
+    receiver_certificate: String,
+    nonce: String,
+    guard_status: String,
+    receipt_state: String,
+    fence_generation: u64,
+    issued_at: i64,
+    not_before: i64,
+    expires_at: i64,
+}
+
+fn phase_number(phase: ReceiptPhase) -> u8 {
+    match phase {
+        ReceiptPhase::DispatchPreflight => 1,
+        ReceiptPhase::DispatchEffect => 2,
+        ReceiptPhase::ReceiverHandoff => 3,
+        ReceiptPhase::CompletedRead => 4,
+    }
+}
+
+struct FixturePhaseAuthority {
+    key: VerifyingKey,
+    active: AtomicBool,
+}
+#[tonic::async_trait]
+impl ReceiptPhaseAuthority for FixturePhaseAuthority {
+    async fn check_current(
+        &self,
+        claims: &VerifiedResultAssertion,
+        fingerprint: &[u8; 32],
+        phase: ReceiptPhase,
+        status: &str,
+        nonce: &str,
+        proof: &[u8],
+    ) -> Result<(), Status> {
+        let denied = || Status::permission_denied("synthetic phase proof denied");
+        if !self.active.load(Ordering::SeqCst) {
+            return Err(denied());
+        }
+        let (signature, body) = proof.split_at_checked(64).ok_or_else(denied)?;
+        self.key
+            .verify(
+                body,
+                &Signature::from_slice(signature).map_err(|_| denied())?,
+            )
+            .map_err(|_| denied())?;
+        let p: PhaseProof = serde_json::from_slice(body).map_err(|_| denied())?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| denied())?
+            .as_secs() as i64;
+        let expected_state = match phase {
+            ReceiptPhase::DispatchPreflight => "absent_or_not_started",
+            ReceiptPhase::DispatchEffect => "started",
+            ReceiptPhase::ReceiverHandoff | ReceiptPhase::CompletedRead => "completed",
+        };
+        let peer = fingerprint
+            .iter()
+            .map(|v| format!("{v:02x}"))
+            .collect::<String>();
+        if p.issuer != "fixture-phase-issuer"
+            || p.audience != "fixture-guard-phase"
+            || p.phase != phase_number(phase)
+            || p.operation != claims.operation_id
+            || p.digest != claims.request_digest
+            || p.tenant != claims.tenant_id
+            || p.actor != claims.actor_id
+            || p.delegation != claims.delegation_id
+            || p.user_issuer != claims.user_issuer
+            || p.user_subject != claims.user_subject
+            || p.session != claims.session_reference
+            || p.receiver_workload != claims.receiver_workload
+            || p.result_scope != claims.scope
+            || p.receiver_certificate != peer
+            || p.nonce != nonce
+            || p.guard_status != status
+            || p.receipt_state != expected_state
+            || p.fence_generation != 7
+            || p.issued_at <= 0
+            || p.issued_at > now
+            || p.not_before <= 0
+            || p.not_before > now
+            || p.issued_at >= p.expires_at
+            || p.not_before >= p.expires_at
+            || p.expires_at
+                .checked_sub(p.issued_at)
+                .is_none_or(|v| v > 120)
+            || p.expires_at <= now
+            || !self.active.load(Ordering::SeqCst)
+        {
+            return Err(denied());
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -131,7 +245,10 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
     use nex_guard_kernel::{
         Kernel,
         profile::Profile,
-        protocol::{ResultAccessRequest, guard_client::GuardClient, guard_server::GuardServer},
+        protocol::{
+            ReceiptPhaseRequest, ResultAccessRequest, guard_client::GuardClient,
+            guard_server::GuardServer,
+        },
         result_access::{ResultAccessConfig, ResultAccessPolicy, SessionPolicy},
         trust::Trust,
     };
@@ -190,6 +307,11 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
     );
     let trust = Arc::new(Trust::load().expect("fresh Guard mTLS identity"));
     let signing_key = SigningKey::from_bytes(&[42; 32]);
+    let phase_key = SigningKey::from_bytes(&[43; 32]);
+    let phase_authority = Arc::new(FixturePhaseAuthority {
+        key: phase_key.verifying_key(),
+        active: AtomicBool::new(true),
+    });
     let sessions = Arc::new(FixtureSession(AtomicBool::new(true)));
     let session_policy = match std::env::var("NEX_RESULT_TEST_SESSION_MODE").as_deref() {
         Ok("original_session_only") => SessionPolicy::OriginalSessionOnly,
@@ -212,7 +334,8 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
         Arc::new(FixtureVerifier(signing_key.verifying_key())),
         sessions.clone(),
     )
-    .unwrap();
+    .unwrap()
+    .with_receipt_phase_authority(phase_authority.clone());
     let kernel =
         Kernel::new_with_profile(opa_url, &[], Profile::Qualification, Some(trust.clone()))
             .unwrap()
@@ -400,6 +523,220 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
             .into_inner()
             .allowed
     );
+    use rustls::pki_types::{CertificateDer, pem::PemObject};
+    use sha2::{Digest, Sha256};
+    let certificate =
+        CertificateDer::from_pem_slice(&fs::read(pki.join("model/tls.crt")).unwrap()).unwrap();
+    let fingerprint = format!("{:x}", Sha256::digest(certificate.as_ref()));
+    let phase_proof = |phase: u8, status: &str, receipt: &str, nonce: &str| PhaseProof {
+        issuer: "fixture-phase-issuer".into(),
+        audience: "fixture-guard-phase".into(),
+        phase,
+        operation: operation.clone(),
+        digest: digest.clone(),
+        tenant: claims.tenant_id.clone(),
+        actor: claims.actor_id.clone(),
+        delegation: claims.delegation_id.clone(),
+        user_issuer: claims.user_issuer.clone(),
+        user_subject: claims.user_subject.clone(),
+        session: claims.session_reference.clone(),
+        receiver_workload: claims.receiver_workload.clone(),
+        result_scope: claims.scope.clone(),
+        receiver_certificate: fingerprint.clone(),
+        nonce: nonce.into(),
+        guard_status: status.into(),
+        receipt_state: receipt.into(),
+        fence_generation: 7,
+        issued_at: now - 1,
+        not_before: now - 1,
+        expires_at: now + 90,
+    };
+    let phase_request = |phase: i32, nonce: &str, proof: &PhaseProof| {
+        let body = serde_json::to_vec(proof).unwrap();
+        let mut signed_proof = phase_key.sign(&body).to_bytes().to_vec();
+        signed_proof.extend(body);
+        ReceiptPhaseRequest {
+            operation_id: operation.clone(),
+            request_digest: digest.clone(),
+            service_capability: signed(&signing_key, &claims),
+            phase,
+            claimant_nonce: nonce.into(),
+            authority_proof: signed_proof,
+        }
+    };
+    let preflight = phase_proof(1, "pending", "absent_or_not_started", "");
+    let allowed = model
+        .check_receipt_phase(phase_request(1, "", &preflight))
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(allowed.allowed && allowed.state == "pending");
+    denied(
+        control
+            .check_receipt_phase(phase_request(1, "", &preflight))
+            .await,
+    );
+    let mut malformed = phase_request(1, "", &preflight);
+    malformed.authority_proof.clear();
+    denied(model.check_receipt_phase(malformed).await);
+    let mut malformed = phase_request(1, "", &preflight);
+    malformed.phase = 0;
+    denied(model.check_receipt_phase(malformed).await);
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, &"a".repeat(32), &preflight))
+            .await,
+    );
+    let mut mismatch = preflight.clone();
+    mismatch.issuer = "untrusted-issuer".into();
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.audience = "other-audience".into();
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.not_before = now + 30;
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.expires_at = now + 121;
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.receiver_certificate = "0".repeat(64);
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.tenant = "other-tenant".into();
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.delegation = "other-delegation".into();
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.user_subject = "other-subject".into();
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.phase = 4;
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.fence_generation = 8;
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.receipt_state = "started".into();
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    mismatch = preflight.clone();
+    mismatch.expires_at = now - 1;
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &mismatch))
+            .await,
+    );
+    let mut tampered_phase = phase_request(1, "", &preflight);
+    *tampered_phase.authority_proof.last_mut().unwrap() ^= 1;
+    denied(model.check_receipt_phase(tampered_phase).await);
+    phase_authority.active.store(false, Ordering::SeqCst);
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &preflight))
+            .await,
+    );
+    phase_authority.active.store(true, Ordering::SeqCst);
+    let nonce = "a".repeat(32);
+    let effect = phase_proof(2, "started", "started", &nonce);
+    denied(
+        model
+            .check_receipt_phase(phase_request(2, &nonce, &effect))
+            .await,
+    );
+    admin
+        .execute(
+            "UPDATE execution_operations SET status='started' WHERE id=$1",
+            &[&operation],
+        )
+        .await
+        .unwrap();
+    let allowed = model
+        .check_receipt_phase(phase_request(2, &nonce, &effect))
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(allowed.allowed && allowed.state == "started");
+    mismatch = effect.clone();
+    mismatch.nonce = "b".repeat(32);
+    denied(
+        model
+            .check_receipt_phase(phase_request(2, &nonce, &mismatch))
+            .await,
+    );
+    let handoff = phase_proof(3, "started", "completed", &nonce);
+    let allowed = model
+        .check_receipt_phase(phase_request(3, &nonce, &handoff))
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(allowed.allowed && allowed.state == "started");
+    let read = phase_proof(4, "completed", "completed", "");
+    denied(model.check_receipt_phase(phase_request(4, "", &read)).await);
+    admin
+        .execute(
+            "UPDATE execution_operations SET status='completed' WHERE id=$1",
+            &[&operation],
+        )
+        .await
+        .unwrap();
+    let allowed = model
+        .check_receipt_phase(phase_request(4, "", &read))
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(allowed.allowed && allowed.state == "completed");
+    admin
+        .execute(
+            "UPDATE execution_operations SET status='pending' WHERE id=$1",
+            &[&operation],
+        )
+        .await
+        .unwrap();
     denied(control.check_result_access(request(&claims)).await);
     let mut changed = claims.clone();
     changed.actor_id = "different-actor".into();
@@ -430,6 +767,11 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
     }
     admin.execute("UPDATE production_result_sessions SET revoked_at=clock_timestamp() WHERE session_reference='test-session'", &[]).await.unwrap();
     denied(model.check_result_access(request(&claims)).await);
+    denied(
+        model
+            .check_receipt_phase(phase_request(1, "", &preflight))
+            .await,
+    );
     admin.execute("UPDATE production_result_sessions SET revoked_at=NULL, expires_at=clock_timestamp()-interval '1 second' WHERE session_reference='test-session'", &[]).await.unwrap();
     denied(model.check_result_access(request(&claims)).await);
     admin.execute("UPDATE production_result_sessions SET expires_at=clock_timestamp()+interval '5 minutes' WHERE session_reference='test-session'", &[]).await.unwrap();

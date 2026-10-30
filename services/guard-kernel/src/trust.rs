@@ -79,6 +79,16 @@ impl PeerIdentity {
             certificates: None,
         }
     }
+
+    // Only a peer obtained from verified mTLS has certificate material. This
+    // fingerprint is an input to independently trusted instance verification,
+    // not by itself an authorization or a long-lived identity.
+    pub fn certificate_sha256(&self) -> Option<[u8; 32]> {
+        self.certificates
+            .as_ref()?
+            .first()
+            .map(|certificate| Sha256::digest(certificate.as_ref()).into())
+    }
 }
 type ChainCache = Arc<Mutex<BTreeMap<Vec<u8>, Arc<Vec<CertificateDer<'static>>>>>>;
 #[derive(Clone, Debug)]

@@ -64,10 +64,50 @@ pub trait ResultSessionAuthority: Send + Sync {
     async fn check_current(&self, assertion: &VerifiedResultAssertion) -> Result<(), Status>;
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptPhase {
+    DispatchPreflight,
+    DispatchEffect,
+    ReceiverHandoff,
+    CompletedRead,
+}
+
+// Trusted deployment implementation must verify the proof's signature using
+// independently approved signer/key, issuer and audience; check bounded
+// issued-at/not-before/expiry and current revocation on every validation using
+// trusted time; and bind phase, exact user/tenant/operation/digest, authenticated
+// receiver certificate/instance, nonce, receipt state and authoritative fence.
+// Prevent replay across sessions, fence epochs and receiver instances.
+// The fingerprint is derived from the verified mTLS peer, never request data.
+// A successful check cannot itself fence a future provider effect.
+// The RPC is bounded by Guard's request deadline; implementations must honor
+// cancellation and must not detach work that could outlive that deadline.
+#[tonic::async_trait]
+pub trait ReceiptPhaseAuthority: Send + Sync {
+    async fn check_current(
+        &self,
+        assertion: &VerifiedResultAssertion,
+        receiver_certificate_sha256: &[u8; 32],
+        phase: ReceiptPhase,
+        guard_status: &str,
+        claimant_nonce: &str,
+        authority_proof: &[u8],
+    ) -> Result<(), Status>;
+}
+
+pub(crate) fn phase_status_allowed(phase: ReceiptPhase, status: &str) -> bool {
+    match phase {
+        ReceiptPhase::DispatchPreflight => status == "pending",
+        ReceiptPhase::DispatchEffect | ReceiptPhase::ReceiverHandoff => status == "started",
+        ReceiptPhase::CompletedRead => status == "completed",
+    }
+}
+
 pub struct ResultAccessConfig {
     pub(crate) policy: ResultAccessPolicy,
     pub(crate) verifier: Arc<dyn ResultAssertionVerifier>,
     pub(crate) sessions: Arc<dyn ResultSessionAuthority>,
+    pub(crate) receipt_phases: Option<Arc<dyn ReceiptPhaseAuthority>>,
 }
 
 fn valid_field(value: &str) -> bool {
@@ -108,7 +148,18 @@ impl ResultAccessConfig {
             policy,
             verifier,
             sessions,
+            receipt_phases: None,
         })
+    }
+
+    // No main/runtime installs this authority. A caller must independently
+    // configure and review its real signing, identity and lifecycle trust.
+    pub fn with_receipt_phase_authority(
+        mut self,
+        authority: Arc<dyn ReceiptPhaseAuthority>,
+    ) -> Self {
+        self.receipt_phases = Some(authority);
+        self
     }
 
     pub(crate) fn current(&self, claims: &VerifiedResultAssertion) -> bool {
@@ -183,6 +234,29 @@ impl ResultAccessConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn receipt_phase_requires_exact_guard_status() {
+        let cases = [
+            (ReceiptPhase::DispatchPreflight, "pending"),
+            (ReceiptPhase::DispatchEffect, "started"),
+            (ReceiptPhase::ReceiverHandoff, "started"),
+            (ReceiptPhase::CompletedRead, "completed"),
+        ];
+        for (phase, allowed) in cases {
+            for status in [
+                "",
+                "pending",
+                "started",
+                "completed",
+                "unknown",
+                "denied",
+                "future",
+            ] {
+                assert_eq!(phase_status_allowed(phase, status), status == allowed);
+            }
+        }
+    }
 
     struct DenyVerifier;
     #[tonic::async_trait]
