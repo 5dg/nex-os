@@ -319,6 +319,55 @@ class ImageDiagnosticTests(unittest.TestCase):
             self.assertEqual(result['images']['postgres']['status'],'incomplete')
             self.assertIn('interrupted',result['images']['postgres']['halt_reason'])
 
+    def test_phase_status_uses_allowlisted_fields_and_never_echoes_tool_text(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);secret='SECRETSHOULDNEVERAPPEAR'
+            raw=b'{bad-json-'+secret.encode();err=b'fatal scanner failure '+secret.encode()
+            (root/'postgres-trivy.json').write_bytes(raw);(root/'postgres-trivy.stderr').write_bytes(err)
+            item={'status':'findings-or-incomplete','build_exit':0,'smoke_exit':0,'scan_exit':1,
+                  'summary_status':'unavailable','scan_error':secret,'scan_error_category':secret,
+                  'database_metadata':{'status':'captured-not-freshness-verified','sha256':'a'*64}}
+            summary=m.phase_summary('postgres',item,root);encoded=json.dumps(summary)
+            self.assertNotIn(secret,encoded)
+            self.assertEqual(summary['report']['parse_category'],'invalid_json')
+            self.assertEqual(summary['report']['bytes'],len(raw))
+            self.assertEqual(summary['report']['sha256'],hashlib.sha256(raw).hexdigest())
+            self.assertEqual(summary['stderr']['hint'],'unclassified_fatal')
+            self.assertEqual(summary['scan']['exit_code'],1)
+            self.assertEqual(summary['scan_error_category'],'none')
+            self.assertEqual(summary['database_metadata']['sha256'],'a'*64)
+
+    def test_phase_status_distinguishes_empty_invalid_schema_and_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);item={'status':'incomplete','scan_exit':1,'summary_status':'unavailable'}
+            self.assertEqual(m.phase_summary('postgres',item,root)['report']['parse_category'],'unavailable')
+            (root/'postgres-trivy.json').write_bytes(b'')
+            self.assertEqual(m.phase_summary('postgres',item,root)['report']['parse_category'],'empty')
+            (root/'postgres-trivy.json').write_bytes(b'{}')
+            self.assertEqual(m.phase_summary('postgres',item,root)['report']['parse_category'],'invalid_schema_or_summary_error')
+
+    def test_phase_reporting_failure_cannot_change_gate_or_leak_exception(self):
+        with patch.object(m,'phase_summary',side_effect=RuntimeError('SECRET')), \
+             patch('builtins.print') as log:
+            m.emit_phase_summary('postgres',{},'/tmp')
+        self.assertEqual(log.call_args.args[0],'diagnostic-only phase-status {"status":"unavailable"}')
+
+    def test_phase_reporting_propagates_interruption(self):
+        with patch.object(m,'phase_summary',side_effect=m.DiagnosticInterrupted('interrupted')):
+            with self.assertRaises(m.DiagnosticInterrupted):m.emit_phase_summary('postgres',{},'/tmp')
+
+    def test_structured_scan_categories_are_explicit_and_allowlisted(self):
+        with tempfile.TemporaryDirectory() as d:
+            item={'status':'incomplete','scan_exit':None}
+            for category in ('timeout','output_limit','resource_or_other','process_error','interrupted'):
+                item['scan_error_category']=category
+                self.assertEqual(m.phase_summary('postgres',item,d)['scan_error_category'],category)
+            item['scan_error_category']='unexpected diagnostic text'
+            self.assertEqual(m.phase_summary('postgres',item,d)['scan_error_category'],'none')
+            self.assertEqual(m.stderr_hint(b'HTTP 429 rate limit; secret-value',1),'possible_rate_limit')
+            self.assertEqual(m.stderr_hint(b'',1),'nonzero_without_stderr')
+
     def test_command_captures_stdout_and_stderr_separately(self):
         with tempfile.TemporaryDirectory() as d:
             stdout=Path(d)/'out'; stderr=Path(d)/'err'

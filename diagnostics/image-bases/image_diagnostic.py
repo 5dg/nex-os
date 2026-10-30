@@ -189,6 +189,76 @@ def outcome(scan_exit, smoke_exit, summary):
             else 'findings-or-incomplete')
 
 
+def phase_exit(value):
+    if type(value) is not int or value < -255 or value > 255:
+        return {'status':'unavailable','exit_code':None}
+    return {'status':'zero_exit' if value == 0 else 'nonzero_exit','exit_code':value}
+
+
+def stderr_hint(data, exit_code):
+    text=data.lower()
+    if b'toomanyrequests' in text or b'rate limit' in text: return 'possible_rate_limit'
+    if b'failed to download vulnerability db' in text or b'unable to initialize a scanner' in text: return 'possible_scanner_or_db_initialization'
+    if b'permission denied' in text: return 'possible_permission_denied'
+    if b'no such image' in text or b'image not found' in text: return 'possible_image_not_found'
+    if b'context deadline exceeded' in text: return 'possible_deadline'
+    if b'fatal' in text: return 'unclassified_fatal'
+    if exit_code not in (None,0) and not data: return 'nonzero_without_stderr'
+    return 'unclassified' if data else 'none'
+
+
+def phase_summary(role, item, output):
+    """Expose only bounded controlled categories, counts and hashes, not tool text."""
+    if role not in ROLES: raise ValueError('invalid role')
+    result={'role':role,'scope':'diagnostic-only','build':phase_exit(item.get('build_exit')),
+            'smoke':phase_exit(item.get('smoke_exit')),'scan':phase_exit(item.get('scan_exit'))}
+    status=item.get('status')
+    result['status']=status if status in ('completed','findings-or-incomplete','incomplete','not-run') else 'unknown'
+    category=item.get('scan_error_category')
+    result['scan_error_category']=category if category in ('timeout','output_limit','resource_or_other','process_error','interrupted') else 'none'
+    raw_path=Path(output)/(role+'-trivy.json')
+    err_path=Path(output)/(role+'-trivy.stderr')
+    def details(path,maximum):
+        try:
+            value=small_file(path,maximum)
+            return value,{'status':'available','bytes':len(value),'sha256':hashlib.sha256(value).hexdigest()}
+        except DiagnosticInterrupted:raise
+        except (OSError,ValueError):return None,{'status':'unavailable','bytes':None,'sha256':None}
+    raw,raw_details=details(raw_path,16*1024**2)
+    err,err_details=details(err_path,2*1024**2)
+    if raw is None: raw_details['parse_category']='unavailable'
+    elif not raw: raw_details['parse_category']='empty'
+    elif len(raw)>8*1024**2: raw_details['parse_category']='oversize_for_summary'
+    elif item.get('summary_status')=='available': raw_details['parse_category']='summary_available'
+    else:
+        try: json.loads(raw)
+        except DiagnosticInterrupted:raise
+        except (ValueError,UnicodeDecodeError,RecursionError): raw_details['parse_category']='invalid_json'
+        else: raw_details['parse_category']='invalid_schema_or_summary_error'
+    err_details['hint']=stderr_hint(err,item.get('scan_exit')) if err is not None else 'unavailable'
+    result['report']=raw_details;result['stderr']=err_details
+    db=item.get('database_metadata') or {}
+    db_status=db.get('status') if isinstance(db,dict) else None
+    db_sha=db.get('sha256') if isinstance(db,dict) else None
+    if db_status!='captured-not-freshness-verified' or not isinstance(db_sha,str) or not re.fullmatch(r'[0-9a-f]{64}',db_sha):
+        db_status='unknown';db_sha=None
+    result['database_metadata']={'status':db_status,'sha256':db_sha}
+    return result
+
+
+def emit_phase_summary(role,item,output):
+    try:
+        payload=json.dumps(phase_summary(role,item,output),ensure_ascii=True,separators=(',',':'))
+        if len(payload)>4096: raise ValueError('phase summary unexpectedly oversized')
+        print('diagnostic-only phase-status '+payload,flush=True)
+    except DiagnosticInterrupted:
+        raise
+    except Exception:
+        # Reporting problems must never change scanner or diagnostic outcomes.
+        try: print('diagnostic-only phase-status {"status":"unavailable"}',flush=True)
+        except (OSError,ValueError): pass
+
+
 def main():
     install_handlers()
     if (os.environ.get('GITHUB_REPOSITORY') != '5dg/nex-os' or os.environ.get('GITHUB_REF') != 'refs/heads/main' or
@@ -277,6 +347,7 @@ def main():
                 item['status'] = 'incomplete'
                 item['halt_reason'] = 'smoke failed or interrupted; late daemon create cannot be ruled out'
                 save()
+                emit_phase_summary(role,item,output)
                 break
             # Scan actual immutable image identity, even when smoke fails.
             report_file = output/(role+'-trivy.json')
@@ -295,13 +366,20 @@ def main():
             except DiagnosticInterrupted as error:
                 item['scan_exit'] = None
                 item['scan_error'] = str(error) + '; raw partial output retained'
+                item['scan_error_category'] = 'interrupted'
                 item['status'] = 'incomplete'
                 item['halt_reason'] = 'interrupted during scan; no later phases started'
                 save()
+                emit_phase_summary(role,item,output)
                 break
             except (TimeoutError,ValueError) as error:
                 item['scan_exit'] = None
                 item['scan_error'] = str(error) + '; raw partial output retained'
+                item['scan_error_category'] = ('timeout' if isinstance(error,TimeoutError) else
+                                               'output_limit' if isinstance(error,OutputLimit) else 'resource_or_other')
+            except (OSError,subprocess.SubprocessError):
+                item['scan_error_category'] = 'process_error'
+                raise
             item['scan_sha256'] = sha(report_file)
             if report_file.stat().st_size > 8*1024**2:
                 summary = {'status':'unavailable','reason':'oversized-report','truncated':True}
@@ -318,6 +396,7 @@ def main():
             item['halt_reason'] = ('interrupted build; daemon quiescence unproven' if building else
                                    'interrupted diagnostic; no later phases started')
             save()
+            emit_phase_summary(role,item,output)
             break
         except (OSError,ValueError,TimeoutError,subprocess.SubprocessError) as error:
             item['status'] = 'incomplete'
@@ -325,8 +404,10 @@ def main():
             if building:
                 item['halt_reason'] = 'build daemon cancellation/quiescence unproven; do not continue on this runner'
                 save()
+                emit_phase_summary(role,item,output)
                 break
         save()
+        emit_phase_summary(role,item,output)
     # Any finding, missing result or smoke failure keeps this diagnostic job red.
     return 0 if all(v['status']=='completed' for v in result['images'].values()) else 1
 
