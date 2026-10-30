@@ -19,6 +19,8 @@ requires resource and identity controls.
 
 An opt-in PostgreSQL 17 RDS foundation is available through `production_database`. Its engine minor version, instance class, storage size and backup retention must be explicitly chosen after verifying regional availability and cost; leaving the variable null adds no database resources. The provisioned instance uses private subnets, encrypted storage, AWS-managed master credentials, TLS-required PostgreSQL settings, Multi-AZ, backups and deletion protection. Terraform's destroy guard requires an intentional reviewed change before replacement or deletion. The fixed final snapshot identifier must be reviewed for uniqueness before any approved removal.
 
+Optional database capacity alarms are described in [DATABASE_ALARMS.md](DATABASE_ALARMS.md). They require explicitly selected thresholds and notification configuration and do not establish database or application readiness.
+
 The database-client security group is not attached by the database foundation
 itself. The optional zero-count service scaffold can attach it only to
 explicitly selected control, guard or workspace services when a database is
