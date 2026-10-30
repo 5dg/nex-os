@@ -15,7 +15,7 @@ RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
     sed -i 's|URIs: http://deb.debian.org|URIs: https://deb.debian.org|' /etc/apt/sources.list.d/debian.sources \
     && apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca update \
     && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::https::CaInfo=/run/secrets/proxy_ca install -y --no-install-recommends --only-upgrade --no-remove \
-       perl-base=5.40.1-6+deb13u1 libpcre2-8-0=10.46-1~deb13u3 liblzma5=5.8.1-1+deb13u2 tzdata=2026e-0+deb13u1 libssl3t64=3.5.7-1~deb13u3 libsqlite3-0=3.46.1-7+deb13u2 zlib1g=1:1.3.dfsg+really1.3.1-1+b1 \
+       perl-base=5.40.1-6+deb13u1 libpcre2-8-0=10.46-1~deb13u3 liblzma5=5.8.1-1+deb13u2 tzdata=2026e-0+deb13u1 libssl3t64=3.5.7-1~deb13u3 libsqlite3-0=3.46.1-7+deb13u2 zlib1g=1:1.3.dfsg+really1.3.1-1+b1 gzip=1.13-1+deb13u1 libc6=2.41-12+deb13u4 libc-bin=2.41-12+deb13u4 \
     && test "$(dpkg-query -W -f='${Version}' liblzma5)" = '5.8.1-1+deb13u2' \
     && test "$(dpkg-query -W -f='${Version}' tzdata)" = '2026e-0+deb13u1' \
     && test "$(dpkg-query -W -f='${Version}' perl-base)" = '5.40.1-6+deb13u1' \
@@ -23,6 +23,9 @@ RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
     && test "$(dpkg-query -W -f='${Version}' libssl3t64)" = '3.5.7-1~deb13u3' \
     && test "$(dpkg-query -W -f='${Version}' libsqlite3-0)" = '3.46.1-7+deb13u2' \
     && test "$(dpkg-query -W -f='${Version}' zlib1g)" = '1:1.3.dfsg+really1.3.1-1+b1' \
+    && test "$(dpkg-query -W -f='${Version}' gzip)" = '1.13-1+deb13u1' \
+    && test "$(dpkg-query -W -f='${Version}' libc6)" = '2.41-12+deb13u4' \
+    && test "$(dpkg-query -W -f='${Version}' libc-bin)" = '2.41-12+deb13u4' \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb \
        /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
        /opt/yarn-v1.22.22 /usr/local/bin/npm /usr/local/bin/npx \

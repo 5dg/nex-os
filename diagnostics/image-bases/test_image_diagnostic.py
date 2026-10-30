@@ -540,6 +540,14 @@ class ImageDiagnosticTests(unittest.TestCase):
             with patch.object(m.os,'stat',side_effect=fake):
                 with self.assertRaisesRegex(ValueError,'outside monitored'):m.validate_cache_filesystem(cache,output,docker)
 
+    def test_workspace_security_updates_are_pinned_and_asserted(self):
+        dockerfile=(HERE/'workspace.Dockerfile').read_text()
+        self.assertIn('--only-upgrade --no-remove',dockerfile)
+        for name,version in (('gzip','1.13-1+deb13u1'),('libc6','2.41-12+deb13u4'),('libc-bin','2.41-12+deb13u4')):
+            self.assertEqual(dockerfile.count(name+'='+version),1)
+            assertion="$(dpkg-query -W -f='${Version}' "+name+")\" = '"+version+"'"
+            self.assertIn(assertion,dockerfile)
+
     def test_command_captures_stdout_and_stderr_separately(self):
         with tempfile.TemporaryDirectory() as d:
             stdout=Path(d)/'out'; stderr=Path(d)/'err'

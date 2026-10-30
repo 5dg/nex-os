@@ -26,7 +26,7 @@ RESERVE = 2 * 1024**3
 FORECAST = {'postgres': 8 * 1024**3, 'workspace': 4 * 1024**3, 'guard': 4 * 1024**3}
 SCAN_FORECAST = {'postgres': 3 * 1024**3, 'workspace': 1024**3, 'guard': 1024**3}
 EXPECTED = {'postgres': '959c545c9531f8664dd6f4c63bdcc44a695e8ea149e81a8c99fc047e74b9f1d0',
-            'workspace': 'bc5d88c9357c27d6cffdfda1c80e8eb4640b3012c4d81de16e2b2f9ca47c39c7',
+            'workspace': '61972af67235ae71aa8ede1feb22cae5968fc47f4209b733e62eb706389f046a',
             'guard': '212b67881653b89c3182d6e481a5f819613009bfd88c2a61b08cb521fa21d0d6'}
 ROLES = ('postgres', 'workspace', 'guard')
 
