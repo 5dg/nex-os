@@ -399,7 +399,8 @@ func validVersion(v string) bool {
 	return true
 }
 
-// Execute binds a Guard-authorized v3 payload to a durable receiver receipt.
+// Execute is a legacy, unphased precursor and must not be wired into a
+// production profile. It binds a Guard-authorized v3 payload to a receipt.
 // access must recheck current actor/tenant/result authority for this request;
 // authorize must authenticate the one-shot Guard effect decision. Fence and
 // receipt integrity are enforced by the separately provisioned receiver store.
@@ -426,28 +427,11 @@ func (s *S3ExportStore) execute(ctx context.Context, in contracts.Export, digest
 		// No network request precedes the authenticated access check and Guard
 		// authorization enforced by the receipt store. The durable started
 		// marker already prevents a retry if readiness becomes ambiguous.
-		client, err := s.authenticatedClient(effectCtx)
+		rec, client, err := s.putVerified(effectCtx, in, digest, key, contentDigest)
 		if err != nil {
 			return nil, broker.ErrUnknown
 		}
 		verified = client
-		versioning, err := verified.GetBucketVersioning(effectCtx, &s3.GetBucketVersioningInput{Bucket: aws.String(s.policy.Bucket), ExpectedBucketOwner: aws.String(s.policy.AccountID)})
-		if err != nil || versioning == nil || versioning.Status != types.BucketVersioningStatusEnabled {
-			return nil, broker.ErrUnknown
-		}
-		checksum := sha256.Sum256([]byte(in.Content))
-		out, err := verified.PutObject(effectCtx, &s3.PutObjectInput{Bucket: aws.String(s.policy.Bucket), Key: aws.String(key), ExpectedBucketOwner: aws.String(s.policy.AccountID),
-			Body: bytes.NewReader([]byte(in.Content)), ContentLength: aws.Int64(int64(len(in.Content))), IfNoneMatch: aws.String("*"),
-			ServerSideEncryption: types.ServerSideEncryptionAwsKms, SSEKMSKeyId: aws.String(s.policy.KMSKeyARN), ChecksumSHA256: aws.String(base64.StdEncoding.EncodeToString(checksum[:])),
-			Metadata: map[string]string{"nex-execution-sha256": digest, "nex-content-sha256": contentDigest}})
-		if err != nil || out == nil || !validVersion(aws.ToString(out.VersionId)) || out.ServerSideEncryption != types.ServerSideEncryptionAwsKms ||
-			aws.ToString(out.SSEKMSKeyId) != s.policy.KMSKeyARN || aws.ToString(out.ChecksumSHA256) != base64.StdEncoding.EncodeToString(checksum[:]) {
-			return nil, broker.ErrUnknown
-		}
-		rec := s3ExportReceipt{ArtifactID: in.OperationID, ContentDigest: contentDigest, ObjectKey: key, VersionID: aws.ToString(out.VersionId), KMSKeyARN: s.policy.KMSKeyARN}
-		if _, err := s.readExact(effectCtx, verified, in, digest, rec); err != nil {
-			return nil, broker.ErrUnknown
-		}
 		return rec, nil
 	})
 	if err != nil {
@@ -513,13 +497,41 @@ func (s *S3ExportStore) decodeS3Receipt(raw json.RawMessage, operationID, key, d
 	return rec, nil
 }
 
-// Retrieve performs a fresh authenticated receipt check before reading the
+// Retrieve is a legacy, unphased precursor, not a production read path. It
+// performs a fresh authenticated receipt check before reading the
 // exact immutable version and rechecking its encryption, metadata and bytes.
 func (s *S3ExportStore) Retrieve(ctx context.Context, in contracts.Export, digest string, receipts *broker.PostgresReceiptStore, access broker.ReceiptAccess) ([]byte, error) {
 	if receipts == nil {
 		return nil, invalidExport
 	}
 	return s.retrieve(ctx, in, digest, receipts, access)
+}
+
+// putVerified runs only inside a receipt store's durable started callback.
+// A failed or ambiguous write, verification, or identity check remains unknown.
+func (s *S3ExportStore) putVerified(ctx context.Context, in contracts.Export, digest, key, contentDigest string) (s3ExportReceipt, *s3.Client, error) {
+	var empty s3ExportReceipt
+	client, err := s.authenticatedClient(ctx)
+	if err != nil {
+		return empty, nil, broker.ErrUnknown
+	}
+	versioning, err := client.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{Bucket: aws.String(s.policy.Bucket), ExpectedBucketOwner: aws.String(s.policy.AccountID)})
+	if err != nil || versioning == nil || versioning.Status != types.BucketVersioningStatusEnabled {
+		return empty, nil, broker.ErrUnknown
+	}
+	checksum := sha256.Sum256([]byte(in.Content))
+	out, err := client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(s.policy.Bucket), Key: aws.String(key), ExpectedBucketOwner: aws.String(s.policy.AccountID),
+		Body: bytes.NewReader([]byte(in.Content)), ContentLength: aws.Int64(int64(len(in.Content))), IfNoneMatch: aws.String("*"),
+		ServerSideEncryption: types.ServerSideEncryptionAwsKms, SSEKMSKeyId: aws.String(s.policy.KMSKeyARN), ChecksumSHA256: aws.String(base64.StdEncoding.EncodeToString(checksum[:])),
+		Metadata: map[string]string{"nex-execution-sha256": digest, "nex-content-sha256": contentDigest}})
+	if err != nil || out == nil || !validVersion(aws.ToString(out.VersionId)) || out.ServerSideEncryption != types.ServerSideEncryptionAwsKms || aws.ToString(out.SSEKMSKeyId) != s.policy.KMSKeyARN || aws.ToString(out.ChecksumSHA256) != base64.StdEncoding.EncodeToString(checksum[:]) {
+		return empty, nil, broker.ErrUnknown
+	}
+	rec := s3ExportReceipt{ArtifactID: in.OperationID, ContentDigest: contentDigest, ObjectKey: key, VersionID: aws.ToString(out.VersionId), KMSKeyARN: s.policy.KMSKeyARN}
+	if _, err := s.readExact(ctx, client, in, digest, rec); err != nil {
+		return empty, nil, broker.ErrUnknown
+	}
+	return rec, client, nil
 }
 
 func (s *S3ExportStore) retrieve(ctx context.Context, in contracts.Export, digest string, receipts exportReceiptOps, access broker.ReceiptAccess) ([]byte, error) {
