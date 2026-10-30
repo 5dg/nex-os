@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -57,7 +59,13 @@ func TestQualificationOutboxAppenderActualService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	journal, err := OpenJournal(t.TempDir(), private)
+	// Go's numbered t.TempDir child is subject to the process umask. Custody
+	// requires the journal directory itself to be private even with umask 022.
+	directory := filepath.Join(t.TempDir(), "journal")
+	if err := os.Mkdir(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	journal, err := OpenJournal(directory, private)
 	if err != nil {
 		t.Fatal(err)
 	}
