@@ -21,6 +21,8 @@ An opt-in PostgreSQL 17 RDS foundation is available through `production_database
 
 Optional database capacity alarms are described in [DATABASE_ALARMS.md](DATABASE_ALARMS.md). They require explicitly selected thresholds and notification configuration and do not establish database or application readiness.
 
+Optional private Cloud Map discovery for selected zero-count ECS services is described in [SERVICE_DISCOVERY.md](SERVICE_DISCOVERY.md). It does not enable workloads or establish service identity.
+
 The database-client security group is not attached by the database foundation
 itself. The optional zero-count service scaffold can attach it only to
 explicitly selected control, guard or workspace services when a database is

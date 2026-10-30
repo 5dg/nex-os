@@ -5,7 +5,9 @@ names must have matching reviewed task revisions and per-service network
 identities. Each created Fargate service has its desired count fixed at zero,
 uses the existing private foundation subnets, has no public IP and disables ECS
 Exec. The input cannot start application tasks or enable production traffic.
-It configures no load balancer, external ingress, DNS or service discovery.
+It configures no load balancer or external ingress. Optional private DNS
+service discovery can be selected separately; see
+[`SERVICE_DISCOVERY.md`](SERVICE_DISCOVERY.md).
 The zero count is Terraform's configured state, not an IAM boundary: an
 authorized out-of-band `UpdateService`, `RunTask` or separate autoscaling
 configuration can start tasks. Restrict and independently verify those

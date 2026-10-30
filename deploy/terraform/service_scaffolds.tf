@@ -9,7 +9,7 @@ locals {
 }
 
 # This creates a named service with zero tasks only. Increasing desired count,
-# ingress, discovery and production traffic need a later reviewed integration.
+# ingress and production traffic need a later reviewed integration.
 resource "aws_ecs_service" "production_scaffold" {
   for_each                           = local.configured_service_scaffolds
   name                               = "${var.name}-${each.key}"
@@ -25,6 +25,12 @@ resource "aws_ecs_service" "production_scaffold" {
   deployment_circuit_breaker {
     enable   = true
     rollback = true
+  }
+  dynamic "service_registries" {
+    for_each = contains(local.configured_discovery_services, each.key) ? [each.key] : []
+    content {
+      registry_arn = aws_service_discovery_service.production[service_registries.value].arn
+    }
   }
   network_configuration {
     subnets          = aws_subnet.private[*].id
