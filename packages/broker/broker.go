@@ -130,7 +130,7 @@ func Read(w http.ResponseWriter, r *http.Request, key []byte, audience string, v
 	return ReadLimit(w, r, key, audience, v, 16384)
 }
 func ReadLimit(w http.ResponseWriter, r *http.Request, key []byte, audience string, v any, limit int64) bool {
-	if r.Method != "POST" || r.Header.Get("Content-Type") != "application/json" {
+	if r.Method != "POST" || len(r.Header.Values("Content-Type")) != 1 || r.Header.Get("Content-Type") != "application/json" {
 		http.Error(w, "invalid request", 400)
 		return false
 	}
@@ -140,7 +140,7 @@ func ReadLimit(w http.ResponseWriter, r *http.Request, key []byte, audience stri
 		return false
 	}
 	token := r.Header.Get("Authorization")
-	if len(token) < 11 || token[:11] != "Capability " || Verify(key, audience, token[11:], b) != nil {
+	if len(r.Header.Values("Authorization")) != 1 || len(token) < 11 || token[:11] != "Capability " || Verify(key, audience, token[11:], b) != nil {
 		http.Error(w, "unauthorized", 401)
 		return false
 	}
