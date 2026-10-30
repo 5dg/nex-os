@@ -14,7 +14,7 @@ mod shutdown;
 mod state;
 pub mod trust;
 use profile::Profile;
-pub use shutdown::{Shutdown, DRAIN_TIMEOUT};
+pub use shutdown::{DRAIN_TIMEOUT, Shutdown};
 use std::{future::Future, sync::Arc};
 use tokio::sync::Semaphore;
 use trust::{PeerIdentity, Role, Trust};

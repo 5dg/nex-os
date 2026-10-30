@@ -543,9 +543,11 @@ mod tests {
         let authorized = policy
             .authorization_context(&prepared, &"c".repeat(64), &"d".repeat(64))
             .unwrap();
-        assert!(authorized
-            .canonical_bytes()
-            .starts_with(AUTHORIZATION_DOMAIN));
+        assert!(
+            authorized
+                .canonical_bytes()
+                .starts_with(AUTHORIZATION_DOMAIN)
+        );
         assert_ne!(authorized.digest(), prepared.digest());
         assert_ne!(
             policy
@@ -561,18 +563,24 @@ mod tests {
                 .digest(),
             authorized.digest()
         );
-        assert!(policy
-            .authorization_context(&authorized, &"c".repeat(64), &"d".repeat(64))
-            .is_err());
-        assert!(policy
-            .authorization_context(&prepared, "bad", &"d".repeat(64))
-            .is_err());
+        assert!(
+            policy
+                .authorization_context(&authorized, &"c".repeat(64), &"d".repeat(64))
+                .is_err()
+        );
+        assert!(
+            policy
+                .authorization_context(&prepared, "bad", &"d".repeat(64))
+                .is_err()
+        );
         let mut other = input;
         other.policy_version = "v2".into();
         let other_digest = candidate_policy_digest(&other).unwrap();
         let other = CandidateModelPolicy::new(other, &other_digest).unwrap();
-        assert!(other
-            .authorization_context(&prepared, &"c".repeat(64), &"d".repeat(64))
-            .is_err());
+        assert!(
+            other
+                .authorization_context(&prepared, &"c".repeat(64), &"d".repeat(64))
+                .is_err()
+        );
     }
 }

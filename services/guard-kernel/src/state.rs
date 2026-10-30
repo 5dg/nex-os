@@ -4,8 +4,8 @@ use crate::{profile::Profile, trust::Trust};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 use tokio_postgres::{
-    config::{Host, SslMode},
     Client, Config, NoTls,
+    config::{Host, SslMode},
 };
 use tonic::Status;
 

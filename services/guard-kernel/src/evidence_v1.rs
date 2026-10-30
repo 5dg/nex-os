@@ -137,7 +137,7 @@ fn normalize(raw: &RawValue, depth: usize, out: &mut Vec<u8>) -> Result<(), ()> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
     #[test]
