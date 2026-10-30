@@ -228,7 +228,7 @@ func TestSupportedProfilesNeverConstructLiveProvider(t *testing.T) {
 func TestQualificationRejectsActualSDKAdapterBeforeConverse(t *testing.T) {
 	s, _, authority := modelFixture(t)
 	provider := &converseStub{}
-	s.Generator = &Bedrock{Client: provider, Region: "us-gov-west-1", ModelARN: "arn:aws-us-gov:bedrock:us-gov-west-1::foundation-model/synthetic-test-model-v1"}
+	s.Generator = testBedrock(provider, "us-gov-west-1", "arn:aws-us-gov:bedrock:us-gov-west-1::foundation-model/synthetic-test-model-v1", "https://bedrock-runtime.us-gov-west-1.amazonaws.com")
 	response := modelRequest(t, s, qualifiedGeneration(), "/execute", "model.execute")
 	if response.Code == 200 || provider.calls != 0 || authority.calls != 0 {
 		t.Fatal("SDK adapter reached from synthetic profile", response.Code, provider.calls, authority.calls)

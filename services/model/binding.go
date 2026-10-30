@@ -23,9 +23,12 @@ func (SyntheticGenerator) Binding() ProviderBinding {
 	return ProviderBinding{Provider: contracts.QualificationProvider, Region: contracts.QualificationRegion, ModelID: contracts.QualificationModelID, EffectiveEndpoint: contracts.QualificationEndpoint}
 }
 func (b *Bedrock) Binding() ProviderBinding {
-	// No Bedrock binding is admitted to the synthetic qualification profile. A
-	// future live profile must bind the SDK's resolved endpoint as well as its ARN.
-	return ProviderBinding{Provider: "bedrock", Region: b.Region, ModelID: b.ModelARN, EffectiveEndpoint: "aws://bedrock-runtime/" + b.Region}
+	// The explicit endpoint is checked against the SDK's regional resolver and
+	// guarded by the transport. No Bedrock binding is admitted to synthetic runs.
+	if !b.validRoute() {
+		return ProviderBinding{}
+	}
+	return ProviderBinding{Provider: "bedrock", Region: b.route.region, ModelID: b.route.modelARN, EffectiveEndpoint: b.route.endpoint}
 }
 func validateQualificationBinding(in contracts.Generation, g Generator) error {
 	if e := contracts.ValidateQualificationGeneration(in); e != nil {
