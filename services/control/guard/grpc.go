@@ -252,19 +252,26 @@ func NewRPCWithTrust(address string, legacyKey []byte, cfg *trust.Config) (*Clie
 	if cfg.Profile != trust.Qualification {
 		return nil, trust.ErrIdentity
 	}
+	// TLS verification callbacks and per-RPC credentials must capture a private
+	// copy. The caller's Config exposes Profile and Role; retaining its pointer
+	// would let a later mutation downgrade verification on an existing channel.
+	private := *cfg
+	if private.Profile != trust.Qualification || private.CheckOwn() != nil {
+		return nil, trust.ErrIdentity
+	}
 	host, _, e := net.SplitHostPort(address)
 	if e != nil || host == "" {
 		return nil, errors.New("qualification Guard host:port required")
 	}
-	tlsConfig, e := cfg.GRPCClientTLS(trust.Guard, host)
+	tlsConfig, e := private.GRPCClientTLS(trust.Guard, host)
 	if e != nil {
 		return nil, e
 	}
-	connection, e := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithPerRPCCredentials(cfg.PerRPCCredentials(trust.Guard)), grpc.WithDisableRetry(), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(256*1024), grpc.MaxCallSendMsgSize(256*1024)))
+	connection, e := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithPerRPCCredentials(private.PerRPCCredentials(trust.Guard)), grpc.WithDisableRetry(), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(256*1024), grpc.MaxCallSendMsgSize(256*1024)))
 	if e != nil {
 		return nil, e
 	}
-	return &Client{RPC: &RPC{client: pb.NewGuardClient(connection), connection: connection, trust: cfg}}, nil
+	return &Client{RPC: &RPC{client: pb.NewGuardClient(connection), connection: connection, trust: &private}}, nil
 }
 func (c *Client) Readiness(ctx context.Context) error {
 	if c.RPC == nil {
