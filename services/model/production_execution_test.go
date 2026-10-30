@@ -51,9 +51,10 @@ func (f *modelReceiptFixture) ReadPhasedCompleted(context.Context, string, strin
 	return append(json.RawMessage(nil), f.result...), nil
 }
 
-func modelCoordinatorFixture() (*ProductionModelCoordinator, contracts.Generation, *converseStub, *modelReceiptFixture) {
-	in, adapter, policy := productionBindingFixture()
-	provider := adapter.route.client.(*converseStub)
+func modelCoordinatorFixture(t *testing.T) (*ProductionModelCoordinator, contracts.Generation, *modelAccountFixture, *modelReceiptFixture) {
+	t.Helper()
+	in, _, policy := productionBindingFixture()
+	adapter, provider := newModelAccountFixture(t)
 	receipts := &modelReceiptFixture{}
 	c := &ProductionModelCoordinator{adapter: adapter, policy: policy, receipts: receipts, manifest: modelManifestFunc(func(_ context.Context, in contracts.Generation) (string, error) {
 		return contracts.ExecutionDigest(in), nil
@@ -61,21 +62,27 @@ func modelCoordinatorFixture() (*ProductionModelCoordinator, contracts.Generatio
 	return c, in, provider, receipts
 }
 
+func modelProviderCalls(f *modelAccountFixture) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.modelCalls
+}
+
 func TestModelCoordinatorHandoffAndCompletedRead(t *testing.T) {
-	c, in, provider, receipts := modelCoordinatorFixture()
+	c, in, provider, receipts := modelCoordinatorFixture(t)
 	result, err := c.Execute(context.Background(), in)
-	if err != nil || result.Text != "synthetic provider response" || provider.calls != 1 {
+	if err != nil || result.Text != "synthetic provider response" || modelProviderCalls(provider) != 1 {
 		t.Fatal("authenticated receiver handoff failed")
 	}
 	if result, err = c.ReadCompleted(context.Background(), in); err == nil || result.Text != "" {
 		t.Fatal("uncompleted result was released")
 	}
-	if _, err = c.Execute(context.Background(), in); !errors.Is(err, broker.ErrUnknown) || provider.calls != 1 {
+	if _, err = c.Execute(context.Background(), in); !errors.Is(err, broker.ErrUnknown) || modelProviderCalls(provider) != 1 {
 		t.Fatal("completed or uncertain effect was repeated")
 	}
 	receipts.completed = true
 	receipts.reads = 0
-	if result, err = c.ReadCompleted(context.Background(), in); err != nil || result.Text != "synthetic provider response" || provider.calls != 1 {
+	if result, err = c.ReadCompleted(context.Background(), in); err != nil || result.Text != "synthetic provider response" || modelProviderCalls(provider) != 1 {
 		t.Fatal("completed read failed or invoked provider")
 	}
 	receipts.reads = 0
@@ -86,23 +93,26 @@ func TestModelCoordinatorHandoffAndCompletedRead(t *testing.T) {
 }
 
 func TestModelCoordinatorDeniesUntrustedManifestAndAmbiguousProvider(t *testing.T) {
-	c, in, provider, _ := modelCoordinatorFixture()
+	c, in, provider, _ := modelCoordinatorFixture(t)
 	c.manifest = modelManifestFunc(func(context.Context, contracts.Generation) (string, error) { return strings.Repeat("0", 64), nil })
-	if _, err := c.Execute(context.Background(), in); !errors.Is(err, broker.ErrUnknown) || provider.calls != 0 {
+	if _, err := c.Execute(context.Background(), in); !errors.Is(err, broker.ErrUnknown) || modelProviderCalls(provider) != 0 {
 		t.Fatal("wrong Guard digest reached provider")
 	}
-	c, in, provider, _ = modelCoordinatorFixture()
-	provider.failure = true
-	if _, err := c.Execute(context.Background(), in); !errors.Is(err, broker.ErrUnknown) || provider.calls != 1 {
+	c, in, provider, _ = modelCoordinatorFixture(t)
+	provider.mu.Lock()
+	provider.modelStatus = 500
+	provider.mu.Unlock()
+	if _, err := c.Execute(context.Background(), in); !errors.Is(err, broker.ErrUnknown) || modelProviderCalls(provider) != 1 {
 		t.Fatal("ambiguous provider outcome was not unknown")
 	}
-	if _, err := c.Execute(context.Background(), in); !errors.Is(err, broker.ErrUnknown) || provider.calls != 1 {
+	if _, err := c.Execute(context.Background(), in); !errors.Is(err, broker.ErrUnknown) || modelProviderCalls(provider) != 1 {
 		t.Fatal("ambiguous provider call was retried")
 	}
 }
 
 func TestModelCoordinatorRequiresBoundedTrustedDependencies(t *testing.T) {
-	in, adapter, policy := productionBindingFixture()
+	in, _, policy := productionBindingFixture()
+	adapter, _ := newModelAccountFixture(t)
 	manifest := modelManifestFunc(func(_ context.Context, in contracts.Generation) (string, error) {
 		return contracts.ExecutionDigest(in), nil
 	})
@@ -129,7 +139,7 @@ func TestModelCoordinatorRequiresBoundedTrustedDependencies(t *testing.T) {
 		t.Fatal("trusted policy changed through caller-owned slice")
 	}
 	cancel()
-	c, in, _, _ = modelCoordinatorFixture()
+	c, in, _, _ = modelCoordinatorFixture(t)
 	c.timeout = 20 * time.Millisecond
 	c.manifest = modelManifestFunc(func(ctx context.Context, _ contracts.Generation) (string, error) { <-ctx.Done(); return "", ctx.Err() })
 	if _, err := c.Execute(context.Background(), in); !errors.Is(err, broker.ErrUnknown) {
@@ -138,7 +148,7 @@ func TestModelCoordinatorRequiresBoundedTrustedDependencies(t *testing.T) {
 }
 
 func TestModelCoordinatorRejectsMalformedReceipt(t *testing.T) {
-	_, in, _, _ := modelCoordinatorFixture()
+	_, in, _, _ := modelCoordinatorFixture(t)
 	valid, err := json.Marshal(contracts.GenerationResult{Text: "a", Provider: in.Provider, ModelID: in.ModelID})
 	if err != nil {
 		t.Fatal(err)

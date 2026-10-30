@@ -105,8 +105,8 @@ func TestModelPhasedPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal("fixture receipt store unavailable")
 	}
-	in, adapter, policy := productionBindingFixture()
-	provider := adapter.route.client.(*converseStub)
+	in, _, policy := productionBindingFixture()
+	adapter, provider := newModelAccountFixture(t)
 	auth := &modelPhaseAuthority{}
 	auth.status.Store("pending")
 	manifest := modelManifestFunc(func(_ context.Context, in contracts.Generation) (string, error) {
@@ -126,7 +126,7 @@ func TestModelPhasedPostgresIntegration(t *testing.T) {
 		t.Fatal("fixture coordinator unavailable")
 	}
 	result, err := coordinator.Execute(ctx, in)
-	if err != nil || result.Text != "synthetic provider response" || grants.Load() != 1 || provider.calls != 1 {
+	if err != nil || result.Text != "synthetic provider response" || grants.Load() != 1 || modelProviderCalls(provider) != 1 {
 		t.Fatal("model claimant handoff failed")
 	}
 	if result, err = coordinator.ReadCompleted(ctx, in); err == nil || result.Text != "" {
@@ -134,7 +134,7 @@ func TestModelPhasedPostgresIntegration(t *testing.T) {
 	}
 	auth.status.Store("completed")
 	auth.reads.Store(0)
-	if result, err = coordinator.ReadCompleted(ctx, in); err != nil || result.Text != "synthetic provider response" || provider.calls != 1 {
+	if result, err = coordinator.ReadCompleted(ctx, in); err != nil || result.Text != "synthetic provider response" || modelProviderCalls(provider) != 1 {
 		t.Fatal("completed result read failed")
 	}
 	auth.reads.Store(0)
@@ -143,17 +143,19 @@ func TestModelPhasedPostgresIntegration(t *testing.T) {
 		t.Fatal("revoked result was disclosed")
 	}
 	auth.status.Store("pending")
-	if _, err = coordinator.Execute(ctx, in); !errors.Is(err, broker.ErrUnknown) || provider.calls != 1 || grants.Load() != 1 {
+	if _, err = coordinator.Execute(ctx, in); !errors.Is(err, broker.ErrUnknown) || modelProviderCalls(provider) != 1 || grants.Load() != 1 {
 		t.Fatal("completed model effect was repeated")
 	}
 	in.OperationID = "operation-ambiguous"
-	provider.failure = true
+	provider.mu.Lock()
+	provider.modelStatus = 500
+	provider.mu.Unlock()
 	auth.status.Store("pending")
-	if _, err = coordinator.Execute(ctx, in); !errors.Is(err, broker.ErrUnknown) || provider.calls != 2 {
+	if _, err = coordinator.Execute(ctx, in); !errors.Is(err, broker.ErrUnknown) || modelProviderCalls(provider) != 2 {
 		t.Fatal("ambiguous model outcome did not remain unknown")
 	}
 	auth.status.Store("pending")
-	if _, err = coordinator.Execute(ctx, in); !errors.Is(err, broker.ErrUnknown) || provider.calls != 2 {
+	if _, err = coordinator.Execute(ctx, in); !errors.Is(err, broker.ErrUnknown) || modelProviderCalls(provider) != 2 {
 		t.Fatal("ambiguous model effect was retried")
 	}
 }

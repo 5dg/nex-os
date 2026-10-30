@@ -33,7 +33,7 @@ type phasedModelReceipts interface {
 // All injected authorities must honor context cancellation and deadlines;
 // a callback that ignores context can block beyond the configured timeout.
 type ProductionModelCoordinator struct {
-	adapter   *Bedrock
+	adapter   *AccountBoundBedrock
 	policy    ProductionModelPolicy
 	receipts  phasedModelReceipts
 	manifest  ProductionModelManifestAuthority
@@ -58,8 +58,8 @@ func nonNilDependency(value any) bool {
 // NewProductionModelCoordinator requires explicit trusted configuration and
 // a concrete PostgreSQL receipt store. timeout is operator-supplied; it must
 // be positive and no greater than five minutes, with no implicit default.
-func NewProductionModelCoordinator(adapter *Bedrock, policy ProductionModelPolicy, receipts *broker.PostgresReceiptStore, manifest ProductionModelManifestAuthority, phase broker.ReceiptPhaseAuthorizer, authorize func(context.Context, broker.ReceiptClaim) error, timeout time.Duration) (*ProductionModelCoordinator, error) {
-	if !adapter.validRoute() || receipts == nil || !nonNilDependency(manifest) || !nonNilDependency(phase) || authorize == nil || timeout <= 0 || timeout > 5*time.Minute {
+func NewProductionModelCoordinator(adapter *AccountBoundBedrock, policy ProductionModelPolicy, receipts *broker.PostgresReceiptStore, manifest ProductionModelManifestAuthority, phase broker.ReceiptPhaseAuthorizer, authorize func(context.Context, broker.ReceiptClaim) error, timeout time.Duration) (*ProductionModelCoordinator, error) {
+	if !adapter.validAccountBinding() || receipts == nil || !nonNilDependency(manifest) || !nonNilDependency(phase) || authorize == nil || timeout <= 0 || timeout > 5*time.Minute {
 		return nil, errors.New("sealed model route and complete bounded authority required")
 	}
 	policy.AllowedClassifications = append([]string(nil), policy.AllowedClassifications...)
@@ -67,7 +67,7 @@ func NewProductionModelCoordinator(adapter *Bedrock, policy ProductionModelPolic
 }
 
 func (c *ProductionModelCoordinator) prepare(ctx context.Context, in contracts.Generation) (context.Context, context.CancelFunc, contracts.Generation, string, error) {
-	if c == nil || ctx == nil || !c.adapter.validRoute() || !nonNilDependency(c.receipts) || !nonNilDependency(c.manifest) || !nonNilDependency(c.phase) || c.authorize == nil || c.timeout <= 0 || c.timeout > 5*time.Minute {
+	if c == nil || ctx == nil || !c.adapter.validAccountBinding() || !nonNilDependency(c.receipts) || !nonNilDependency(c.manifest) || !nonNilDependency(c.phase) || c.authorize == nil || c.timeout <= 0 || c.timeout > 5*time.Minute {
 		return nil, nil, contracts.Generation{}, "", broker.ErrUnknown
 	}
 	in.Features = append([]string(nil), in.Features...)
@@ -77,7 +77,7 @@ func (c *ProductionModelCoordinator) prepare(ctx context.Context, in contracts.G
 		cancel()
 		return nil, nil, contracts.Generation{}, "", broker.ErrUnknown
 	}
-	if _, err := ValidateProductionModelBinding(in, c.adapter, c.policy, digest); err != nil {
+	if _, err := ValidateProductionModelBinding(in, c.adapter.base, c.policy, digest); err != nil {
 		cancel()
 		return nil, nil, contracts.Generation{}, "", broker.ErrUnknown
 	}
