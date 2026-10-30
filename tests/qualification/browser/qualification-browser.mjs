@@ -116,7 +116,10 @@ try {
   for(let pages=0;await page.getByRole('button',{name:'Load more history',exact:true}).count();pages++){
    assert(pages<budget.maxHistoryPages);const loaded=await page.locator('#evidence [data-event-id]').count();const pending=page.waitForResponse(responseFor('event_page',job));await page.getByRole('button',{name:'Load more history',exact:true}).click();const response=await pending;assert.equal(response.status(),200);const raw=await response.body();const value=historyPage(JSON.parse(raw.toString()),raw.length);await page.waitForFunction(count=>document.querySelectorAll('#evidence [data-event-id]').length===count,loaded+value.events.length);
   }
-  await page.locator('#evidence').getByText('export.authorized',{exact:true}).waitFor();assert((await page.locator('#evidence .good').count())>0);
+  await page.locator('#evidence').getByText('export.authorized',{exact:true}).waitFor();
+  const signatures=await page.locator('#evidence [data-event-id] .good').allTextContents();
+  assert(signatures.length>0 && signatures.every(label=>/^Signature valid · (control|kernel)$/.test(label)), 'history must identify per-record signatures clearly');
+  assert.match(await page.locator('#evidence').innerText(),/does not confirm that the history is complete or independently retained/);
  });
  // No identifiers or digest contents are emitted: evidence system retains them.
  result.status='passed';
