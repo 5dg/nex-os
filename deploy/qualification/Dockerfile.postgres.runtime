@@ -11,10 +11,10 @@ RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
     sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /tmp/nex-debian-sources/debian.sources; \
     apt-get -o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/tmp/nex-debian-sources -o Acquire::https::CaInfo=/run/secrets/proxy_ca update; \
     DEBIAN_FRONTEND=noninteractive apt-get -o Dir::Etc::sourcelist=/dev/null -o Dir::Etc::sourceparts=/tmp/nex-debian-sources -o Acquire::https::CaInfo=/run/secrets/proxy_ca \
-      install --yes --only-upgrade --no-remove --no-install-recommends libssl3=3.0.22-1~deb12u2 openssl=3.0.22-1~deb12u2 tzdata=2026e-0+deb12u1; \
+      install --yes --only-upgrade --no-remove --no-install-recommends libssl3=3.0.22-1~deb12u2 openssl=3.0.22-1~deb12u2 tzdata=2026f-0+deb12u1; \
     test "$(dpkg-query -W -f='${Version}' libssl3)" = '3.0.22-1~deb12u2'; \
     test "$(dpkg-query -W -f='${Version}' openssl)" = '3.0.22-1~deb12u2'; \
-    test "$(dpkg-query -W -f='${Version}' tzdata)" = '2026e-0+deb12u1'; \
+    test "$(dpkg-query -W -f='${Version}' tzdata)" = '2026f-0+deb12u1'; \
     rm -rf /var/lib/apt/lists/* /tmp/nex-debian-sources; \
     rm -f /var/log/apt/history.log /var/log/apt/term.log /var/log/dpkg.log /var/cache/ldconfig/aux-cache; \
     test -s /etc/ld.so.cache

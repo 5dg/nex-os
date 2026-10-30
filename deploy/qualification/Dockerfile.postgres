@@ -72,10 +72,10 @@ RUN --mount=type=secret,id=proxy_ca,required=true,mode=0444 \
       -o Dir::Etc::sourceparts=/tmp/nex-debian-sources \
       -o Acquire::https::CaInfo=/run/secrets/proxy_ca \
       install --yes --only-upgrade --no-remove --no-install-recommends \
-      libssl3=3.0.22-1~deb12u2 openssl=3.0.22-1~deb12u2 tzdata=2026e-0+deb12u1; \
+      libssl3=3.0.22-1~deb12u2 openssl=3.0.22-1~deb12u2 tzdata=2026f-0+deb12u1; \
     test "$(dpkg-query -W -f='${Version}' libssl3)" = '3.0.22-1~deb12u2'; \
     test "$(dpkg-query -W -f='${Version}' openssl)" = '3.0.22-1~deb12u2'; \
-    test "$(dpkg-query -W -f='${Version}' tzdata)" = '2026e-0+deb12u1'; \
+    test "$(dpkg-query -W -f='${Version}' tzdata)" = '2026f-0+deb12u1'; \
     rm -rf /var/lib/apt/lists/* /tmp/nex-debian-sources
 
 COPY --from=gosu-build --chmod=0755 /out/gosu /usr/local/bin/gosu
