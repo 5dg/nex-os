@@ -42,3 +42,27 @@ variable "verified_interface_services" {
     error_message = "Only the initial approved service inventory is supported."
   }
 }
+
+variable "production_database" {
+  description = "Explicitly verified production RDS settings. Null leaves the existing foundation unchanged; choose values after confirming regional availability and cost."
+  type = object({
+    engine_version        = string
+    instance_class        = string
+    allocated_storage_gib = number
+    backup_retention_days = number
+  })
+  default = null
+  validation {
+    condition = var.production_database == null ? true : (
+      can(regex("^17\\.[0-9]+$", var.production_database.engine_version)) &&
+      can(regex("^db\\.[a-z0-9]+\\.[a-z0-9]+$", var.production_database.instance_class)) &&
+      var.production_database.allocated_storage_gib >= 20 &&
+      var.production_database.allocated_storage_gib <= 16384 &&
+      floor(var.production_database.allocated_storage_gib) == var.production_database.allocated_storage_gib &&
+      var.production_database.backup_retention_days >= 7 &&
+      var.production_database.backup_retention_days <= 35 &&
+      floor(var.production_database.backup_retention_days) == var.production_database.backup_retention_days
+    )
+    error_message = "Select an available PostgreSQL 17 minor version and RDS class, 20-16384 GiB of storage and 7-35 backup days."
+  }
+}
