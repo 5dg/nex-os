@@ -15,3 +15,10 @@ The separate database-client security group is not attached to any workload by t
 Use Terraform 1.17.0. Run `terraform init -backend=false`, `terraform validate`, and `terraform test` here. Tests use mocked provider data and make no claims about live IAM enforcement or service availability. `.terraform.lock.hcl` pins provider versions/checksums.
 
 Before planning against AWS, set `NEX_GOV_REGION`, `NEX_APPROVED_ACCOUNT_ID`, and `NEX_BEDROCK_MODEL_ID` to the confirmed non-secret deployment inputs and set `NEX_PREFLIGHT_REPORT` to a fresh, nonexistent report path. Run `scripts/govcloud-preflight.sh`. The preflight checks that the authenticated account and ARN match the approved account before querying the exact model and regional endpoint inventory. It creates the report exclusively with mode 0600 and refuses existing paths or symlinks, so an earlier report cannot be mistaken for a new run. Verify model and service authorization scope independently, and provide `account_id` and `model_arn` through non-secret Terraform inputs. Populate `verified_interface_services` only from the regional inventory. Use an approved encrypted remote state backend and access controls before a real deployment; this scaffold does not configure one automatically. Never put credentials or CUI in Terraform variables/state.
+
+The standard regional `sts` interface endpoint is opt-in through that same
+verified inventory. The managed export precursor uses STS `GetCallerIdentity`;
+it needs a reachable approved regional endpoint and endpoint policy even though
+that operation does not require an IAM allow. Confirm actual regional DNS,
+endpoint availability, trust and policy behavior before use. STS FIPS endpoint
+service names are not enabled by this scaffold and need separate verification.

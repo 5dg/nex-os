@@ -38,7 +38,7 @@ variable "verified_interface_services" {
   type        = set(string)
   default     = []
   validation {
-    condition     = alltrue([for s in var.verified_interface_services : contains(["ecr.api", "ecr.dkr", "logs", "kms", "secretsmanager", "bedrock-runtime"], s)])
+    condition     = alltrue([for s in var.verified_interface_services : contains(["ecr.api", "ecr.dkr", "logs", "kms", "secretsmanager", "bedrock-runtime", "sts"], s)])
     error_message = "Only the initial approved service inventory is supported."
   }
 }
