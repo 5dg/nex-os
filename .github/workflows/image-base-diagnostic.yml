@@ -1,0 +1,80 @@
+name: Experimental image base diagnostic
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    if: >-
+      github.repository == '5dg/nex-os' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-image-base-diagnostic]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TRIVY_CACHE_DIR: /tmp/nex-diagnostic-trivy-cache
+      DOCKER_HOST: unix:///var/run/docker.sock
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact experiment inputs and clean source boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor d8859d758b1c9edb5c83603133e10f2df3fb0dd4 "$GITHUB_SHA"
+          git diff --name-only d8859d758b1c9edb5c83603133e10f2df3fb0dd4 "$GITHUB_SHA" | LC_ALL=C sort > /tmp/nex-diagnostic-changed
+          printf '%s\n' '.github/workflows/image-base-diagnostic.yml' 'diagnostics/image-bases/guard.Dockerfile' 'diagnostics/image-bases/image_diagnostic.py' 'diagnostics/image-bases/postgres.Dockerfile' 'diagnostics/image-bases/smoke.py' 'diagnostics/image-bases/test_image_diagnostic.py' 'diagnostics/image-bases/workspace.Dockerfile' | LC_ALL=C sort > /tmp/nex-diagnostic-allowed
+          diff -u /tmp/nex-diagnostic-allowed /tmp/nex-diagnostic-changed
+          sha256sum -c <<'EOF'
+          212b67881653b89c3182d6e481a5f819613009bfd88c2a61b08cb521fa21d0d6  diagnostics/image-bases/guard.Dockerfile
+          0904df9d59c0a873f1d46778902c3417e91cf1700f76bc346320ec4a172c73fd  diagnostics/image-bases/image_diagnostic.py
+          959c545c9531f8664dd6f4c63bdcc44a695e8ea149e81a8c99fc047e74b9f1d0  diagnostics/image-bases/postgres.Dockerfile
+          ef333e834c872f7912dce0338eeca47761e13d82dffbc20684cc53ea92cb9993  diagnostics/image-bases/smoke.py
+          06f7366879cb727c3f3305999c40c8e97a19282b81adc87c0cfd2593afe7e397  diagnostics/image-bases/test_image_diagnostic.py
+          bc5d88c9357c27d6cffdfda1c80e8eb4640b3012c4d81de16e2b2f9ca47c39c7  diagnostics/image-bases/workspace.Dockerfile
+          EOF
+          python3 -m unittest discover -s diagnostics/image-bases -p 'test_image_diagnostic.py' -v
+      - name: Install pinned Trivy without changing release tools
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nex-diagnostic-tools"
+          curl --fail --silent --show-error --location https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz -o "$RUNNER_TEMP/nex-diagnostic-tools/trivy.tar.gz"
+          echo 'c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0  '"$RUNNER_TEMP/nex-diagnostic-tools/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/nex-diagnostic-tools/trivy.tar.gz" -C "$RUNNER_TEMP/nex-diagnostic-tools" trivy
+          echo 'd1dfca6ae10a1ad4540bb94e64f0510077c47008920a9b554986b39dca573d83  '"$RUNNER_TEMP/nex-diagnostic-tools/trivy" | sha256sum -c -
+          echo "$RUNNER_TEMP/nex-diagnostic-tools" >> "$GITHUB_PATH"
+      - name: Build, exercise and scan experimental images
+        run: python3 -I diagnostics/image-bases/image_diagnostic.py
+      - name: Retain diagnostic outputs and raw scans
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-base-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/result.json
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/source-sha.txt
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/docker-root.txt
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/docker-version.json
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/buildx-version.txt
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/scanner-version.json
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/postgres-build.log
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/postgres-smoke.log
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/postgres-trivy.json
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/postgres-trivy-db-metadata.json
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/postgres-trivy.stderr
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/workspace-build.log
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/workspace-smoke.log
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/workspace-trivy.json
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/workspace-trivy-db-metadata.json
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/workspace-trivy.stderr
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/guard-build.log
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/guard-smoke.log
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/guard-trivy.json
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/guard-trivy-db-metadata.json
+            ${{ runner.temp }}/nex-image-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}/guard-trivy.stderr
+          include-hidden-files: true
+          if-no-files-found: warn
