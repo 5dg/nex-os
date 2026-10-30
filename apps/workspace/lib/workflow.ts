@@ -21,7 +21,8 @@ async function boundedJSON(request: Request): Promise<Record<string, unknown>> {
 }
 export async function qualificationWorkflow(request: Request): Promise<Response> {
   let session;
-  try { session = requireSession(request, true); } catch (error) {
+  try { session = await requireSession(request, true); } catch (error) {
+    if (error instanceof Error && (error.message === "Session store unavailable" || error.message.startsWith("Session configuration"))) return noStore({ code: "AUTHENTICATION_UNAVAILABLE" }, 503);
     return noStore({ code: error instanceof Error && error.message === "Session required" ? "UNAUTHENTICATED" : "SESSION_OR_CSRF_DENIED" }, error instanceof Error && error.message === "Session required" ? 401 : 403);
   }
   let input: Record<string, unknown>;
@@ -48,10 +49,12 @@ export async function qualificationWorkflow(request: Request): Promise<Response>
     decide: { method: "POST", path: `/v1/approvals/${id}/decision`, body: { approve: input.approve, request_digest: input.request_digest } },
   };
   const selected = operations[operation];
-  if (selected.method === "POST") sessions().get(session.id, true);
+  try {
+    if (selected.method === "POST" && !(await sessions().get(session.id, true))) return noStore({ code: "UNAUTHENTICATED" }, 401);
+  } catch { return noStore({ code: "AUTHENTICATION_UNAVAILABLE" }, 503); }
   try {
     const { response, value } = await controlJSON(selected.path, session.accessToken, selected.method, selected.body);
-    if (response.status === 401) sessions().close(session.id);
+    if (response.status === 401) await sessions().close(session.id);
     return noStore(value, response.status);
   } catch { return noStore({ code: "DEPENDENCY_UNAVAILABLE", message: "The authenticated workflow service is unavailable." }, 503); }
 }

@@ -1,4 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { profile } from "./profile.ts";
+import { createPostgresSessionStore } from "./postgres-session-config.ts";
+import type { PostgresSessionStore } from "./postgres-sessions.ts";
 
 export const SESSION_COOKIE = "__Host-nex_session";
 export const LOGIN_COOKIE = "__Host-nex_login";
@@ -68,5 +71,13 @@ export class SessionStore {
   }
   close(value: string | undefined): void { if (value) { this.sessions.delete(value); this.logins.delete(value); } }
 }
-const globalStore = globalThis as typeof globalThis & { __nexQualificationSessions?: SessionStore };
-export function sessions(): SessionStore { return globalStore.__nexQualificationSessions ??= new SessionStore(); }
+const globalStore = globalThis as typeof globalThis & { __nexQualificationSessions?: SessionStore | PostgresSessionStore };
+export function sessions(): SessionStore | PostgresSessionStore {
+  const backend = process.env.NEX_SESSION_BACKEND || "memory";
+  if (backend !== "memory" && backend !== "postgres") throw new Error("Session configuration invalid");
+  if (backend === "postgres" && profile() !== "synthetic-qualification") throw new Error("Session configuration invalid");
+  if (!globalStore.__nexQualificationSessions) globalStore.__nexQualificationSessions = backend === "postgres" ? createPostgresSessionStore() : new SessionStore();
+  const store = globalStore.__nexQualificationSessions;
+  if ((backend === "postgres") !== ("readiness" in store)) throw new Error("Session configuration changed after startup");
+  return store;
+}
