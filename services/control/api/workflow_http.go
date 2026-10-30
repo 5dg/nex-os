@@ -47,6 +47,10 @@ func (s *Server) userTx(w http.ResponseWriter, r *http.Request) (pgx.Tx, guard.A
 		fail(w, 401, "UNAUTHENTICATED", "Valid bearer token required")
 		return nil, guard.Actor{}, false
 	}
+	if e = s.bindUserAuthority(r, id); e != nil {
+		workflowError(w, e)
+		return nil, guard.Actor{}, false
+	}
 	tx, e := s.begin(r.Context())
 	if e != nil {
 		workflowError(w, e)

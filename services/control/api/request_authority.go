@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/5dg/nex-os/packages/trust"
+	"github.com/5dg/nex-os/services/control/auth"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -27,6 +28,34 @@ func (s *Server) withRequestAuthority(r *http.Request, roles []trust.Role) *http
 		return s.Trust.CheckPeer(r.TLS, roles)
 	}}
 	return r.WithContext(context.WithValue(r.Context(), requestAuthorityKey{}, authority))
+}
+
+// Bind the authenticated user credential to the original request authority.
+// Revalidate the same immutable bearer value at each existing transaction and
+// protected-dispatch boundary, including after a slow dependency call. The
+// verified user is compared as well as the credential's current validity.
+func (s *Server) bindUserAuthority(r *http.Request, identity auth.Identity) error {
+	if !s.qualification() {
+		return nil
+	}
+	authority, ok := r.Context().Value(requestAuthorityKey{}).(requestAuthority)
+	if !ok || authority.accounting || authority.original == nil || authority.current == nil || s.Auth == nil {
+		return errRequestAuthority
+	}
+	credential := r.Clone(r.Context())
+	previous := authority.current
+	authority.current = func() error {
+		if e := previous(); e != nil {
+			return e
+		}
+		current, e := s.Auth.Verify(credential)
+		if e != nil || current != identity {
+			return errRequestAuthority
+		}
+		return nil
+	}
+	*r = *r.WithContext(context.WithValue(r.Context(), requestAuthorityKey{}, authority))
+	return nil
 }
 
 func (s *Server) currentRequest(ctx context.Context) error {

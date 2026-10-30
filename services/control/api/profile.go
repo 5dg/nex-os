@@ -65,6 +65,10 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		fail(w, 401, "UNAUTHENTICATED", "Valid API credential required")
 		return
 	}
+	if e = s.bindUserAuthority(r, identity); e != nil {
+		workflowError(w, e)
+		return
+	}
 	tx, e := s.begin(r.Context())
 	if e != nil {
 		workflowError(w, e)
