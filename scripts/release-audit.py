@@ -9,12 +9,14 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
 sys.dont_write_bytecode = True
 from source_record import resolve_image
 from go_vulnerability_gate import classify as classify_go
+from image_vulnerability_summary import summarize_image_report
 
 root = pathlib.Path(__file__).resolve().parent.parent
 output = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else root / '.local/release-evidence')
@@ -44,6 +46,17 @@ def run(name, command, cwd=root):
             result = subprocess.run(command, cwd=cwd, capture_output=True, timeout=300, env=environment)
             (output / (name + '.stdout')).write_bytes(result.stdout)
             (output / (name + '.stderr')).write_bytes(result.stderr)
+            if command[0] == 'trivy' and name.endswith('-image-vulnerabilities'):
+                try:
+                    version_output = versions.get('trivy', {}).get('output', '')
+                    version = re.search(r'(?m)^Version: ([0-9]+\.[0-9]+\.[0-9]+)$', version_output)
+                    summary = summarize_image_report(result.stdout, name[:-len('-image-vulnerabilities')], profile,
+                                                     version.group(1) if version else None)
+                    diagnostic = json.dumps(summary, ensure_ascii=True)
+                except Exception:
+                    # Diagnostics cannot change scanner status or release gates.
+                    diagnostic = '{"status":"unavailable","reason":"summary-error"}'
+                print('image-vulnerability-summary ' + diagnostic, flush=True)
             record['exit_code'] = result.returncode
             record['status'] = 'passed' if result.returncode == 0 else 'failed'
             if result.returncode:
