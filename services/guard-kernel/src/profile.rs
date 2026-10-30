@@ -5,6 +5,9 @@ use std::error::Error;
 pub enum Profile {
     Development,
     Qualification,
+    // Never selected from environment. Available only to an explicitly
+    // configured, non-production embedding with independent authorities.
+    ModelCandidate,
 }
 impl Profile {
     pub fn from_env() -> Result<Self, Box<dyn Error>> {
@@ -21,12 +24,14 @@ impl Profile {
         match self {
             Self::Development => "development",
             Self::Qualification => "synthetic-qualification",
+            Self::ModelCandidate => "production-model-candidate",
         }
     }
     pub fn manifest_version(self) -> i32 {
         match self {
             Self::Development => 2,
             Self::Qualification => 3,
+            Self::ModelCandidate => 3,
         }
     }
 }
@@ -45,6 +50,7 @@ mod tests {
             "production",
             "qualification",
             "synthetic-qualification ",
+            "production-model-candidate",
         ] {
             assert!(Profile::parse(value).is_err(), "{value}");
         }

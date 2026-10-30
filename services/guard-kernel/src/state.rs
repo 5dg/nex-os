@@ -4,8 +4,8 @@ use crate::{profile::Profile, trust::Trust};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 use tokio_postgres::{
-    Client, Config, NoTls,
     config::{Host, SslMode},
+    Client, Config, NoTls,
 };
 use tonic::Status;
 
@@ -21,7 +21,7 @@ fn unavailable() -> Status {
     Status::unavailable("bounded state dependency unavailable")
 }
 pub fn configuration(profile: Profile, url: &str) -> Result<Config, Box<dyn std::error::Error>> {
-    let mut config: Config = if profile == Profile::Qualification {
+    let mut config: Config = if profile != Profile::Development {
         let mut parsed = reqwest::Url::parse(url)?;
         if !matches!(parsed.scheme(), "postgres" | "postgresql")
             || parsed.host_str() != Some("postgres")
@@ -61,7 +61,7 @@ pub fn configuration(profile: Profile, url: &str) -> Result<Config, Box<dyn std:
     } else {
         url.parse()?
     };
-    if profile == Profile::Qualification {
+    if profile != Profile::Development {
         if config.get_ssl_mode() != SslMode::Require
             || !matches!(config.get_hosts(),[Host::Tcp(name)] if name=="postgres")
         {
@@ -74,7 +74,7 @@ pub fn configuration(profile: Profile, url: &str) -> Result<Config, Box<dyn std:
 impl StateStore {
     pub fn new(profile: Profile, url: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let config = configuration(profile, url)?;
-        let tls = if profile == Profile::Qualification {
+        let tls = if profile != Profile::Development {
             Some(Trust::database_tls()?)
         } else {
             None
@@ -95,7 +95,7 @@ impl StateStore {
                 .await
                 .map_err(|_| unavailable())?
                 .map_err(|_| unavailable())?;
-        let client = if self.profile == Profile::Qualification {
+        let client = if self.profile != Profile::Development {
             let connector = tokio_postgres_rustls::MakeRustlsConnect::new(
                 self.tls.clone().ok_or_else(unavailable)?,
             );
@@ -139,6 +139,10 @@ mod tests {
             "host=postgres sslmode=require",
         ] {
             assert!(configuration(Profile::Qualification, url).is_err(), "{url}");
+            assert!(
+                configuration(Profile::ModelCandidate, url).is_err(),
+                "{url}"
+            );
         }
         let config = configuration(
             Profile::Qualification,

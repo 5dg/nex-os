@@ -7,13 +7,14 @@ mod candidate_outbox;
 mod evidence;
 mod evidence_v1;
 mod execution;
+pub mod production_model_policy;
 pub mod profile;
 pub mod result_access;
 mod shutdown;
 mod state;
 pub mod trust;
 use profile::Profile;
-pub use shutdown::{DRAIN_TIMEOUT, Shutdown};
+pub use shutdown::{Shutdown, DRAIN_TIMEOUT};
 use std::{future::Future, sync::Arc};
 use tokio::sync::Semaphore;
 use trust::{PeerIdentity, Role, Trust};
@@ -42,6 +43,13 @@ pub struct Kernel {
     export_token: String,
     evidence: Option<evidence::Writer>,
     result_access: Option<Arc<result_access::ResultAccessConfig>>,
+    candidate_model: Option<Arc<CandidateModelConfig>>,
+}
+
+struct CandidateModelConfig {
+    policy: production_model_policy::CandidateModelPolicy,
+    authority: Arc<dyn production_model_policy::CandidatePolicyAuthority>,
+    job_authority: Arc<dyn production_model_policy::CandidateJobAuthority>,
 }
 impl Kernel {
     // Main does not configure this boundary. An embedding must supply approved
@@ -83,6 +91,39 @@ impl Kernel {
         profile: Profile,
         trust: Option<Arc<Trust>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        if profile == Profile::ModelCandidate {
+            return Err(
+                "candidate model runtime is unavailable without trusted admission wiring".into(),
+            );
+        }
+        Self::new_inner(opa_url, key, profile, trust)
+    }
+
+    // Non-environment candidate embedding only. Main and profile parsing do
+    // not select it; caller must independently supply reviewed policy and a
+    // live policy authority. This is not production transport or activation.
+    pub fn new_model_candidate(
+        opa_url: String,
+        trust: Arc<Trust>,
+        policy: production_model_policy::CandidateModelPolicy,
+        authority: Arc<dyn production_model_policy::CandidatePolicyAuthority>,
+        job_authority: Arc<dyn production_model_policy::CandidateJobAuthority>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut kernel = Self::new_inner(opa_url, &[], Profile::ModelCandidate, Some(trust))?;
+        kernel.candidate_model = Some(Arc::new(CandidateModelConfig {
+            policy,
+            authority,
+            job_authority,
+        }));
+        Ok(kernel)
+    }
+
+    fn new_inner(
+        opa_url: String,
+        key: &[u8],
+        profile: Profile,
+        trust: Option<Arc<Trust>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         if profile == Profile::Development && key.len() != 32 {
             return Err("32-byte control identity required".into());
         }
@@ -96,7 +137,7 @@ impl Kernel {
         {
             return Err("valid policy endpoint required".into());
         }
-        if profile == Profile::Qualification && (parsed.scheme() != "https" || trust.is_none()) {
+        if profile != Profile::Development && (parsed.scheme() != "https" || trust.is_none()) {
             return Err(
                 "qualification requires verified policy HTTPS and workload identity".into(),
             );
@@ -121,6 +162,7 @@ impl Kernel {
             export_token: String::new(),
             evidence: None,
             result_access: None,
+            candidate_model: None,
         })
     }
     pub fn with_execution(
