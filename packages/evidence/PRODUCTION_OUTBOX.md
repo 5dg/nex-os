@@ -30,6 +30,15 @@ independent key custody, nonrollback storage, or the health of an external
 anchor. This verifier is not wired into production and does not select a
 deployment cryptographic or custody policy.
 
+`QualificationOutboxAppender` can send canonical kernel events to the existing
+local evidence endpoint using the synthetic qualification profile's mTLS Guard
+identity and a body-bound kernel capability. It pins the service role, forbids
+redirects and plaintext, and returns ambiguous failures as unknown. The outbox
+must still independently verify the returned proof. The existing endpoint uses
+local single-writer custody and accepts neither production deployment identity
+nor independently durable storage; the appender remains unwired and does not
+make retries safe across journal rollback or failover.
+
 These checks do not make the SQL transaction atomic with the evidence service or
 provide a distributed fence. Automatic retry of a possibly completed append is
 safe only if the deployment proves that the journal cannot lose or fork an
