@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 jobs:
-  foundation:
+  fast-checks:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -25,6 +25,7 @@ jobs:
         with:
           node-version: 24.19.0
       - name: Install verified pinned tools and frozen dependencies
+        id: setup
         run: |
           ./scripts/bootstrap.sh
           ./scripts/bootstrap-rust.sh
@@ -36,14 +37,49 @@ jobs:
           echo "RUSTUP_HOME=$NEX_TOOLS_DIR/rustup" >> "$GITHUB_ENV"
       - name: Reproduce generated contracts and semantic digest vectors
         run: ./scripts/check-contracts.sh --install-tools
-      - name: Static checks
+      - name: Release tooling tests
+        if: always() && steps.setup.outcome == 'success'
+        run: python3 -m unittest discover -s tests/release -p 'test_*.py'
+      - name: Go static and race checks
+        if: always() && steps.setup.outcome == 'success'
         run: |
-          python3 -m unittest discover -s tests/release -p 'test_*.py'
           go vet ./...
           go test -mod=readonly -race ./...
-          cd apps/workspace
+      - name: Workspace type and unit checks
+        if: always() && steps.setup.outcome == 'success'
+        working-directory: apps/workspace
+        run: |
           npm run typecheck
           npm test
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEX_TOOLS_DIR: /tmp/nex-ci-tools
+      GOCACHE: /tmp/nex-go-cache
+      GOPATH: /tmp/nex-ci-tools/gopath
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.19.0
+      - name: Install verified pinned tools and frozen dependencies
+        id: setup
+        run: |
+          ./scripts/bootstrap.sh
+          ./scripts/bootstrap-rust.sh
+          echo "$NEX_TOOLS_DIR/go/bin" >> "$GITHUB_PATH"
+          echo "$NEX_TOOLS_DIR" >> "$GITHUB_PATH"
+          echo "$NEX_TOOLS_DIR/bin" >> "$GITHUB_PATH"
+          echo "$NEX_TOOLS_DIR/cargo/bin" >> "$GITHUB_PATH"
+          echo "CARGO_HOME=$NEX_TOOLS_DIR/cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$NEX_TOOLS_DIR/rustup" >> "$GITHUB_ENV"
+      - name: Install pinned contract generators
+        run: |
+          GOBIN="$NEX_TOOLS_DIR/bin" go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+          GOBIN="$NEX_TOOLS_DIR/bin" go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
       - name: Build and start the development stack
         run: make dev
       - name: Functional and negative checks
@@ -69,6 +105,7 @@ jobs:
         if: always()
         run: ./scripts/release-inventory.py .local/release-evidence
       - name: Install pinned vulnerability scanners
+        if: always() && steps.setup.outcome == 'success'
         run: |
           ./scripts/release-tools.sh
           echo "$NEX_TOOLS_DIR/bin" >> "$GITHUB_PATH"
@@ -104,8 +141,19 @@ jobs:
           if test -f .local/qualification/synthetic-qualification.state; then ./scripts/qualification.sh down; fi
           make down
 
+  foundation:
+    if: always()
+    needs: [fast-checks, integration]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require fast checks and integration and security gates
+        env:
+          FAST_RESULT: ${{ needs.fast-checks.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+        run: '[[ "$FAST_RESULT" == success && "$INTEGRATION_RESULT" == success ]]'
+
   canonical-candidate:
-    # Routine pushes run foundation only. The publisher opts in with this marker
+    # Routine pushes run foundation checks. The publisher opts in with this marker
     # on the final reviewed main commit. The first step enforces exact case too.
     if: github.repository == '5dg/nex-os' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.canonical_candidate) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[qualify-candidate]')))
     runs-on: ubuntu-24.04

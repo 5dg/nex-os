@@ -106,6 +106,22 @@ def evaluate_condition(expression, values, *, preceding_steps_succeeded=True):
 
 
 class CandidateTriggerTests(unittest.TestCase):
+    def test_foundation_requires_both_independent_jobs(self):
+        fast = job_block('fast-checks')
+        integration = job_block('integration')
+        foundation = job_block('foundation')
+        self.assertNotIn('\n    needs:', fast)
+        self.assertNotIn('\n    needs:', integration)
+        self.assertIn('    if: always()\n    needs: [fast-checks, integration]', foundation)
+        self.assertIn('FAST_RESULT: ${{ needs.fast-checks.result }}', foundation)
+        self.assertIn('INTEGRATION_RESULT: ${{ needs.integration.result }}', foundation)
+        command = re.search(r"^        run: '(.+)'$", foundation, re.MULTILINE).group(1)
+        for fast_result in ('success', 'failure', 'skipped', 'cancelled'):
+            for integration_result in ('success', 'failure', 'skipped', 'cancelled'):
+                environment = dict(os.environ, FAST_RESULT=fast_result, INTEGRATION_RESULT=integration_result)
+                result = subprocess.run(['bash', '-c', command], env=environment)
+                self.assertEqual(result.returncode == 0, fast_result == integration_result == 'success')
+
     def test_reviewed_main_opt_in_and_manual_dispatch_run_both_jobs(self):
         for job in ('canonical-candidate', 'candidate-origin'):
             with self.subTest(job=job):

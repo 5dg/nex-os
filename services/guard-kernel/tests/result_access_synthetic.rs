@@ -797,8 +797,8 @@ async fn synthetic_guard_mtls_result_access_and_revocation() {
         committed.get::<_, serde_json::Value>("result")["text"],
         "synthetic claim result"
     );
-    let signed: i64 = admin.query_one("SELECT count(*) FROM audit_events WHERE job_id='fixture-claim-job' AND action IN ('model.prepared','model.authorized','model.completed') AND integrity_reference IS NOT NULL", &[]).await.unwrap().get(0);
-    assert_eq!(signed, 3);
+    let signed_count: i64 = admin.query_one("SELECT count(*) FROM audit_events WHERE job_id='fixture-claim-job' AND action IN ('model.prepared','model.authorized','model.completed') AND integrity_reference IS NOT NULL", &[]).await.unwrap().get(0);
+    assert_eq!(signed_count, 3);
     // A separate reader verifies the retained journal against the public key,
     // then each signed journal proof is matched to the committed Guard row.
     // This does not independently anchor the journal against rollback.
