@@ -20,6 +20,27 @@ spec.loader.exec_module(foundation)
 
 
 class FoundationOPATests(unittest.TestCase):
+    def test_compiler_identity_rejects_wrong_digest_repository_or_platform(self):
+        valid = {'Id': 'sha256:' + 'a' * 64, 'RepoDigests': [foundation.GO_IMAGE],
+                 'Os': 'linux', 'Architecture': 'amd64'}
+        for change in ({'RepoDigests': ['golang@sha256:' + 'b' * 64]},
+                       {'RepoDigests': ['other@' + foundation.GO_IMAGE.split('@')[1]]},
+                       {'RepoDigests': []}, {'Os': 'windows'}, {'Architecture': 'arm64'}):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                ca = root / 'ca'; ca.write_text('public trust')
+                compiler = {**valid, **change}
+                def run(args, **kwargs):
+                    output = json.dumps(compiler) if args[2:4] == ['image', 'inspect'] else None
+                    return subprocess.CompletedProcess(args, 0, output)
+                with patch.object(foundation, 'ROOT', root), \
+                     patch.object(foundation, 'identity', return_value={'revision': 'a' * 40}), \
+                     patch.object(foundation.subprocess, 'check_output', return_value='1700000000\n'), \
+                     patch.object(foundation.subprocess, 'run', side_effect=run):
+                    with self.assertRaisesRegex(ValueError, 'compiler image identity'):
+                        foundation.build(root / 'evidence', ca)
+                self.assertEqual(json.loads((root / 'evidence/compiler-identity.json').read_text()), compiler)
+
     def test_synthetic_audit_scans_the_exact_opa_override_at_all_severities(self):
         image_id = 'sha256:' + 'd' * 64
         commands = []

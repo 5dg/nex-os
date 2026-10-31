@@ -14,7 +14,7 @@ sys.dont_write_bytecode = True
 from opa_image import BASE_LAYER, VENDOR_CONFIG, VENDOR_EXEC_LAYER, VENDOR_IMAGE, reconstruct, verify_reconstruction
 from source_record import atomic_json, identity, sha256
 
-GO_IMAGE = 'golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5'
+GO_IMAGE = 'golang@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5'
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -40,6 +40,7 @@ def build(output, ca):
     run('pull', GO_IMAGE)
     compiler = json.loads(run('image', 'inspect', GO_IMAGE, '--format',
         '{"Id":{{json .Id}},"RepoDigests":{{json .RepoDigests}},"Os":{{json .Os}},"Architecture":{{json .Architecture}}}', capture=True))
+    atomic_json(output / 'compiler-identity.json', compiler)
     if GO_IMAGE not in (compiler.get('RepoDigests') or []) or compiler.get('Os') != 'linux' or compiler.get('Architecture') != 'amd64':
         raise ValueError('pinned compiler image identity differs')
     command = ['run', '--rm', '--init', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges:true',

@@ -126,6 +126,7 @@ jobs:
             .local/release-evidence
             .local/qualification-release-evidence
             .local/qualification-build-evidence/opa/receipt.json
+            .local/qualification-build-evidence/opa/compiler-identity.json
             .local/qualification-build-evidence/opa/bin/opa
             .local/qualification-build-evidence/opa/bin/opa-build.txt
             .local/qualification-build-evidence/opa/bin/opa-*-tests.txt
