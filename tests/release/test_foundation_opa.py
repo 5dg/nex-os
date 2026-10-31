@@ -1,5 +1,6 @@
 """Foundation wiring tests; image reconstruction has its own byte-level tests."""
 import importlib.util
+import hashlib
 import json
 import contextlib
 import io
@@ -20,6 +21,23 @@ spec.loader.exec_module(foundation)
 
 
 class FoundationOPATests(unittest.TestCase):
+    def test_pinned_opa_sum_patch_reconstructs_exact_upstream_and_overlay(self):
+        overlay = SCRIPTS.parent / 'deploy/qualification/opa'
+        patch_path = overlay / 'opa-v4.patch'
+        expected = (overlay / 'go.sum').read_bytes()
+        integrity = (SCRIPTS / 'apply-opa-overlay.sh').read_text()
+        for path in (patch_path, overlay / 'go.sum'):
+            self.assertIn(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + path.name, integrity)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'go.sum').write_bytes(expected)
+            command = ['git', '-C', str(root), 'apply', '--include=go.sum']
+            subprocess.run(command + ['--reverse', str(patch_path)], check=True)
+            self.assertEqual(hashlib.sha256((root / 'go.sum').read_bytes()).hexdigest(),
+                             '77629297a1b141d6ea9ec6d99b3af212e5781b9a0feb45bdefaba0c167d91499')
+            subprocess.run(command + [str(patch_path)], check=True)
+            self.assertEqual((root / 'go.sum').read_bytes(), expected)
+
     def test_compiler_identity_rejects_wrong_digest_repository_or_platform(self):
         valid = {'Id': 'sha256:' + 'a' * 64, 'RepoDigests': [foundation.GO_IMAGE],
                  'Os': 'linux', 'Architecture': 'amd64'}
