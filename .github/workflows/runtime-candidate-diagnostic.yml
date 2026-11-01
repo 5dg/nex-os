@@ -1,0 +1,108 @@
+name: Nonrelease runtime candidate diagnostic
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    if: github.repository == '5dg/nex-os' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [guard, workspace]
+    env:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      TRIVY_CACHE_DIR: /tmp/nex-runtime-candidate-trivy
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify source and capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+          [[ "$(uname -m)" == x86_64 ]]
+          [[ "$(df -Pk "$RUNNER_TEMP" | awk 'NR==2 {print $4}')" -ge 12582912 ]]
+          mkdir -m 700 "$RUNNER_TEMP/nex-runtime-${{ matrix.role }}"
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/nex-runtime-${{ matrix.role }}/source-sha.txt"
+      - name: Install pinned Trivy
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/nex-runtime-trivy"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz \
+            -o "$RUNNER_TEMP/nex-runtime-trivy/trivy.tar.gz"
+          echo 'c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0  '"$RUNNER_TEMP/nex-runtime-trivy/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/nex-runtime-trivy/trivy.tar.gz" -C "$RUNNER_TEMP/nex-runtime-trivy" trivy
+          echo 'd1dfca6ae10a1ad4540bb94e64f0510077c47008920a9b554986b39dca573d83  '"$RUNNER_TEMP/nex-runtime-trivy/trivy" | sha256sum -c -
+          "$RUNNER_TEMP/nex-runtime-trivy/trivy" --version > "$RUNNER_TEMP/nex-runtime-${{ matrix.role }}/trivy-version.txt"
+      - name: Download vulnerability database under resource limits
+        shell: bash
+        run: python3 -I diagnostics/runtime-candidates/bounded.py '${{ matrix.role }}' database
+      - name: Build exact-source diagnostic image
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_role='${{ matrix.role }}'
+          python3 -I diagnostics/runtime-candidates/bounded.py "$task_role" build
+          task_image="$(cat "$RUNNER_TEMP/nex-runtime-$task_role/image-id.txt")"
+          [[ "$task_image" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker --host=unix:///var/run/docker.sock image inspect "$task_image" > "$RUNNER_TEMP/nex-runtime-$task_role/image-inspect.json"
+          python3 - "$RUNNER_TEMP/nex-runtime-$task_role/image-inspect.json" "$task_image" "$GITHUB_SHA" "$task_role" <<'PY'
+          import json, sys
+          rows = json.load(open(sys.argv[1]))
+          if not isinstance(rows, list) or len(rows) != 1:
+              raise SystemExit('exactly one built image required')
+          image = rows[0]
+          if image['Id'] != sys.argv[2] or image['Os'] != 'linux' or image['Architecture'] != 'amd64':
+              raise SystemExit('built image identity or platform differs')
+          config = image['Config']
+          labels = config.get('Labels') or {}
+          if labels.get('org.nex.diagnostic.scope') != 'non-release' or labels.get('org.nex.diagnostic.source') != sys.argv[3]:
+              raise SystemExit('source or nonrelease label differs')
+          expected_user = {'guard': '65532:65532', 'workspace': 'node'}
+          if config.get('User') != expected_user[sys.argv[4]]:
+              raise SystemExit('candidate is not the expected nonroot user')
+          PY
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+      - name: Smoke-test actual image
+        id: smoke
+        if: steps.build.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_role='${{ matrix.role }}'
+          python3 -I diagnostics/runtime-candidates/bounded.py "$task_role" smoke
+      - name: Scan exact image at all severities
+        if: steps.smoke.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          task_role='${{ matrix.role }}'
+          python3 -I diagnostics/runtime-candidates/bounded.py "$task_role" scan
+      - name: Retain nonrelease diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: runtime-candidate-${{ matrix.role }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/source-sha.txt
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/trivy-version.txt
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/*-docker-root.txt
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/database.log
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/build.log
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/image-id.txt
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/image-inspect.json
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/smoke.log
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/trivy.json
+            ${{ runner.temp }}/nex-runtime-${{ matrix.role }}/trivy.stderr
+            /tmp/nex-runtime-candidate-trivy/db/metadata.json
+          include-hidden-files: true
+          if-no-files-found: warn
