@@ -44,6 +44,32 @@ func TestAppendRetryRequiresDurableDirectory(t *testing.T) {
 	}
 }
 
+func TestAppendRejectsMalformedDetailWithoutDamagingJournal(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := Journal{Directory: t.TempDir(), Private: private}
+	event := Event{ID: "event-one", TenantID: "tenant-a", Action: "review", Detail: json.RawMessage(`{"ok":true}`)}
+	if _, err := j.Append(event); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{``, `{`, `{} trailing`, `{} {}`} {
+		event.ID, event.Detail = "event-invalid", json.RawMessage(raw)
+		if _, err := j.Append(event); err == nil {
+			t.Fatalf("malformed event detail accepted: %q", raw)
+		}
+		entries, err := Verify(j.Directory, public, nil)
+		if err != nil || len(entries) != 1 {
+			t.Fatalf("malformed event damaged the journal: %v", err)
+		}
+	}
+	event.ID, event.Detail = "event-two", nil
+	if _, err := j.Append(event); err != nil {
+		t.Fatalf("valid event after rejection failed: %v", err)
+	}
+}
+
 func TestTamperDetectionAndRestore(t *testing.T) {
 	public, private, e := ed25519.GenerateKey(rand.Reader)
 	if e != nil {

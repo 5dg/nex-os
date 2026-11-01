@@ -244,7 +244,7 @@ func (j *Journal) appendContext(ctx context.Context, event Event, check func() e
 		return Proof{}, e
 	}
 	defer j.mu.Unlock()
-	if len(j.Private) != ed25519.PrivateKeySize || event.ID == "" || event.TenantID == "" || event.Action == "" {
+	if len(j.Private) != ed25519.PrivateKeySize || event.ID == "" || event.TenantID == "" || event.Action == "" || (len(event.Detail) > 0 && !json.Valid(event.Detail)) {
 		return Proof{}, errors.New("invalid evidence configuration/event")
 	}
 	if e := os.MkdirAll(j.Directory, 0700); e != nil {
@@ -268,7 +268,10 @@ func (j *Journal) appendContext(ctx context.Context, event Event, check func() e
 		}
 	}
 	event = normalized(event)
-	canonical, _ := json.Marshal(event)
+	canonical, e := json.Marshal(event)
+	if e != nil {
+		return Proof{}, e
+	}
 	for _, entry := range all {
 		if e := ctx.Err(); e != nil {
 			return Proof{}, e
@@ -293,7 +296,10 @@ func (j *Journal) appendContext(ctx context.Context, event Event, check func() e
 	}
 	p := Proof{Sequence: len(all) + 1, Head: hashEvent(event, previous), EventID: event.ID, Producer: event.Producer, Previous: previous}
 	p.Signature = base64.RawURLEncoding.EncodeToString(ed25519.Sign(j.Private, message(p)))
-	b, _ := json.Marshal(Entry{Event: event, Previous: previous, Proof: p})
+	b, e := json.Marshal(Entry{Event: event, Previous: previous, Proof: p})
+	if e != nil {
+		return Proof{}, e
+	}
 	temporary, e := os.CreateTemp(j.Directory, ".entry-")
 	if e != nil {
 		return Proof{}, e
